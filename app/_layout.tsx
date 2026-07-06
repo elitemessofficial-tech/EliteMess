@@ -1,56 +1,63 @@
-import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import React from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
+import { ThemeProvider, useAppTheme } from '../src/context/ThemeContext';
+import { CartProvider } from '../src/context/CartContext';
 
-import { useColorScheme } from '@/components/useColorScheme';
+function RootLayoutInner() {
+  const { isDark } = useAppTheme();
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  // Liquid glass color configuration
+  const theme = {
+    bg: isDark ? '#080A0F' : '#F8FAFC',
+    headerBg: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)',
+    headerText: isDark ? '#F8FAFC' : '#0F172A',
+    headerBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    statusBar: isDark ? 'light' : 'dark',
+  };
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    <>
+      <StatusBar style={theme.statusBar as any} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: theme.bg,
+          },
+          animation: 'slide_from_right',
+        }}
+      >
+        {/* Entry / Redirect root */}
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        
+        {/* Auth Group */}
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        
+        {/* Customer View Layout */}
+        <Stack.Screen name="(customer)" options={{ headerShown: false }} />
+        
+        {/* Owner View Layout */}
+        <Stack.Screen name="(owner)" options={{ headerShown: false }} />
+        
+        {/* Rider View Layout */}
+        <Stack.Screen name="(rider)" options={{ headerShown: false }} />
       </Stack>
-    </ThemeProvider>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <CartProvider>
+          <RootLayoutInner />
+        </CartProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

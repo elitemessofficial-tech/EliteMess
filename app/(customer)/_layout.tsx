@@ -1,0 +1,16 @@
+import React from 'react';
+import { Stack } from 'expo-router';
+
+export default function CustomerLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="branches" />
+      <Stack.Screen name="account" />
+      <Stack.Screen name="order/[id]" />
+    </Stack>
+  );
+}
