@@ -11,7 +11,7 @@ import {
   Modal,
   TextInput
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -71,7 +71,16 @@ export default function RiderDashboard() {
   const [riderId, setRiderId] = useState<string | null>(null);
 
   // Segment Tab & Earnings states
+  const { segment } = useLocalSearchParams<{ segment?: string }>();
   const [activeSegment, setActiveSegment] = useState<'deliveries' | 'earnings'>('deliveries');
+
+  useEffect(() => {
+    if (segment === 'earnings') {
+      setActiveSegment('earnings');
+    } else if (segment === 'deliveries') {
+      setActiveSegment('deliveries');
+    }
+  }, [segment]);
   const [completedDeliveries, setCompletedDeliveries] = useState<any[]>([]);
   const [earningsFilter, setEarningsFilter] = useState<'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lifetime'>('lifetime');
   const [earningsDropdownOpen, setEarningsDropdownOpen] = useState(false);
@@ -304,7 +313,8 @@ export default function RiderDashboard() {
             orders (
               id,
               total_amount,
-              delivery_address
+              delivery_address,
+              tip_amount
             )
           `)
           .eq('rider_id', userId)
@@ -868,22 +878,36 @@ export default function RiderDashboard() {
             </View>
 
             {/* Earnings Stats Cards */}
-            <View style={{ gap: 12, marginBottom: 20 }}>
-              <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 20 }]}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>TOTAL PAYOUT</Text>
-                <Text style={{ fontSize: 32, fontWeight: '900', color: colors.accentGold, marginTop: 8 }}>
-                  ₹{(filteredDeliveries.length * 150).toLocaleString()}
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>Earned via completed doorstep deliveries</Text>
-              </View>
+            {(() => {
+              const basePayout = filteredDeliveries.length * 150;
+              const totalTips = filteredDeliveries.reduce((sum, item) => sum + (item.orders?.tip_amount || 0), 0);
+              const totalPayout = basePayout + totalTips;
 
-              <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-                <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textSub, letterSpacing: 1 }}>DELIVERIES COMPLETED</Text>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textMain, marginTop: 4 }}>
-                  {filteredDeliveries.length}
-                </Text>
-              </View>
-            </View>
+              return (
+                <View style={{ gap: 12, marginBottom: 20 }}>
+                  <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 20 }]}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>TOTAL PAYOUT</Text>
+                    <Text style={{ fontSize: 32, fontWeight: '900', color: colors.accentGold, marginTop: 8 }}>
+                      ₹{totalPayout.toLocaleString()}
+                    </Text>
+                    {totalTips > 0 ? (
+                      <Text style={{ fontSize: 11, color: colors.statusGreen, marginTop: 4, fontWeight: '700' }}>
+                        Base: ₹{basePayout.toLocaleString()} · Tips: ₹{totalTips.toLocaleString()}
+                      </Text>
+                    ) : (
+                      <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>Earned via completed doorstep deliveries</Text>
+                    )}
+                  </View>
+
+                  <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textSub, letterSpacing: 1 }}>DELIVERIES COMPLETED</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textMain, marginTop: 4 }}>
+                      {filteredDeliveries.length}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
 
             {/* Completed deliveries history list */}
             <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold, marginTop: 8 }]}>COMPLETED DEPARTURES</Text>
@@ -921,8 +945,13 @@ export default function RiderDashboard() {
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                          +₹150
+                          +₹{150 + (delivery.orders?.tip_amount || 0)}
                         </Text>
+                        {delivery.orders?.tip_amount > 0 && (
+                          <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800', marginVertical: 2 }}>
+                            Includes ₹{delivery.orders.tip_amount} Tip
+                          </Text>
+                        )}
                         <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>PAID</Text>
                       </View>
                     </View>
@@ -1051,7 +1080,7 @@ export default function RiderDashboard() {
             <Text style={[styles.tabText, { color: activeSegment === 'earnings' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={getTabStyle(false)}>
+          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.push('/(rider)/rider_profile')}>
             <User size={18} color={colors.textSub} />
             <Text style={[styles.tabText, { color: colors.textSub }]}>Account</Text>
           </TouchableOpacity>
@@ -1082,7 +1111,7 @@ export default function RiderDashboard() {
             <Text style={[styles.tabText, { color: activeSegment === 'earnings' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={getTabStyle(false)}>
+          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.push('/(rider)/rider_profile')}>
             <User size={18} color={colors.textSub} />
             <Text style={[styles.tabText, { color: colors.textSub }]}>Account</Text>
           </TouchableOpacity>

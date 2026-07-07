@@ -9,6 +9,7 @@ export default function RiderLayout() {
       }}
     >
       <Stack.Screen name="rider_dashboard" />
+      <Stack.Screen name="rider_profile" />
     </Stack>
   );
 }

@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit } from 'lucide-react-native';
+import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit, HelpCircle, ChevronRight } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
@@ -476,6 +476,19 @@ export default function AccountScreen() {
                 thumbColor={isDark ? '#B88E2F' : '#f4f3f4'}
               />
             </View>
+
+            {/* Help & Support Row */}
+            <TouchableOpacity 
+              style={[styles.settingsRow, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
+              onPress={() => router.push('/(customer)/support')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingsLabelWrapper}>
+                <HelpCircle size={18} color={colors.accentGold} style={{ marginRight: 10 }} />
+                <Text style={[styles.settingsLabelText, { color: colors.textMain }]}>Help & Support</Text>
+              </View>
+              <ChevronRight size={16} color={colors.textSub} />
+            </TouchableOpacity>
 
             {/* Logout Row */}
             <TouchableOpacity 

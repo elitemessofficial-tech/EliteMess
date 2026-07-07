@@ -18,6 +18,7 @@ import { ShoppingCart, ChevronLeft, Plus, Minus } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface MenuItem {
   id: string;
@@ -27,6 +28,7 @@ interface MenuItem {
   category: string;
   is_available?: boolean;
   image_url?: string | null;
+  branch_id?: string;
 }
 
 const MOCK_MENU: MenuItem[] = [
@@ -43,8 +45,48 @@ const CATEGORIES = ['All', 'Starters', 'Mains', 'Desserts', 'Beverages'];
 export default function MenuScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
-  const { cart, menuItems, addToCart, removeFromCart, cartTotalItems, cartTotalPrice, loading } = useCart();
+  const { cart, menuItems, addToCart, removeFromCart, clearCart, cartTotalItems, cartTotalPrice, loading } = useCart();
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [branchName, setBranchName] = useState('Hotel Bet — Menu');
+
+  useEffect(() => {
+    const initBranchMenu = async () => {
+      try {
+        const branchId = await AsyncStorage.getItem('selected_branch_id');
+        const activeBranchId = branchId || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+        setSelectedBranchId(activeBranchId);
+
+        // Fetch branch name dynamically from Supabase
+        const { data: branchData } = await supabase
+          .from('branches')
+          .select('name')
+          .eq('id', activeBranchId)
+          .single();
+        if (branchData?.name) {
+          setBranchName(branchData.name);
+        }
+
+        // Branch mismatch cart cleanup
+        const cartItemIds = Object.keys(cart).filter(id => cart[id] > 0);
+        if (cartItemIds.length > 0 && menuItems.length > 0) {
+          const hasMismatch = cartItemIds.some(itemId => {
+            const item = menuItems.find(m => m.id === itemId);
+            return item && item.branch_id !== activeBranchId;
+          });
+
+          if (hasMismatch) {
+            console.log('Branch mismatch detected! Clearing cart.');
+            clearCart();
+          }
+        }
+      } catch (e) {
+        console.error('Error initializing branch menu:', e);
+      }
+    };
+
+    initBranchMenu();
+  }, [menuItems, cart]);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -65,9 +107,13 @@ export default function MenuScreen() {
     removeFromCart(id);
   };
 
+  const branchItems = selectedBranchId 
+    ? menuItems.filter(item => item.branch_id === selectedBranchId)
+    : menuItems;
+
   const filteredMenu = selectedCategory === 'All' 
-    ? menuItems 
-    : menuItems.filter(item => item.category === selectedCategory);
+    ? branchItems 
+    : branchItems.filter(item => item.category === selectedCategory);
 
   const renderItem = ({ item }: { item: MenuItem }) => {
     const qty = cart[item.id] || 0;
@@ -205,7 +251,7 @@ export default function MenuScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <FloatingHeader 
-        title="Hotel Bet — Main Lobby"
+        title={branchName}
         titleAlign="center"
         showBackButton={true}
         rightContent={(

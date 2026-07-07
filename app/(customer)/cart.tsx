@@ -8,13 +8,14 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Modal
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin } from 'lucide-react-native';
+import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin, X } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
@@ -122,6 +123,7 @@ export default function CartScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<{ [orderId: string]: Review }>({});
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState('Valued Guest');
 
   // Review Form States per Order
@@ -147,6 +149,7 @@ export default function CartScreen() {
     textMain: isDark ? '#FFFFFF' : '#0F172A',
     textSub: isDark ? '#AEAEB2' : '#64748B',
     accentGold: '#D4AF37', // Gold highlight
+    statusRed: '#EF4444',
     goldGrad: ['#E2B755', '#B88E2F'] as const,
     goldGlow: isDark ? 'rgba(212, 175, 55, 0.3)' : 'rgba(212, 175, 55, 0.15)',
   };
@@ -267,6 +270,41 @@ export default function CartScreen() {
     }
   };
 
+  const [cancelConfirmationOrderId, setCancelConfirmationOrderId] = useState<string | null>(null);
+
+  const handleCancelOrder = (orderId: string) => {
+    setCancelConfirmationOrderId(orderId);
+  };
+
+  const executeCancelOrder = async (orderId: string) => {
+    try {
+      setCancellingOrderId(orderId);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      // Update local state
+      setOrders(prev => 
+        prev.map(order => 
+          order.id === orderId 
+            ? { ...order, status: 'cancelled', delivery_otp: undefined } 
+            : order
+        )
+      );
+      showToast("Success", "Your order has been cancelled successfully.", "success");
+      setCancelConfirmationOrderId(null);
+    } catch (e: any) {
+      console.error('Error cancelling order:', e.message);
+      showToast('Error', 'Failed to cancel order: ' + e.message, 'error');
+      setCancelConfirmationOrderId(null);
+    } finally {
+      setCancellingOrderId(null);
+    }
+  };
+
   const ensureUserProfileExists = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -328,12 +366,15 @@ export default function CartScreen() {
       // Generate an 8-digit random delivery verification OTP
       const otpCode = Math.floor(10000000 + Math.random() * 90000000).toString();
 
+      // Get selected branch ID from AsyncStorage
+      const activeBranchId = await AsyncStorage.getItem('selected_branch_id') || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+
       // Write order directly into public.orders table
       const { data: newOrder, error: orderError } = await supabase
         .from('orders')
         .insert({
           customer_id: userId,
-          branch_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', // default Hotel Bet - Downtown Branch
+          branch_id: activeBranchId,
           status: 'pending',
           total_amount: total,
           delivery_address: address,
@@ -458,9 +499,21 @@ export default function CartScreen() {
               }
             ]}
           >
+            {/* Top Right Close button */}
+            <TouchableOpacity 
+              style={{ position: 'absolute', top: 20, right: 20, zIndex: 10 }}
+              onPress={() => {
+                setShowSuccessModal(false);
+                setActiveSegment('history');
+              }}
+              activeOpacity={0.7}
+            >
+              <X size={18} color={colors.textSub} />
+            </TouchableOpacity>
+
             <View style={styles.lottieContainer}>
               <LottieView
-                source={require('../../assets/images/Delivery guy.lottie')}
+                source={require('../../assets/images/delivery_guy.lottie')}
                 autoPlay
                 loop
                 style={styles.lottieAnimation}
@@ -520,6 +573,20 @@ export default function CartScreen() {
               >
                 <Text style={styles.trackBtnText}>Track Order</Text>
               </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Bottom Close Option */}
+            <TouchableOpacity
+              onPress={() => {
+                setShowSuccessModal(false);
+                setActiveSegment('history');
+              }}
+              activeOpacity={0.8}
+              style={{ marginTop: 12, paddingVertical: 10, width: '100%', alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.textSub, fontWeight: '800', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5 }}>
+                Close
+              </Text>
             </TouchableOpacity>
           </BlurView>
         </View>
@@ -795,7 +862,7 @@ export default function CartScreen() {
                           </Text>
                         ) : null}
 
-                        {order.status !== 'delivered' && order.delivery_otp ? (
+                        {order.status !== 'pending' && order.status !== 'delivered' && order.status !== 'cancelled' && order.delivery_otp ? (
                           <View style={[styles.otpDisplayContainer, { backgroundColor: isDark ? 'rgba(212, 175, 55, 0.05)' : 'rgba(212, 175, 55, 0.08)', borderColor: colors.cardBorder }]}>
                             <Text style={[styles.otpDisplayText, { color: colors.textSub }]}>
                               Share this 8-digit OTP with the rider on delivery:
@@ -807,105 +874,124 @@ export default function CartScreen() {
                         ) : null}
                       </TouchableOpacity>
 
-                      <View style={[styles.divider, { backgroundColor: colors.cardBorder, marginVertical: 10 }]} />
+                      {order.status !== 'cancelled' && (
+                        <>
+                          <View style={[styles.divider, { backgroundColor: colors.cardBorder, marginVertical: 10 }]} />
 
-                      {/* Review Detail (Submitted vs Form View) */}
-                      {review ? (
-                        <View style={styles.reviewSummaryBlock}>
-                          <View style={styles.badgeRow}>
-                            <CheckCircle size={14} color="#10B981" />
-                            <Text style={styles.completedReviewText}>Review Submitted</Text>
-                          </View>
+                          {/* Review Detail (Submitted vs Form View) */}
+                          {review ? (
+                            <View style={styles.reviewSummaryBlock}>
+                              <View style={styles.badgeRow}>
+                                <CheckCircle size={14} color="#10B981" />
+                                <Text style={styles.completedReviewText}>Review Submitted</Text>
+                              </View>
 
-                          {/* Order Feedback */}
-                          <View style={styles.feedbackRow}>
-                            <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
-                            {renderStars(review.orderRating)}
-                          </View>
-                          {review.orderText ? (
-                            <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                              "{review.orderText}"
-                            </Text>
-                          ) : null}
+                              {/* Order Feedback */}
+                              <View style={styles.feedbackRow}>
+                                <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
+                                {renderStars(review.orderRating)}
+                              </View>
+                              {review.orderText ? (
+                                <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                  "{review.orderText}"
+                                </Text>
+                              ) : null}
 
-                          {/* Delivery Feedback */}
-                          <View style={[styles.feedbackRow, { marginTop: 10 }]}>
-                            <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
-                            {renderStars(review.deliveryRating)}
-                          </View>
-                          {review.deliveryText ? (
-                            <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                              "{review.deliveryText}"
-                            </Text>
-                          ) : null}
-                        </View>
-                      ) : isEditing ? (
-                        <View style={styles.formBlock}>
-                          <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
-                          <View style={styles.ratingStarsRow}>
-                            {renderStars(orderRating, setOrderRating)}
-                            <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
-                          </View>
-                          <TextInput
-                            style={[
-                              styles.formInput,
-                              { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                            ]}
-                            value={orderText}
-                            onChangeText={setOrderText}
-                            placeholder="How was the food quality and preparation?"
-                            placeholderTextColor="#8E8E93"
-                          />
+                              {/* Delivery Feedback */}
+                              <View style={[styles.feedbackRow, { marginTop: 10 }]}>
+                                <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
+                                {renderStars(review.deliveryRating)}
+                              </View>
+                              {review.deliveryText ? (
+                                <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                  "{review.deliveryText}"
+                                </Text>
+                              ) : null}
+                            </View>
+                          ) : isEditing ? (
+                            <View style={styles.formBlock}>
+                              <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
+                              <View style={styles.ratingStarsRow}>
+                                {renderStars(orderRating, setOrderRating)}
+                                <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
+                              </View>
+                              <TextInput
+                                style={[
+                                  styles.formInput,
+                                  { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                ]}
+                                value={orderText}
+                                onChangeText={setOrderText}
+                                placeholder="How was the food quality and preparation?"
+                                placeholderTextColor="#8E8E93"
+                              />
 
-                          <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
-                          <View style={styles.ratingStarsRow}>
-                            {renderStars(deliveryRating, setDeliveryRating)}
-                            <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
-                          </View>
-                          <TextInput
-                            style={[
-                              styles.formInput,
-                              { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                            ]}
-                            value={deliveryText}
-                            onChangeText={setDeliveryText}
-                            placeholder="Was the delivery quick and rider polite?"
-                            placeholderTextColor="#8E8E93"
-                          />
+                              <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
+                              <View style={styles.ratingStarsRow}>
+                                {renderStars(deliveryRating, setDeliveryRating)}
+                                <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
+                              </View>
+                              <TextInput
+                                style={[
+                                  styles.formInput,
+                                  { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                ]}
+                                value={deliveryText}
+                                onChangeText={setDeliveryText}
+                                placeholder="Was the delivery quick and rider polite?"
+                                placeholderTextColor="#8E8E93"
+                              />
 
-                          {/* Buttons */}
-                          <View style={styles.buttonRow}>
+                              {/* Buttons */}
+                              <View style={styles.buttonRow}>
+                                <TouchableOpacity
+                                  style={styles.cancelBtn}
+                                  onPress={() => setActiveFormOrderId(null)}
+                                >
+                                  <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={styles.submitBtnWrapper}
+                                  onPress={() => handleSubmitReview(order.id)}
+                                >
+                                  <LinearGradient
+                                    colors={colors.goldGrad}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={styles.submitBtn}
+                                  >
+                                    <Text style={styles.submitBtnText}>Submit Review</Text>
+                                  </LinearGradient>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          ) : order.status === 'pending' ? (
                             <TouchableOpacity
-                              style={styles.cancelBtn}
-                              onPress={() => setActiveFormOrderId(null)}
+                              style={[styles.writeReviewBtn, { borderColor: '#EF4444' }]}
+                              onPress={() => handleCancelOrder(order.id)}
+                              disabled={cancellingOrderId === order.id}
+                              activeOpacity={0.8}
                             >
-                              <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
+                              {cancellingOrderId === order.id ? (
+                                <ActivityIndicator size="small" color="#EF4444" />
+                              ) : (
+                                <Text style={[styles.writeReviewBtnText, { color: '#EF4444' }]}>
+                                  Cancel Order
+                                </Text>
+                              )}
                             </TouchableOpacity>
-
+                          ) : (
                             <TouchableOpacity
-                              style={styles.submitBtnWrapper}
-                              onPress={() => handleSubmitReview(order.id)}
+                              style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
+                              onPress={() => setActiveFormOrderId(order.id)}
                             >
-                              <LinearGradient
-                                colors={colors.goldGrad}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={styles.submitBtn}
-                              >
-                                <Text style={styles.submitBtnText}>Submit Review</Text>
-                              </LinearGradient>
+                              <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
+                                Leave Feedback
+                              </Text>
                             </TouchableOpacity>
-                          </View>
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
-                          onPress={() => setActiveFormOrderId(order.id)}
-                        >
-                          <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
-                            Leave Feedback
-                          </Text>
-                        </TouchableOpacity>
+                          )}
+                        </>
                       )}
                     </View>
                   );
@@ -966,6 +1052,53 @@ export default function CartScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Cancellation Confirmation Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={cancelConfirmationOrderId !== null}
+        onRequestClose={() => setCancelConfirmationOrderId(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={[styles.modalContent, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)' }]}>
+            <LottieView
+              source={require('../../assets/images/wrong.lottie')}
+              autoPlay
+              loop
+              style={{ width: 100, height: 100, marginBottom: 12 }}
+            />
+            <Text style={[styles.modalTitle, { color: colors.statusRed }]}>CANCEL ORDER?</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSub }]}>
+              Are you sure you want to cancel this order? This action cannot be undone.
+            </Text>
+            
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { borderColor: colors.cardBorder }]} 
+                onPress={() => setCancelConfirmationOrderId(null)}
+              >
+                <Text style={{ color: colors.textMain, fontWeight: '700', fontSize: 12 }}>Keep Order</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: colors.statusRed, borderColor: colors.statusRed }]} 
+                onPress={() => {
+                  if (cancelConfirmationOrderId) {
+                    executeCancelOrder(cancelConfirmationOrderId);
+                  }
+                }}
+                disabled={cancellingOrderId === cancelConfirmationOrderId}
+              >
+                {cancellingOrderId === cancelConfirmationOrderId ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 12 }}>Yes, Cancel</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1476,5 +1609,52 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 20,
+    fontWeight: '600',
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

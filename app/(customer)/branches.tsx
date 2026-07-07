@@ -107,6 +107,11 @@ export default function BranchesScreen() {
 
   const handleSelectBranch = async (branchId: string) => {
     console.log('Selected Branch:', branchId);
+    try {
+      await AsyncStorage.setItem('selected_branch_id', branchId);
+    } catch (e) {
+      console.error('Failed to save selected branch ID:', e);
+    }
     router.push('/(customer)/menu');
   };
 
@@ -156,10 +161,11 @@ export default function BranchesScreen() {
     branchId: string, 
     title: string, 
     subtitle: string, 
-    distance: string
+    distance: string,
+    index?: number
   ) => {
     return (
-      <View style={[styles.branchCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+      <View key={branchId || `branch-key-${index}`} style={[styles.branchCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
         {/* Top Half: Photo Placeholder */}
         <View style={styles.photoBox}>
           <View style={styles.photoPill}>
@@ -241,12 +247,13 @@ export default function BranchesScreen() {
               {renderSkeletonCard(2)}
             </>
           ) : (
-            branches.map(branch => (
+            branches.map((branch, index) => (
               renderBranchCard(
                 branch.id, 
                 branch.name, 
                 branch.address, 
-                branch.distance || (branch.id === 'downtown' || branch.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d' ? '0.3 km' : '1.1 km')
+                branch.distance || (branch.id === 'downtown' || branch.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d' ? '0.3 km' : '1.1 km'),
+                index
               )
             ))
           )}

@@ -6,15 +6,20 @@ import {
   TouchableOpacity, 
   ScrollView, 
   Platform,
-  Image
+  Image,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Modal
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck, User } from 'lucide-react-native';
+import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, CheckCircle, AlertCircle, ArrowRight, ShieldCheck, User, Info } from 'lucide-react-native';
 import { useAppTheme } from '../../../src/context/ThemeContext';
 import { supabase } from '../../../src/services/supabase';
 import Loader from '../../../components/Loader';
+import LottieView from 'lottie-react-native';
 
 interface DBOrderItem {
   id: string;
@@ -28,6 +33,7 @@ interface DBOrderItem {
 interface DBOrder {
   id: string;
   total_amount: number;
+  tip_amount?: number;
   created_at: string;
   delivery_address: string;
   notes?: string;
@@ -43,6 +49,7 @@ interface DBOrder {
     id: string;
     status: string;
     rider_id?: string;
+    delivered_at?: string;
     profiles?: {
       full_name: string;
     };
@@ -57,6 +64,63 @@ export default function OrderDetailsScreen() {
   const [order, setOrder] = useState<DBOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Tipping states
+  const [customTip, setCustomTip] = useState('');
+  const [showCustomTipInput, setShowCustomTipInput] = useState(false);
+  const [tipping, setTipping] = useState(false);
+
+  // Cancellation states
+  const [cancelling, setCancelling] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+
+  // Toast notifications state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
+  const [toastTitle, setToastTitle] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimeoutRef = React.useRef<any>(null);
+
+  const showToast = (title: string, message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastTitle(title);
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastVisible(false);
+    }, 4000);
+  };
+
+  const handleCancelOrder = () => {
+    setShowCancelConfirmation(true);
+  };
+
+  const executeCancelOrder = async () => {
+    if (!order || order.status !== 'pending') return;
+    try {
+      setCancelling(true);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', order.id);
+
+      if (error) throw error;
+      setOrder(prev => prev ? { ...prev, status: 'cancelled', delivery_otp: undefined } : null);
+      
+      // Close confirmation modal and show toast immediately
+      setShowCancelConfirmation(false);
+      showToast("Success", "Your order has been cancelled successfully.", "success");
+    } catch (e: any) {
+      console.error('Error cancelling order:', e.message);
+      showToast('Error', 'Failed to cancel order: ' + e.message, 'error');
+      setShowCancelConfirmation(false);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -78,6 +142,7 @@ export default function OrderDetailsScreen() {
         .select(`
           id,
           total_amount,
+          tip_amount,
           created_at,
           delivery_address,
           notes,
@@ -100,6 +165,7 @@ export default function OrderDetailsScreen() {
             id,
             status,
             rider_id,
+            delivered_at,
             profiles (
               full_name
             )
@@ -140,6 +206,25 @@ export default function OrderDetailsScreen() {
     }
   };
 
+  const handleTipRider = async (amount: number) => {
+    if (amount <= 0 || !order) return;
+    try {
+      setTipping(true);
+      const { error } = await supabase
+        .from('orders')
+        .update({ tip_amount: amount })
+        .eq('id', order.id);
+
+      if (error) throw error;
+      setOrder(prev => prev ? { ...prev, tip_amount: amount } : null);
+    } catch (e: any) {
+      console.error('Error submitting tip:', e.message);
+    } finally {
+      setTipping(false);
+      setShowCustomTipInput(false);
+    }
+  };
+
   useEffect(() => {
     fetchOrderDetails();
 
@@ -166,6 +251,27 @@ export default function OrderDetailsScreen() {
       supabase.removeChannel(orderChannel);
     };
   }, [id]);
+
+  const getLottieSource = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return require('../../../assets/images/food_beverage.lottie');
+      case 'accepted':
+      case 'preparing':
+        return require('../../../assets/images/cooking.lottie');
+      case 'ready_for_pickup':
+        return require('../../../assets/images/food.lottie');
+      case 'dispatched':
+      case 'out_for_delivery':
+        return require('../../../assets/images/receive_order.lottie');
+      case 'delivered':
+        return require('../../../assets/images/a2z_delivered.lottie');
+      case 'cancelled':
+        return require('../../../assets/images/wrong.lottie');
+      default:
+        return require('../../../assets/images/food_beverage.lottie');
+    }
+  };
 
   const getStatusLevel = (status: string) => {
     switch (status) {
@@ -225,8 +331,8 @@ export default function OrderDetailsScreen() {
     { level: 5, label: 'Arrived' }
   ];
 
-  const gst = order.total_amount * 0.05;
-  const subtotal = order.total_amount - gst - 150; // Total - 5% GST - 150 delivery fee
+  const subtotal = order.total_amount > 150 ? Math.round((order.total_amount - 150) / 1.05) : 0;
+  const gst = order.total_amount > 150 ? Math.round(subtotal * 0.05) : 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -261,6 +367,35 @@ export default function OrderDetailsScreen() {
           <Text style={[styles.createdAtText, { color: colors.textSub }]}>
             Placed on: {new Date(order.created_at).toLocaleString()}
           </Text>
+          {order.status === 'delivered' && order.deliveries?.delivered_at && (
+            <Text style={[styles.createdAtText, { color: colors.statusGreen, marginTop: 4, fontWeight: '700' }]}>
+              Delivered on: {new Date(order.deliveries.delivered_at).toLocaleString()}
+            </Text>
+          )}
+          {order.status === 'pending' && (
+            <TouchableOpacity
+              style={{ borderColor: colors.statusRed, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 14 }}
+              onPress={handleCancelOrder}
+              disabled={cancelling}
+              activeOpacity={0.8}
+            >
+              {cancelling ? (
+                <ActivityIndicator size="small" color={colors.statusRed} />
+              ) : (
+                <Text style={{ color: colors.statusRed, fontWeight: '800', fontSize: 12 }}>Cancel Order</Text>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Dynamic Lottie Status Illustration */}
+        <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center', paddingVertical: 20 }]}>
+          <LottieView
+            source={getLottieSource(order.status)}
+            autoPlay
+            loop
+            style={{ width: 180, height: 180 }}
+          />
         </View>
 
         {/* Stepper Progress Section */}
@@ -325,7 +460,7 @@ export default function OrderDetailsScreen() {
         )}
 
         {/* OTP Code Display Box */}
-        {order.status !== 'delivered' && !isCancelled && order.delivery_otp && (
+        {order.status !== 'pending' && order.status !== 'delivered' && !isCancelled && order.delivery_otp && (
           <View style={[styles.card, styles.otpCard, { borderColor: 'rgba(212, 175, 55, 0.25)' }]}>
             <ShieldCheck size={20} color={colors.accentGold} style={{ marginBottom: 6 }} />
             <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Delivery Verification Code</Text>
@@ -355,6 +490,83 @@ export default function OrderDetailsScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+        )}
+        {/* Tip your Delivery Partner Card */}
+        {order.deliveries && order.deliveries.rider_id && !isCancelled && (
+          <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13 }}>Tip your Delivery Partner</Text>
+              <Info size={14} color={colors.textSub} />
+            </View>
+
+            {order.tip_amount && order.tip_amount > 0 ? (
+              <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
+                <Text style={{ color: colors.statusGreen, fontWeight: '700', fontSize: 12 }}>
+                  Thank you! You tipped ₹{order.tip_amount} to your delivery partner. 100% of this tip goes to them.
+                </Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, lineHeight: 16, marginBottom: 14 }}>
+                  Thank your delivery partner by leaving them a tip. 100% of the tip will go to your delivery partner.
+                </Text>
+
+                {showCustomTipInput ? (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                      placeholder="Enter amount (₹)"
+                      placeholderTextColor={colors.textSub}
+                      keyboardType="numeric"
+                      value={customTip}
+                      onChangeText={setCustomTip}
+                    />
+                    <TouchableOpacity
+                      style={{ backgroundColor: colors.accentGold, paddingHorizontal: 16, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => {
+                        const amt = parseInt(customTip);
+                        if (amt > 0) {
+                          handleTipRider(amt);
+                        }
+                      }}
+                      disabled={tipping}
+                    >
+                      {tipping ? (
+                        <ActivityIndicator size="small" color="#000000" />
+                      ) : (
+                        <Text style={{ color: '#000000', fontWeight: '900', fontSize: 12 }}>Submit</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ paddingHorizontal: 12, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setShowCustomTipInput(false)}
+                    >
+                      <Text style={{ color: colors.textMain, fontWeight: '700', fontSize: 12 }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[20, 30, 50].map((amt) => (
+                      <TouchableOpacity
+                        key={amt}
+                        style={{ flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+                        onPress={() => handleTipRider(amt)}
+                        disabled={tipping}
+                      >
+                        <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 12 }}>₹ {amt}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={{ flex: 1, height: 38, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => setShowCustomTipInput(true)}
+                    >
+                      <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 12 }}>Other</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         )}
 
@@ -395,10 +607,17 @@ export default function OrderDetailsScreen() {
             <Text style={[styles.receiptValue, { color: colors.textMain }]}>₹150</Text>
           </View>
 
+          {order.tip_amount && order.tip_amount > 0 ? (
+            <View style={styles.receiptRow}>
+              <Text style={[styles.receiptLabel, { color: colors.textSub }]}>Doorstep Tip</Text>
+              <Text style={[styles.receiptValue, { color: colors.statusGreen }]}>+₹{order.tip_amount}</Text>
+            </View>
+          ) : null}
+
           <View style={[styles.receiptRow, { marginTop: 10 }]}>
             <Text style={[styles.invoiceTotalLabel, { color: colors.textMain }]}>Total Invoice</Text>
             <Text style={[styles.invoiceTotalVal, { color: colors.accentGold }]}>
-              ₹{parseFloat(order.total_amount as any).toLocaleString()}
+              ₹{(parseFloat(order.total_amount as any) + (order.tip_amount || 0)).toLocaleString()}
             </Text>
           </View>
         </View>
@@ -429,6 +648,66 @@ export default function OrderDetailsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Cancellation Confirmation Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showCancelConfirmation}
+        onRequestClose={() => setShowCancelConfirmation(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={[styles.modalContent, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)' }]}>
+            <LottieView
+              source={require('../../../assets/images/wrong.lottie')}
+              autoPlay
+              loop
+              style={{ width: 100, height: 100, marginBottom: 12 }}
+            />
+            <Text style={[styles.modalTitle, { color: colors.statusRed }]}>CANCEL ORDER?</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSub }]}>
+              Are you sure you want to cancel this order? This action cannot be undone.
+            </Text>
+            
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { borderColor: colors.cardBorder }]} 
+                onPress={() => setShowCancelConfirmation(false)}
+              >
+                <Text style={{ color: colors.textMain, fontWeight: '700', fontSize: 12 }}>Keep Order</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: colors.statusRed, borderColor: colors.statusRed }]} 
+                onPress={executeCancelOrder}
+                disabled={cancelling}
+              >
+                {cancelling ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 12 }}>Yes, Cancel</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Toast Alert overlay */}
+      {toastVisible && (
+        <View style={styles.alertOverlay}>
+          <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={[styles.alertGlassCard, { borderColor: 'rgba(212, 175, 55, 0.25)', backgroundColor: isDark ? 'rgba(15, 15, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
+            <View style={styles.alertContent}>
+              {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
+              {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
+              {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
+              <View style={styles.alertTextWrapper}>
+                <Text style={[styles.alertTitleText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{toastTitle}</Text>
+                <Text style={[styles.alertMsgText, { color: isDark ? '#AEAEB2' : '#48484A' }]}>{toastMessage}</Text>
+              </View>
+            </View>
+          </BlurView>
+        </View>
+      )}
     </View>
   );
 }
@@ -625,5 +904,99 @@ const styles = StyleSheet.create({
     borderWidth: 0.8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  input: {
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 40,
+    paddingHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 20,
+    fontWeight: '600',
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertOverlay: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 9999,
+    alignItems: 'center',
+  },
+  alertGlassCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  alertContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  alertTextWrapper: {
+    flex: 1,
+    flexDirection: 'column',
+    gap: 2,
+  },
+  alertTitleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  alertMsgText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

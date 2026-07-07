@@ -10,13 +10,14 @@ import {
   Alert,
   TextInput,
   Switch,
-  Image
+  Image,
+  Modal
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
@@ -33,6 +34,7 @@ interface OrderItem {
 interface DBOrder {
   id: string;
   total_amount: number;
+  tip_amount?: number;
   created_at: string;
   delivery_address: string;
   notes?: string;
@@ -57,6 +59,7 @@ export default function OwnerDashboard() {
 
   const [orders, setOrders] = useState<DBOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDetailOrder, setSelectedDetailOrder] = useState<DBOrder | null>(null);
   const [activeSegment, setActiveSegment] = useState<'orders' | 'reviews' | 'menu' | 'sales'>('orders');
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [salesFilter, setSalesFilter] = useState<'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lifetime'>('lifetime');
@@ -164,6 +167,7 @@ export default function OwnerDashboard() {
           delivery_address,
           notes,
           status,
+          tip_amount,
           profiles (
             full_name,
             phone_number
@@ -576,55 +580,60 @@ export default function OwnerDashboard() {
                   
                   return (
                     <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} key={order.id}>
-                      <View style={styles.cardHeader}>
-                        <Text style={[styles.orderId, { color: colors.accentGold }]}>
-                          #{order.id.slice(0, 8).toUpperCase()}
-                        </Text>
-                        <Text style={[styles.orderItems, { color: colors.textMain }]}>
-                          {itemsCount} item{itemsCount !== 1 ? 's' : ''} · {priceLabel}
-                        </Text>
-                      </View>
-                      
-                      <View style={styles.cardMid}>
-                        <Text style={[styles.guestName, { color: colors.textMain }]}>
-                          {guestName} ({order.profiles?.phone_number || 'No Phone'})
-                        </Text>
-                        <Text style={[styles.timeText, { color: colors.textSub }]}>{timeLabel}</Text>
-                      </View>
-
-                      {/* Display items names detail */}
-                      {order.order_items && order.order_items.length > 0 && (
-                        <View style={styles.itemsListing}>
-                          {order.order_items.map((item, idx) => (
-                            <Text key={idx} style={[styles.itemsListingText, { color: colors.textSub }]}>
-                              • {item.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{item.quantity}</Text>
-                            </Text>
-                          ))}
+                      <TouchableOpacity 
+                        onPress={() => setSelectedDetailOrder(order)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.cardHeader}>
+                          <Text style={[styles.orderId, { color: colors.accentGold }]}>
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </Text>
+                          <Text style={[styles.orderItems, { color: colors.textMain }]}>
+                            {itemsCount} item{itemsCount !== 1 ? 's' : ''} · {priceLabel}
+                          </Text>
                         </View>
-                      )}
-                      
-                      <Text style={[styles.kitchenText, { color: colors.textMain }]}>
-                        Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
-                      </Text>
+                        
+                        <View style={styles.cardMid}>
+                          <Text style={[styles.guestName, { color: colors.textMain }]}>
+                            {guestName} ({order.profiles?.phone_number || 'No Phone'})
+                          </Text>
+                          <Text style={[styles.timeText, { color: colors.textSub }]}>{timeLabel}</Text>
+                        </View>
 
-                      {order.notes ? (
-                        <Text style={[styles.notesText, { color: colors.textSub }]}>
-                          Notes: "{order.notes}"
+                        {/* Display items names detail */}
+                        {order.order_items && order.order_items.length > 0 && (
+                          <View style={styles.itemsListing}>
+                            {order.order_items.map((item, idx) => (
+                              <Text key={idx} style={[styles.itemsListingText, { color: colors.textSub }]}>
+                                • {item.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{item.quantity}</Text>
+                              </Text>
+                            ))}
+                          </View>
+                        )}
+                        
+                        <Text style={[styles.kitchenText, { color: colors.textMain }]}>
+                          Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
                         </Text>
-                      ) : null}
 
-                      {/* Delivery assignment display */}
-                      {order.deliveries ? (
-                        <Text style={[styles.riderAssignmentText, { color: colors.statusGreen }]}>
-                          Rider Assigned: {order.deliveries.profiles?.full_name || 'Elite Rider Alpha'} ({order.deliveries.status.toUpperCase()})
-                        </Text>
-                      ) : null}
+                        {order.notes ? (
+                          <Text style={[styles.notesText, { color: colors.textSub }]}>
+                            Notes: "{order.notes}"
+                          </Text>
+                        ) : null}
 
-                      <View style={[styles.statusBanner, { backgroundColor: 'rgba(255, 255, 255, 0.02)' }]}>
-                        <Text style={[styles.statusBannerText, { color: colors.accentGold }]}>
-                          STATUS: {order.status.toUpperCase()}
-                        </Text>
-                      </View>
+                        {/* Delivery assignment display */}
+                        {order.deliveries ? (
+                          <Text style={[styles.riderAssignmentText, { color: colors.statusGreen }]}>
+                            Rider Assigned: {order.deliveries.profiles?.full_name || 'Elite Rider Alpha'} ({order.deliveries.status.toUpperCase()})
+                          </Text>
+                        ) : null}
+
+                        <View style={[styles.statusBanner, { backgroundColor: 'rgba(255, 255, 255, 0.02)' }]}>
+                          <Text style={[styles.statusBannerText, { color: colors.accentGold }]}>
+                            STATUS: {order.status.toUpperCase()}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
 
                       {/* Actions */}
                       <View style={styles.actionsRow}>
@@ -1200,6 +1209,225 @@ export default function OwnerDashboard() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Detailed Order Modal for Owner */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={selectedDetailOrder !== null}
+        onRequestClose={() => setSelectedDetailOrder(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.96)' : 'rgba(255, 255, 255, 0.96)'
+              }
+            ]}
+          >
+            {selectedDetailOrder && (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+                {/* Header */}
+                <View style={[styles.modalHeader, { borderBottomColor: colors.cardBorder }]}>
+                  <Text style={[styles.modalTitleText, { color: colors.accentGold }]}>
+                    ORDER DETAILS
+                  </Text>
+                  <TouchableOpacity onPress={() => setSelectedDetailOrder(null)} style={{ padding: 4 }}>
+                    <X size={20} color={colors.textSub} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Status & ID banner */}
+                <View style={{ marginBottom: 20, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textMain }}>
+                    #{selectedDetailOrder.id.slice(0, 8).toUpperCase()}
+                  </Text>
+                  <View style={{
+                    marginTop: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 4,
+                    borderRadius: 12,
+                    backgroundColor: selectedDetailOrder.status === 'cancelled' 
+                      ? 'rgba(239, 68, 68, 0.15)' 
+                      : selectedDetailOrder.status === 'completed' 
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : 'rgba(234, 179, 8, 0.15)',
+                    borderWidth: 0.8,
+                    borderColor: selectedDetailOrder.status === 'cancelled' 
+                      ? '#EF4444' 
+                      : selectedDetailOrder.status === 'completed' 
+                      ? '#10B981'
+                      : '#EAB308',
+                  }}>
+                    <Text style={{
+                      fontSize: 10,
+                      fontWeight: '800',
+                      letterSpacing: 1,
+                      textTransform: 'uppercase',
+                      color: selectedDetailOrder.status === 'cancelled' 
+                        ? '#EF4444' 
+                        : selectedDetailOrder.status === 'completed' 
+                        ? '#10B981'
+                        : '#EAB308',
+                    }}>
+                      {selectedDetailOrder.status}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Section: Customer Info */}
+                <View style={styles.modalSection}>
+                  <Text style={[styles.modalSectionTitle, { color: colors.accentGold }]}>Customer Details</Text>
+                  <View style={[styles.modalInvoiceCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                    <View style={styles.modalInfoRow}>
+                      <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Name:</Text>
+                      <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>
+                        {selectedDetailOrder.profiles?.full_name || 'Guest Customer'}
+                      </Text>
+                    </View>
+                    <View style={styles.modalInfoRow}>
+                      <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Phone:</Text>
+                      <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>
+                        {selectedDetailOrder.profiles?.phone_number || 'N/A'}
+                      </Text>
+                    </View>
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Delivery Address:</Text>
+                      <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700', marginTop: 2 }}>
+                        {selectedDetailOrder.delivery_address}
+                      </Text>
+                    </View>
+                    {selectedDetailOrder.notes ? (
+                      <View style={{ marginTop: 8, borderTopWidth: 0.8, borderTopColor: colors.cardBorder, paddingTop: 8 }}>
+                        <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Instruction Notes:</Text>
+                        <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', marginTop: 2 }}>
+                          "{selectedDetailOrder.notes}"
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Section: Items Billing */}
+                <View style={styles.modalSection}>
+                  <Text style={[styles.modalSectionTitle, { color: colors.accentGold }]}>Bill Invoice</Text>
+                  <View style={[styles.modalInvoiceCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                    {/* Header Row */}
+                    <View style={[styles.invoiceItemRow, { borderBottomWidth: 0.5, borderBottomColor: colors.cardBorder, paddingBottom: 6 }]}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub }}>ITEM</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub }}>SUBTOTAL</Text>
+                    </View>
+
+                    {/* Items loop */}
+                    {selectedDetailOrder.order_items?.map((item, idx) => {
+                      const itemSubtotal = item.quantity * item.price_at_order;
+                      return (
+                        <View key={idx} style={[styles.invoiceItemRow, { marginTop: 8 }]}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '800' }}>
+                              {item.menu_items?.name || 'Menu Item'}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+                              ₹{item.price_at_order.toLocaleString()} x {item.quantity}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '800' }}>
+                            ₹{itemSubtotal.toLocaleString()}
+                          </Text>
+                        </View>
+                      );
+                    })}
+
+                    <View style={[styles.invoiceDivider, { backgroundColor: colors.cardBorder }]} />
+
+                    {/* Subtotal, GST, Delivery Fee, Tips, Total */}
+                    {(() => {
+                      const subtotal = selectedDetailOrder.order_items?.reduce((sum, item) => sum + (item.quantity * item.price_at_order), 0) || 0;
+                      const gst = Math.round(subtotal * 0.05);
+                      const deliveryFee = 150;
+                      const tip = selectedDetailOrder.tip_amount || 0;
+                      const calculatedTotal = subtotal + gst + deliveryFee + tip;
+                      
+                      return (
+                        <>
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Subtotal:</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{subtotal.toLocaleString()}</Text>
+                          </View>
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>GST (5%):</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{gst.toLocaleString()}</Text>
+                          </View>
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Delivery Fee:</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{deliveryFee}</Text>
+                          </View>
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Doorstep Tip:</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.statusGreen }]}>+₹{tip.toLocaleString()}</Text>
+                          </View>
+
+                          <View style={[styles.invoiceDivider, { backgroundColor: colors.cardBorder }]} />
+
+                          <View style={styles.modalInfoRow}>
+                            <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textMain }}>Grand Total:</Text>
+                            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.accentGold }}>
+                              ₹{calculatedTotal.toLocaleString()}
+                            </Text>
+                          </View>
+                        </>
+                      );
+                    })()}
+                  </View>
+                </View>
+
+                {/* Section: Rider Information */}
+                {selectedDetailOrder.deliveries ? (
+                  <View style={styles.modalSection}>
+                    <Text style={[styles.modalSectionTitle, { color: colors.accentGold }]}>Rider Assignment</Text>
+                    <View style={[styles.modalInvoiceCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                      <View style={styles.modalInfoRow}>
+                        <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Rider Name:</Text>
+                        <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>
+                          {selectedDetailOrder.deliveries.profiles?.full_name || 'Elite Rider Alpha'}
+                        </Text>
+                      </View>
+                      <View style={styles.modalInfoRow}>
+                        <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Delivery Status:</Text>
+                        <Text style={[styles.modalInfoValue, { color: colors.statusGreen, textTransform: 'uppercase' }]}>
+                          {selectedDetailOrder.deliveries.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Close Button */}
+                <TouchableOpacity
+                  onPress={() => setSelectedDetailOrder(null)}
+                  style={styles.modalCloseBtn}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={colors.goldGrad}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ width: '100%', height: '100%', borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={[styles.modalCloseBtnText, { color: '#000000' }]}>
+                      Dismiss Details
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </BlurView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1589,5 +1817,90 @@ const styles = StyleSheet.create({
   catPillText: {
     fontSize: 10,
     fontWeight: '800',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '90%',
+    maxWidth: 440,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    borderBottomWidth: 0.8,
+    paddingBottom: 12,
+  },
+  modalTitleText: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  modalSection: {
+    marginBottom: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  modalInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  modalInfoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalInfoValue: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  modalInvoiceCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 6,
+  },
+  invoiceItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  invoiceDivider: {
+    height: 0.8,
+    marginVertical: 12,
+  },
+  modalCloseBtn: {
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  modalCloseBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 });

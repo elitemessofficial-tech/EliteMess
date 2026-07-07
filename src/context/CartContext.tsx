@@ -8,6 +8,7 @@ export interface MenuItem {
   price: number;
   category: string;
   is_available?: boolean;
+  branch_id?: string;
 }
 
 interface CartContextType {
