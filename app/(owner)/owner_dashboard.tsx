@@ -11,14 +11,15 @@ import {
   TextInput,
   Switch,
   Image,
-  Modal
+  Modal,
+  Linking
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
@@ -97,6 +98,21 @@ export default function OwnerDashboard() {
   const [ownerReplyText, setOwnerReplyText] = useState('');
   const chatScrollRef = useRef<ScrollView>(null);
   const [supportTab, setSupportTab] = useState<'active' | 'resolved'>('active');
+
+  const handleOpenMap = (lat?: number, lng?: number) => {
+    if (!lat || !lng) return;
+    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
+    const latLng = `${lat},${lng}`;
+    const label = 'Delivery Location';
+    const url = Platform.select({
+      ios: `${scheme}${label}@${latLng}`,
+      android: `${scheme}${latLng}(${label})`,
+      web: `https://www.google.com/maps/search/?api=1&query=${latLng}`
+    });
+    if (url) {
+      Linking.openURL(url);
+    }
+  };
 
   // Menu Customization States
   const [menuItems, setMenuItems] = useState<any[]>([]);
@@ -697,9 +713,29 @@ export default function OwnerDashboard() {
                           </Text>
 
                           {order.delivery_latitude && order.delivery_longitude ? (
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accentGold, marginTop: 2, marginBottom: 4 }}>
-                              📍 Coords: {order.delivery_latitude.toFixed(6)}, {order.delivery_longitude.toFixed(6)}
-                            </Text>
+                            <TouchableOpacity 
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                paddingVertical: 6,
+                                paddingHorizontal: 10,
+                                borderRadius: 8,
+                                marginTop: 6,
+                                marginBottom: 4,
+                                backgroundColor: 'rgba(212, 175, 55, 0.05)',
+                                borderColor: colors.accentGold,
+                                borderWidth: 0.8,
+                                alignSelf: 'flex-start'
+                              }}
+                              onPress={() => handleOpenMap(order.delivery_latitude, order.delivery_longitude)}
+                              activeOpacity={0.8}
+                            >
+                              <Navigation size={11} color={colors.accentGold} style={{ marginRight: 4 }} />
+                              <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '800' }}>
+                                View Map Location
+                              </Text>
+                            </TouchableOpacity>
                           ) : null}
 
                           {order.notes ? (
@@ -1496,9 +1532,27 @@ export default function OwnerDashboard() {
                         {selectedDetailOrder.delivery_address}
                       </Text>
                       {selectedDetailOrder.delivery_latitude && selectedDetailOrder.delivery_longitude ? (
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accentGold, marginTop: 4 }}>
-                          📍 Coordinates: {selectedDetailOrder.delivery_latitude.toFixed(6)}, {selectedDetailOrder.delivery_longitude.toFixed(6)}
-                        </Text>
+                        <TouchableOpacity 
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 10,
+                            marginTop: 10,
+                            backgroundColor: 'rgba(212, 175, 55, 0.05)',
+                            borderColor: colors.accentGold,
+                            borderWidth: 1
+                          }}
+                          onPress={() => handleOpenMap(selectedDetailOrder.delivery_latitude, selectedDetailOrder.delivery_longitude)}
+                          activeOpacity={0.8}
+                        >
+                          <Navigation size={13} color={colors.accentGold} style={{ marginRight: 6 }} />
+                          <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>
+                            Open Navigation / Google Maps
+                          </Text>
+                        </TouchableOpacity>
                       ) : null}
                     </View>
                     {selectedDetailOrder.notes ? (

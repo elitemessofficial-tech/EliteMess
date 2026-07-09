@@ -19,6 +19,7 @@ import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, S
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
+import { calculateHaversineDistance } from '../../src/utils/distance';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
@@ -343,7 +344,49 @@ export default function CartScreen() {
     }
 
     setPlacingOrder(true);
+
     try {
+      // Get selected branch ID from AsyncStorage
+      const activeBranchId = await AsyncStorage.getItem('selected_branch_id') || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+
+      // Calculate distance from active branch
+      let branchLat = 18.4575;
+      let branchLng = 73.8088;
+      
+      try {
+        const { data: branchData } = await supabase
+          .from('branches')
+          .select('latitude, longitude')
+          .eq('id', activeBranchId)
+          .single();
+          
+        if (branchData) {
+          branchLat = branchData.latitude || 18.4575;
+          branchLng = branchData.longitude || 73.8088;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch branch coordinates, using default fallbacks:", e);
+      }
+
+      const latToUse = selectedLatitude || 18.4575;
+      const lngToUse = selectedLongitude || 73.8088;
+      
+      const distanceToBranch = calculateHaversineDistance(
+        latToUse,
+        lngToUse,
+        branchLat,
+        branchLng
+      );
+
+      if (distanceToBranch > 5) {
+        showToast(
+          'Delivery Not Available', 
+          "We don't deliver here yet, we are coming soon!", 
+          'error'
+        );
+        setPlacingOrder(false);
+        return;
+      }
       const { data: { session } } = await supabase.auth.getSession();
       let userId = session?.user?.id;
 
@@ -373,8 +416,7 @@ export default function CartScreen() {
       // Generate an 8-digit random delivery verification OTP
       const otpCode = Math.floor(10000000 + Math.random() * 90000000).toString();
 
-      // Get selected branch ID from AsyncStorage
-      const activeBranchId = await AsyncStorage.getItem('selected_branch_id') || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+
 
       // Write order directly into public.orders table
       const { data: newOrder, error: orderError } = await supabase

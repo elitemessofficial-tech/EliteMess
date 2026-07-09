@@ -7,7 +7,8 @@ import {
   ScrollView, 
   Platform,
   Image,
-  Animated
+  Animated,
+  Modal
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
@@ -15,7 +16,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map } from 'lucide-react-native';
+import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map, X, Plus, CheckCircle } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { calculateHaversineDistance, formatDistance } from '../../src/utils/distance';
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
@@ -34,6 +35,8 @@ export default function BranchesScreen() {
   const [selectedAddress, setSelectedAddress] = useState<AddressDetails | null>(null);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [showSavedAddressesModal, setShowSavedAddressesModal] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
 
   const pulseAnim = React.useRef(new Animated.Value(0.4)).current;
   const themeAnim = React.useRef(new Animated.Value(isDark ? 1 : 0)).current;
@@ -338,10 +341,17 @@ export default function BranchesScreen() {
           </Text>
         </View>
 
-        {/* Address Selection Card */}
         <TouchableOpacity
           style={[styles.addressCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
-          onPress={() => setShowPicker(true)}
+          onPress={async () => {
+            try {
+              const saved = await AsyncStorage.getItem('hotelbet_saved_addresses');
+              setSavedAddresses(saved ? JSON.parse(saved) : []);
+            } catch (e) {
+              console.warn(e);
+            }
+            setShowSavedAddressesModal(true);
+          }}
           activeOpacity={0.8}
         >
           <View style={styles.addressCardLeft}>
@@ -420,6 +430,123 @@ export default function BranchesScreen() {
           setUserCoords({ latitude: addr.latitude, longitude: addr.longitude });
         }}
       />
+
+      {/* Saved Addresses List Modal */}
+      <Modal
+        visible={showSavedAddressesModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSavedAddressesModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'flex-end' }}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={{
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              padding: 24,
+              maxHeight: '75%',
+              borderWidth: 1,
+              borderColor: colors.cardBorder,
+              borderBottomWidth: 0,
+              backgroundColor: colors.cardBg,
+            }}
+          >
+            {/* Indicator */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.cardBorder, alignSelf: 'center', marginBottom: 20 }} />
+
+            {/* Title Row */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textMain }}>Select Delivery Address</Text>
+              <TouchableOpacity onPress={() => setShowSavedAddressesModal(false)} style={{ padding: 4 }}>
+                <X size={18} color={colors.textSub} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              {savedAddresses.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <MapPin size={32} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 8 }} />
+                  <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>No Saved Addresses</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+                    Add an address to check the distance from our kitchen.
+                  </Text>
+                </View>
+              ) : (
+                savedAddresses.map((addr) => {
+                  const isSelected = selectedAddress?.id === addr.id || selectedAddress?.label === addr.label;
+                  return (
+                    <TouchableOpacity
+                      key={addr.id}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 16,
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: isSelected ? colors.accentGold : colors.cardBorder,
+                        backgroundColor: isSelected ? 'rgba(212, 175, 55, 0.04)' : 'rgba(0,0,0,0)',
+                      }}
+                      onPress={async () => {
+                        setSelectedAddress(addr);
+                        setUserCoords({ latitude: addr.latitude, longitude: addr.longitude });
+                        await AsyncStorage.setItem('user_selected_address', JSON.stringify(addr));
+                        setShowSavedAddressesModal(false);
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 }}>
+                        <View style={{ marginRight: 12 }}>
+                          {addr.label === 'Home' ? (
+                            <Home size={18} color={colors.accentGold} />
+                          ) : addr.label === 'Work' ? (
+                            <Briefcase size={18} color={colors.accentGold} />
+                          ) : (
+                            <MapPin size={18} color={colors.accentGold} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>{addr.label}</Text>
+                          <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }} numberOfLines={2}>
+                            {addr.address}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && <CheckCircle size={16} color={colors.statusGreen} />}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+
+              {/* Add New Address Button */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 14,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: colors.accentGold,
+                  backgroundColor: 'rgba(212, 175, 55, 0.05)',
+                  marginTop: 8,
+                }}
+                onPress={() => {
+                  setShowSavedAddressesModal(false);
+                  setTimeout(() => setShowPicker(true), 250);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={15} color={colors.accentGold} style={{ marginRight: 6 }} />
+                <Text style={{ color: colors.accentGold, fontSize: 13, fontWeight: '900' }}>
+                  ADD NEW ADDRESS
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
     </View>
   );
 }

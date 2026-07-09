@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,8 @@ interface LocationPickerModalProps {
 
 export default function LocationPickerModal({ visible, onClose, onAddressSaved }: LocationPickerModalProps) {
   const { isDark } = useAppTheme();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const geocodeTimeoutRef = useRef<any>(null);
 
   const [lat, setLat] = useState(PUNE_LAT);
   const [lng, setLng] = useState(PUNE_LNG);
@@ -60,16 +62,65 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
     inputBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)',
   };
 
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (geocodeTimeoutRef.current) {
+        clearTimeout(geocodeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Listen to messages from Leaflet map in iframe
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const coords = JSON.parse(e.data);
+        if (coords.latitude && coords.longitude) {
+          setLat(coords.latitude);
+          setLng(coords.longitude);
+          
+          // Debounce reverse geocoding to prevent hitting rate limits
+          if (geocodeTimeoutRef.current) {
+            clearTimeout(geocodeTimeoutRef.current);
+          }
+          
+          setGeocoding(true);
+          setReverseGeocoded('Detecting address...');
+          
+          geocodeTimeoutRef.current = setTimeout(() => {
+            reverseGeocode(coords.latitude, coords.longitude);
+          }, 1000); // 1-second debounce
+        }
+      } catch (err) {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   // Browser Geolocation
   const detectLiveLocation = () => {
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       setLoadingLocation(true);
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLat(position.coords.latitude);
-          setLng(position.coords.longitude);
-          reverseGeocode(position.coords.latitude, position.coords.longitude);
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          setLat(latitude);
+          setLng(longitude);
+          
+          if (geocodeTimeoutRef.current) {
+            clearTimeout(geocodeTimeoutRef.current);
+          }
+          reverseGeocode(latitude, longitude);
           setLoadingLocation(false);
+
+          // Update iframe Leaflet map center
+          iframeRef.current?.contentWindow?.postMessage(JSON.stringify({
+            latitude,
+            longitude
+          }), '*');
         },
         (error) => {
           console.warn('Browser location error:', error);
@@ -92,24 +143,40 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
         }
       );
       
-      if (!res.ok) {
-        throw new Error(`HTTP Error ${res.status}`);
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            const clean = data.display_name.split(',').slice(0, 4).join(',').trim();
+            setReverseGeocoded(clean || data.display_name);
+            return;
+          }
+        }
       }
-      
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('OSM Nominatim returned non-JSON response');
-      }
-
-      const data = await res.json();
-      if (data && data.display_name) {
-        const clean = data.display_name.split(',').slice(0, 4).join(',').trim();
-        setReverseGeocoded(clean || data.display_name);
-      } else {
-        setReverseGeocoded(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-      }
+      throw new Error('Nominatim request failed or rate limited');
     } catch (e) {
-      console.warn('Reverse geocoding error:', e);
+      console.warn('Nominatim failed, trying BigDataCloud fallback:', e);
+      try {
+        const res = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const parts = [];
+          if (data.locality) parts.push(data.locality);
+          if (data.city) parts.push(data.city);
+          if (data.principalSubdivision) parts.push(data.principalSubdivision);
+          if (data.countryName) parts.push(data.countryName);
+          
+          if (parts.length > 0) {
+            setReverseGeocoded(parts.join(', '));
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback geocoding failed:', err);
+      }
       setReverseGeocoded(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
     } finally {
       setGeocoding(false);
@@ -146,15 +213,16 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
       const existing = await AsyncStorage.getItem('hotelbet_saved_addresses');
       const parsed = existing ? JSON.parse(existing) : [];
       
+      const newFullAddress = `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})`;
       const updated = [
         {
           id: addressDetails.id,
           label: addressDetails.label,
-          address: `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})`,
+          address: newFullAddress,
           latitude: addressDetails.latitude,
           longitude: addressDetails.longitude
         },
-        ...parsed.filter((item: any) => item.label !== addressDetails.label)
+        ...parsed.filter((item: any) => item.address !== newFullAddress)
       ];
 
       await AsyncStorage.setItem('hotelbet_saved_addresses', JSON.stringify(updated));
@@ -171,9 +239,80 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
     }
   };
 
-  // Embed OSM map in iframe for the web browser
-  const mapBbox = `${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}`;
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${mapBbox}&layer=mapnik&marker=${lat},${lng}`;
+  const mapHtml = useMemo(() => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <style>
+          html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: ${isDark ? '#0F0F0B' : '#F8FAFC'};
+          }
+          ${isDark ? `
+          .leaflet-tile {
+            filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.8);
+          }
+          ` : ''}
+          .leaflet-control-zoom {
+            display: none !important;
+          }
+          .leaflet-control-attribution {
+            display: none !important;
+          }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+          var map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+          }).setView([${PUNE_LAT}, ${PUNE_LNG}], 15);
+
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+          }).addTo(map);
+
+          map.on('moveend', function() {
+            var center = map.getCenter();
+            window.parent.postMessage(JSON.stringify({
+              latitude: center.lat,
+              longitude: center.lng
+            }), '*');
+          });
+
+          window.addEventListener('message', function(event) {
+            try {
+              var coords = JSON.parse(event.data);
+              if (coords.latitude && coords.longitude) {
+                map.setView([coords.latitude, coords.longitude], 16);
+              }
+            } catch(e) {}
+          });
+        </script>
+      </body>
+      </html>
+    `;
+  }, [isDark]);
+
+  const mapDataUri = useMemo(() => {
+    return `data:text/html;charset=utf-8,${encodeURIComponent(mapHtml)}`;
+  }, [mapHtml]);
+
+  const handleIframeLoad = () => {
+    // Send initial lat/lng
+    iframeRef.current?.contentWindow?.postMessage(JSON.stringify({
+      latitude: lat,
+      longitude: lng
+    }), '*');
+  };
 
   return (
     <Modal
@@ -187,7 +326,9 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
         <View style={styles.mapWrapper}>
           {Platform.OS === 'web' ? (
             <iframe 
-              src={mapUrl}
+              ref={iframeRef}
+              src={mapDataUri}
+              onLoad={handleIframeLoad}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="OpenStreetMap"
             />
@@ -196,6 +337,14 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
               <Text style={{ color: '#FFFFFF' }}>Web view only</Text>
             </View>
           )}
+
+          {/* Persistent Center Pin overlay */}
+          <View style={styles.centerPinContainer} pointerEvents="none">
+            <View style={styles.pinWrapper}>
+              <View style={styles.pinGlow} />
+              <MapPin size={34} color={colors.accentGold} fill="rgba(212, 175, 55, 0.2)" />
+            </View>
+          </View>
 
           {/* Floating Action Header */}
           <View style={styles.floatingHeader}>
@@ -325,8 +474,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   mapWrapper: {
-    flex: 1,
+    height: '50%',
     position: 'relative',
+    width: '100%',
   },
   floatingHeader: {
     position: 'absolute',
@@ -351,12 +501,12 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   formContainer: {
+    flex: 1,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderTopWidth: 1,
     paddingHorizontal: 24,
     paddingTop: 12,
-    maxHeight: height * 0.52,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.35,
@@ -453,5 +603,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  centerPinContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginTop: -38,
+    marginLeft: -17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 999,
+  },
+  pinWrapper: {
+    alignItems: 'center',
+  },
+  pinGlow: {
+    position: 'absolute',
+    bottom: -2,
+    width: 8,
+    height: 3,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    transform: [{ scaleX: 1.5 }],
   },
 });

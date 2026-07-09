@@ -9,7 +9,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Dimensions,
-  Platform
+  Platform,
+  KeyboardAvoidingView
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -131,25 +132,40 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
         }
       );
       
-      if (!res.ok) {
-        throw new Error(`HTTP Error ${res.status}`);
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            const clean = data.display_name.split(',').slice(0, 4).join(',').trim();
+            setReverseGeocoded(clean || data.display_name);
+            return;
+          }
+        }
       }
-      
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('OSM Nominatim returned non-JSON response');
-      }
-
-      const data = await res.json();
-      if (data && data.display_name) {
-        // Clean up text format
-        const clean = data.display_name.split(',').slice(0, 4).join(',').trim();
-        setReverseGeocoded(clean || data.display_name);
-      } else {
-        setReverseGeocoded('Unknown location');
-      }
+      throw new Error('Nominatim request failed or rate limited');
     } catch (e) {
-      console.warn('Reverse geocoding error:', e);
+      console.warn('Nominatim failed, trying BigDataCloud fallback:', e);
+      try {
+        const res = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const parts = [];
+          if (data.locality) parts.push(data.locality);
+          if (data.city) parts.push(data.city);
+          if (data.principalSubdivision) parts.push(data.principalSubdivision);
+          if (data.countryName) parts.push(data.countryName);
+          
+          if (parts.length > 0) {
+            setReverseGeocoded(parts.join(', '));
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback geocoding failed:', err);
+      }
       setReverseGeocoded(`${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     } finally {
       setGeocoding(false);
@@ -300,16 +316,16 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
       const existing = await AsyncStorage.getItem('hotelbet_saved_addresses');
       const parsed = existing ? JSON.parse(existing) : [];
       
-      // Prevent duplicate listings
+      const newFullAddress = `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})`;
       const updated = [
         {
           id: addressDetails.id,
           label: addressDetails.label,
-          address: `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})`,
+          address: newFullAddress,
           latitude: addressDetails.latitude,
           longitude: addressDetails.longitude
         },
-        ...parsed.filter((item: any) => item.label !== addressDetails.label)
+        ...parsed.filter((item: any) => item.address !== newFullAddress)
       ];
 
       await AsyncStorage.setItem('hotelbet_saved_addresses', JSON.stringify(updated));
@@ -333,7 +349,11 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
       visible={visible}
       onRequestClose={onClose}
     >
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.modalContainer}>
         {/* Interactive Map Wrapper */}
         <View style={styles.mapWrapper}>
           <WebView
@@ -512,6 +532,7 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
           </View>
         )}
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -522,7 +543,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   mapWrapper: {
-    ...StyleSheet.absoluteFill,
+    height: '50%',
+    position: 'relative',
+    width: '100%',
   },
   map: {
     width: '100%',
@@ -573,16 +596,12 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   formContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flex: 1,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     borderTopWidth: 1,
     paddingHorizontal: 24,
     paddingTop: 12,
-    maxHeight: height * 0.45,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.35,

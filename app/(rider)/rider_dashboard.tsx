@@ -592,7 +592,6 @@ export default function RiderDashboard() {
     router.replace('/(auth)/login');
   };
 
-  const activeTask = activeDeliveries[0];
   const filteredDeliveries = getFilteredDeliveries(completedDeliveries, earningsFilter);
 
   return (
@@ -641,112 +640,116 @@ export default function RiderDashboard() {
         ) : activeSegment === 'deliveries' ? (
           <View style={{ gap: 24 }}>
             
-            {/* 1. ACTIVE TASK CARD */}
+            {/* 1. ACTIVE TASK CARDS */}
             <View>
-              <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold }]}>CURRENT ACTIVE DELIVERY</Text>
+              <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold }]}>CURRENT ACTIVE DELIVERIES</Text>
               
-              {activeTask ? (
-                <AnimatedEntrance delay={0}>
-                  <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-                    <TouchableOpacity onPress={() => setSelectedDetailDelivery({ type: 'active', ...activeTask })} activeOpacity={0.8}>
-                    {/* Top Label & Mode Pill */}
-                    <View style={styles.cardTopRow}>
-                      <View>
-                        <Text style={[styles.cardLabel, { color: colors.accentGold }]}>ACTIVE TASK</Text>
-                        <Text style={[styles.orderId, { color: colors.textMain }]}>
-                          #{activeTask.orders.id.slice(0, 8).toUpperCase()}
-                        </Text>
-                      </View>
-                      
-                      <View style={styles.riderModeBadge}>
-                        <Navigation size={12} color={colors.accentGold} style={styles.navigationIcon} />
-                        <Text style={[styles.riderModeText, { color: colors.accentGold }]}>
-                          {activeTask.status.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Details Grid */}
-                    <View style={styles.gridContainer}>
-                      <View style={styles.gridRow}>
-                        <View style={styles.gridCol}>
-                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>PICKUP FROM</Text>
-                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                            {activeTask.orders.branches?.name || 'Hotel Bet - Main Lobby'}
-                          </Text>
-                          <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
-                            {activeTask.orders.branches?.address}
-                          </Text>
+              {activeDeliveries.length > 0 ? (
+                <View style={{ gap: 16 }}>
+                  {activeDeliveries.map((activeTask, idx) => (
+                    <AnimatedEntrance key={activeTask.id} delay={idx * 60}>
+                      <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                        <TouchableOpacity onPress={() => setSelectedDetailDelivery({ type: 'active', ...activeTask })} activeOpacity={0.8}>
+                        {/* Top Label & Mode Pill */}
+                        <View style={styles.cardTopRow}>
+                          <View>
+                            <Text style={[styles.cardLabel, { color: colors.accentGold }]}>ACTIVE TASK {activeDeliveries.length > 1 ? `#${idx + 1}` : ''}</Text>
+                            <Text style={[styles.orderId, { color: colors.textMain }]}>
+                              #{activeTask.orders.id.slice(0, 8).toUpperCase()}
+                            </Text>
+                          </View>
+                          
+                          <View style={styles.riderModeBadge}>
+                            <Navigation size={12} color={colors.accentGold} style={styles.navigationIcon} />
+                            <Text style={[styles.riderModeText, { color: colors.accentGold }]}>
+                              {activeTask.status.toUpperCase()}
+                            </Text>
+                          </View>
                         </View>
-                        
-                        <View style={styles.gridCol}>
-                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>CUSTOMER</Text>
-                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                            {activeTask.orders.profiles?.full_name || 'Guest Customer'}
-                          </Text>
-                          <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
-                            Phone: {activeTask.orders.delivery_phone}
-                          </Text>
+    
+                        {/* Details Grid */}
+                        <View style={styles.gridContainer}>
+                          <View style={styles.gridRow}>
+                            <View style={styles.gridCol}>
+                              <Text style={[styles.gridLabel, { color: colors.textSub }]}>PICKUP FROM</Text>
+                              <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                                {activeTask.orders.branches?.name || 'Hotel Bet - Main Lobby'}
+                              </Text>
+                              <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
+                                {activeTask.orders.branches?.address}
+                              </Text>
+                            </View>
+                            
+                            <View style={styles.gridCol}>
+                              <Text style={[styles.gridLabel, { color: colors.textSub }]}>CUSTOMER</Text>
+                              <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                                {activeTask.orders.profiles?.full_name || 'Guest Customer'}
+                              </Text>
+                              <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
+                                Phone: {activeTask.orders.delivery_phone}
+                              </Text>
+                            </View>
+                          </View>
+                          
+                          <View style={styles.gridRow}>
+                            <View style={styles.gridCol}>
+                              <Text style={[styles.gridLabel, { color: colors.textSub }]}>DELIVERY LOCATION</Text>
+                              <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                                {activeTask.orders.delivery_address}
+                              </Text>
+                            </View>
+                            
+                            <View style={styles.gridCol}>
+                              <Text style={[styles.gridLabel, { color: colors.textSub }]}>TOTAL VALUE</Text>
+                              <Text style={[styles.gridValue, { color: colors.accentGold }]}>
+                                ₹{parseFloat(activeTask.orders.total_amount as any).toLocaleString()}
+                              </Text>
+                            </View>
+                          </View>
                         </View>
-                      </View>
-                      
-                      <View style={styles.gridRow}>
-                        <View style={styles.gridCol}>
-                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>DELIVERY LOCATION</Text>
-                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                            {activeTask.orders.delivery_address}
-                          </Text>
-                        </View>
-                        
-                        <View style={styles.gridCol}>
-                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>TOTAL VALUE</Text>
-                          <Text style={[styles.gridValue, { color: colors.accentGold }]}>
-                            ₹{parseFloat(activeTask.orders.total_amount as any).toLocaleString()}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    {activeTask.orders.notes ? (
-                      <>
-                        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
-                        <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
-                        <Text style={[styles.deliveryNotesText, { color: colors.textSub }]}>
-                          "{activeTask.orders.notes}"
-                        </Text>
-                      </>
-                    ) : null}
-                    </TouchableOpacity>
-
-                    {/* Action Buttons */}
-                    <View style={styles.riderActionsRow}>
-                      {activeTask.status === 'assigned' && (
-                        <TouchableOpacity 
-                          style={[styles.riderActionBtn, { backgroundColor: colors.accentGold }]}
-                          onPress={() => handlePickUpOrder(activeTask.id, activeTask.orders.id)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.riderActionBtnText}>Confirm Pickup</Text>
+    
+                        {activeTask.orders.notes ? (
+                          <>
+                            <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
+                            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
+                            <Text style={[styles.deliveryNotesText, { color: colors.textSub }]}>
+                              "{activeTask.orders.notes}"
+                            </Text>
+                          </>
+                        ) : null}
                         </TouchableOpacity>
-                      )}
-
-                      {activeTask.status === 'picked_up' && (
-                        <TouchableOpacity 
-                          style={[styles.riderActionBtn, { backgroundColor: colors.statusGreen }]}
-                          onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '')}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.riderActionBtnText, { color: '#FFFFFF' }]}>Complete Delivery</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                </AnimatedEntrance>
+    
+                        {/* Action Buttons */}
+                        <View style={styles.riderActionsRow}>
+                          {activeTask.status === 'assigned' && (
+                            <TouchableOpacity 
+                              style={[styles.riderActionBtn, { backgroundColor: colors.accentGold }]}
+                              onPress={() => handlePickUpOrder(activeTask.id, activeTask.orders.id)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.riderActionBtnText}>Confirm Pickup</Text>
+                            </TouchableOpacity>
+                          )}
+    
+                          {activeTask.status === 'picked_up' && (
+                            <TouchableOpacity 
+                              style={[styles.riderActionBtn, { backgroundColor: colors.statusGreen }]}
+                              onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '')}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.riderActionBtnText, { color: '#FFFFFF' }]}>Complete Delivery</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    </AnimatedEntrance>
+                  ))}
+                </View>
               ) : (
                 <AnimatedEntrance delay={0}>
                   <View style={[styles.emptyTaskCard, { borderColor: colors.cardBorder, backgroundColor: colors.cardBg }]}>
                     <ClipboardCheck size={28} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 8 }} />
-                    <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13 }}>No Active Delivery</Text>
+                    <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13 }}>No Active Deliveries</Text>
                     <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
                       Claim an available order below to start earning.
                     </Text>
