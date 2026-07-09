@@ -1,33 +1,39 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  ActivityIndicator, 
-  KeyboardAvoidingView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Linking
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  ChevronLeft, 
-  MessageSquare, 
-  HelpCircle, 
-  Phone, 
-  Mail, 
-  Clock, 
-  Send, 
-  ChevronDown, 
-  ChevronUp, 
-  Headphones 
+import {
+  ChevronLeft,
+  MessageSquare,
+  HelpCircle,
+  Phone,
+  Mail,
+  Clock,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  Headphones,
+  CheckCircle,
+  History,
+  PlusSquare,
+  ArrowLeft
 } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import FloatingHeader from '../../components/FloatingHeader';
+import { supabase } from '../../src/services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface FAQItem {
   id: string;
@@ -37,7 +43,7 @@ interface FAQItem {
 
 interface Message {
   id: string;
-  sender: 'user' | 'concierge';
+  sender: 'user' | 'concierge' | 'owner' | 'customer';
   text: string;
   time: string;
 }
@@ -58,12 +64,194 @@ export default function SupportScreen() {
     {
       id: 'init_1',
       sender: 'concierge',
-      text: 'Greetings! Welcome to Hotel Bet Concierge Support. How may we elevate your dining and delivery experience today?',
+      text: 'Greetings! Welcome to Hotel Bet Support. How may we elevate your dining and delivery experience today?',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const chatScrollRef = useRef<ScrollView>(null);
+  const [supportOrderId, setSupportOrderId] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [pastSessions, setPastSessions] = useState<any[]>([]);
+  const [viewingPastSession, setViewingPastSession] = useState<any | null>(null);
+
+  const initSupportChat = async () => {
+    try {
+      setChatLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      let userId = session?.user?.id;
+      if (!userId) {
+        try {
+          const { data } = await supabase.auth.signInAnonymously();
+          userId = data?.user?.id;
+        } catch (e) {}
+        if (!userId) {
+          userId = 'mock-customer-uid-999';
+        }
+      }
+
+      const { data: active, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_id', userId)
+        .eq('delivery_address', 'SUPPORT_TICKET')
+        .eq('status', 'cancelled')
+        .limit(1);
+
+      if (active && active.length > 0) {
+        const supportOrder = active[0];
+        setSupportOrderId(supportOrder.id);
+        if (supportOrder.notes) {
+          try {
+            const parsed = JSON.parse(supportOrder.notes);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessages(parsed);
+            }
+          } catch (e) {}
+        }
+      } else {
+        setSupportOrderId(null);
+        setMessages([]);
+      }
+
+      const { data: resolved, error: resolvedErr } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_id', userId)
+        .eq('delivery_address', 'SUPPORT_TICKET')
+        .eq('status', 'delivered')
+        .order('updated_at', { ascending: false });
+
+      if (resolved) {
+        setPastSessions(resolved);
+      }
+    } catch (e) {
+      console.warn("Failed to load support sessions:", e);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const startNewSession = async () => {
+    try {
+      setChatLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      let userId = session?.user?.id;
+      if (!userId) {
+        userId = 'mock-customer-uid-999';
+      }
+
+      const { data: created, error } = await supabase
+        .from('orders')
+        .insert({
+          customer_id: userId,
+          branch_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+          status: 'cancelled',
+          total_amount: 0,
+          notes: JSON.stringify([
+            {
+              id: 'init_1',
+              sender: 'concierge',
+              text: 'Greetings! Welcome to your new Hotel Bet Support session. How may we elevate your dining and delivery experience today?',
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ]),
+          delivery_address: 'SUPPORT_TICKET',
+          delivery_phone: '+10000000000',
+          delivery_latitude: 0,
+          delivery_longitude: 0,
+          tip_amount: 0
+        })
+        .select()
+        .single();
+
+      if (created) {
+        setSupportOrderId(created.id);
+        setMessages([
+          {
+            id: 'init_1',
+            sender: 'concierge',
+            text: 'Greetings! Welcome to your new Hotel Bet Support session. How may we elevate your dining and delivery experience today?',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+        initSupportChat();
+      }
+    } catch (e) {
+      console.warn("Failed to start support session:", e);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const resolveActiveSession = async () => {
+    if (!supportOrderId) return;
+    try {
+      const updatedMessages = [
+        ...messages,
+        {
+          id: `resolve_${Date.now()}`,
+          sender: 'concierge',
+          text: '✅ This support session has been closed and resolved. Thank you for choosing Hotel Bet.',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ];
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ 
+          status: 'delivered',
+          notes: JSON.stringify(updatedMessages)
+        })
+        .eq('id', supportOrderId);
+
+      if (error) throw error;
+      
+      setSupportOrderId(null);
+      setMessages([]);
+      initSupportChat();
+    } catch (e) {
+      console.warn("Failed to close session:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      initSupportChat();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!supportOrderId) return;
+
+    const channel = supabase
+      .channel(`support_chat_${supportOrderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${supportOrderId}`
+        },
+        (payload: any) => {
+          const updatedOrder = payload.new;
+          if (updatedOrder && updatedOrder.notes) {
+            try {
+              const parsed = JSON.parse(updatedOrder.notes);
+              if (Array.isArray(parsed)) {
+                setMessages(parsed);
+              }
+            } catch (e) {}
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supportOrderId]);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -106,7 +294,7 @@ export default function SupportScreen() {
     }
   ];
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputText.trim()) return;
 
     const userMsgText = inputText.trim();
@@ -114,46 +302,28 @@ export default function SupportScreen() {
 
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
-      sender: 'user',
+      sender: 'customer',
       text: userMsgText,
       time: timeStr
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInputText('');
-    setIsTyping(true);
 
     // Auto scroll chat to bottom
     setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
 
-    // Simulate Concierge Support Reply
-    setTimeout(() => {
-      let replyText = "Thank you for reaching out to Hotel Bet support. A senior concierge agent has been notified of your query and will assist you shortly. You can also write to us directly at support@hotelbet.com.";
-      
-      const lower = userMsgText.toLowerCase();
-      if (lower.includes('order') || lower.includes('food') || lower.includes('delay') || lower.includes('status')) {
-        replyText = "We have alerted the branch kitchen dispatcher regarding your culinary order details. You can track real-time courier updates on your screen or contact our hotlines.";
-      } else if (lower.includes('refund') || lower.includes('cancel') || lower.includes('wrong')) {
-        replyText = "Order cancellations are processed instantly if food prep has not started. Refunds for eligible transactions are credited back to the original source within 24 hours.";
-      } else if (lower.includes('tip') || lower.includes('rider') || lower.includes('earnings')) {
-        replyText = " door-step tips are processed instantly in their entirety. 100% of tips are credited to your assigned rider's payouts list immediately upon successful delivery verification.";
-      } else if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
-        replyText = "Hello! How can we assist you with your luxury hotel bet dining experience today?";
+    if (supportOrderId) {
+      try {
+        await supabase
+          .from('orders')
+          .update({ notes: JSON.stringify(updatedMessages) })
+          .eq('id', supportOrderId);
+      } catch (e) {
+        console.warn("Failed to sync customer message to DB:", e);
       }
-
-      const replyMessage: Message = {
-        id: `reply_${Date.now()}`,
-        sender: 'concierge',
-        text: replyText,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages(prev => [...prev, replyMessage]);
-      setIsTyping(false);
-
-      // Auto scroll chat to bottom
-      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }, 1500);
+    }
   };
 
   const handlePhoneCall = () => {
@@ -179,7 +349,7 @@ export default function SupportScreen() {
   ];
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.container, { backgroundColor: colors.bg }]}
     >
@@ -187,24 +357,24 @@ export default function SupportScreen() {
 
       {/* Navigation Sub-Tabs */}
       <View style={styles.tabBar}>
-        <TouchableOpacity 
-          style={getTabButtonStyle('faq')} 
+        <TouchableOpacity
+          style={getTabButtonStyle('faq')}
           onPress={() => setActiveTab('faq')}
         >
           <HelpCircle size={14} color={activeTab === 'faq' ? '#000000' : colors.textSub} />
           <Text style={[styles.tabButtonText, { color: activeTab === 'faq' ? '#000000' : colors.textMain }]}>FAQs</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={getTabButtonStyle('chat')} 
+        <TouchableOpacity
+          style={getTabButtonStyle('chat')}
           onPress={() => setActiveTab('chat')}
         >
           <MessageSquare size={14} color={activeTab === 'chat' ? '#000000' : colors.textSub} />
           <Text style={[styles.tabButtonText, { color: activeTab === 'chat' ? '#000000' : colors.textMain }]}>Live Chat</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={getTabButtonStyle('contact')} 
+        <TouchableOpacity
+          style={getTabButtonStyle('contact')}
           onPress={() => setActiveTab('contact')}
         >
           <Headphones size={14} color={activeTab === 'contact' ? '#000000' : colors.textSub} />
@@ -217,7 +387,7 @@ export default function SupportScreen() {
         {activeTab === 'faq' && (
           <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
             <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>FREQUENTLY ASKED QUESTIONS</Text>
-            
+
             <View style={{ gap: 12 }}>
               {faqs.map((faq) => {
                 const isExpanded = expandedFaqId === faq.id;
@@ -251,14 +421,14 @@ export default function SupportScreen() {
 
         {activeTab === 'contact' && (
           <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DIRECT CONCIERGE HOTLINES</Text>
-            
+            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DIRECT SUPPORT HOTLINES</Text>
+
             <View style={[styles.contactCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
               <View style={styles.contactRow}>
                 <Clock size={18} color={colors.accentGold} />
                 <View>
                   <Text style={[styles.contactLabel, { color: colors.textMain }]}>Operating Hours</Text>
-                  <Text style={[styles.contactValue, { color: colors.textSub }]}>24/7 Premium Dining Assistance</Text>
+                  <Text style={[styles.contactValue, { color: colors.textSub }]}>24/7 Live Support Assistance</Text>
                 </View>
               </View>
 
@@ -281,7 +451,7 @@ export default function SupportScreen() {
                 <View style={styles.contactRowLeft}>
                   <Mail size={18} color={colors.accentGold} />
                   <View>
-                    <Text style={[styles.contactLabel, { color: colors.textMain }]}>Email Concierge</Text>
+                    <Text style={[styles.contactLabel, { color: colors.textMain }]}>Email Support</Text>
                     <Text style={[styles.contactValue, { color: colors.textSub }]}>support@hotelbet.com</Text>
                   </View>
                 </View>
@@ -293,70 +463,218 @@ export default function SupportScreen() {
 
         {activeTab === 'chat' && (
           <View style={styles.chatWrapper}>
-            <ScrollView 
-              ref={chatScrollRef}
-              contentContainerStyle={styles.chatScrollContent}
-              showsVerticalScrollIndicator={true}
-              onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
-            >
-              {messages.map((msg) => {
-                const isUser = msg.sender === 'user';
-                return (
-                  <View 
-                    key={msg.id} 
-                    style={[
-                      styles.messageContainer, 
-                      isUser ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
-                    ]}
-                  >
-                    <View 
-                      style={[
-                        styles.messageBubble, 
-                        isUser 
-                          ? { backgroundColor: colors.chatUserBg, borderBottomRightRadius: 4 } 
-                          : { backgroundColor: colors.chatRiderBg, borderBottomLeftRadius: 4, borderColor: colors.cardBorder, borderWidth: 1 }
-                      ]}
-                    >
-                      <Text style={[styles.messageText, { color: isUser ? '#000000' : colors.textMain }]}>
-                        {msg.text}
-                      </Text>
-                    </View>
-                    <Text style={styles.messageTime}>{msg.time}</Text>
-                  </View>
-                );
-              })}
-
-              {isTyping && (
-                <View style={[styles.messageContainer, { alignSelf: 'flex-start' }]}>
-                  <View style={[styles.messageBubble, styles.typingBubble, { backgroundColor: colors.chatRiderBg, borderColor: colors.cardBorder, borderWidth: 1 }]}>
-                    <ActivityIndicator size="small" color={colors.accentGold} />
-                    <Text style={[styles.typingText, { color: colors.textSub }]}>Concierge is writing...</Text>
+            {viewingPastSession ? (
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: colors.cardBorder }}>
+                  <TouchableOpacity onPress={() => setViewingPastSession(null)} style={{ padding: 4 }}>
+                    <ArrowLeft size={16} color={colors.accentGold} />
+                  </TouchableOpacity>
+                  <View>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>Resolved Chat Log</Text>
+                    <Text style={{ fontSize: 10, color: colors.textSub }}>Closed on {new Date(viewingPastSession.updated_at).toLocaleDateString()}</Text>
                   </View>
                 </View>
-              )}
-            </ScrollView>
 
-            {/* Input Bar */}
-            <View style={[styles.inputBar, { borderColor: colors.cardBorder }]}>
-              <TextInput
-                style={[styles.chatInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                placeholder="Type your message..."
-                placeholderTextColor={colors.textSub}
-                value={inputText}
-                onChangeText={setInputText}
-                onSubmitEditing={handleSendMessage}
-              />
-              <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}>
-                <LinearGradient
-                  colors={colors.goldGrad}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.sendButtonGrad}
+                <ScrollView
+                  style={{ flex: 1, marginVertical: 10 }}
+                  contentContainerStyle={{ gap: 12, paddingBottom: 16, paddingHorizontal: 16 }}
                 >
-                  <Send size={15} color="#000000" />
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
+                  {(() => {
+                    let pastMsgs = [];
+                    try { pastMsgs = JSON.parse(viewingPastSession.notes); } catch (e) {}
+                    return pastMsgs.map((msg: any) => {
+                      const isUser = msg.sender === 'user' || msg.sender === 'customer';
+                      return (
+                        <View
+                          key={msg.id}
+                          style={[
+                            styles.messageContainer,
+                            isUser ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.messageBubble,
+                              isUser
+                                ? { backgroundColor: colors.chatUserBg, borderBottomRightRadius: 4 }
+                                : { backgroundColor: colors.chatRiderBg, borderBottomLeftRadius: 4, borderColor: colors.cardBorder, borderWidth: 1 }
+                            ]}
+                          >
+                            <Text style={[styles.messageText, { color: isUser ? '#000000' : colors.textMain }]}>
+                              {msg.text}
+                            </Text>
+                          </View>
+                          <Text style={styles.messageTime}>{msg.time}</Text>
+                        </View>
+                      );
+                    });
+                  })()}
+                </ScrollView>
+
+                <View style={{ paddingVertical: 14, borderTopWidth: 0.5, borderTopColor: colors.cardBorder, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '800' }}>
+                    🔒 This session was resolved and closed.
+                  </Text>
+                </View>
+              </View>
+            ) : !supportOrderId ? (
+              <ScrollView contentContainerStyle={{ gap: 20, paddingBottom: 20, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
+                {chatLoading ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+                    <ActivityIndicator size="large" color={colors.accentGold} />
+                  </View>
+                ) : (
+                  <>
+                    <View style={[styles.faqCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 20, alignItems: 'center', gap: 12 }]}>
+                      <PlusSquare size={36} color={colors.accentGold} />
+                      <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textMain }}>Start Live Chat</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSub, textAlign: 'center', paddingHorizontal: 10 }}>
+                        Connect instantly with the hotel operations desk to resolve culinary, room, or delivery inquiries.
+                      </Text>
+                      <TouchableOpacity 
+                        onPress={startNewSession}
+                        style={{ width: '105%', height: 40, marginTop: 8 }}
+                      >
+                        <LinearGradient
+                          colors={colors.goldGrad}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={{ width: '100%', height: '100%', borderRadius: 12, justifyContent: 'center', alignItems: 'center' }}
+                        >
+                          <Text style={{ color: '#000000', fontSize: 12, fontWeight: '900' }}>START NEW SESSION</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+
+                    {pastSessions.length > 0 && (
+                      <View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                          <History size={16} color={colors.accentGold} />
+                          <Text style={{ fontSize: 12, fontWeight: '900', color: colors.accentGold, letterSpacing: 1.5, textTransform: 'uppercase' }}>Resolved Sessions History</Text>
+                        </View>
+
+                        <View style={{ gap: 10 }}>
+                          {pastSessions.map((session, idx) => {
+                            let msgs = [];
+                            try { msgs = JSON.parse(session.notes); } catch (e) {}
+                            const lastMsg = msgs[msgs.length - 1];
+
+                            return (
+                              <TouchableOpacity
+                                key={session.id}
+                                style={[styles.faqCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                                onPress={() => setViewingPastSession(session)}
+                                activeOpacity={0.8}
+                              >
+                                <View style={{ flex: 1, marginRight: 10 }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                                    Session of {new Date(session.updated_at).toLocaleDateString()}
+                                  </Text>
+                                  <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 2 }} numberOfLines={1}>
+                                    Last: {lastMsg ? lastMsg.text : ''}
+                                  </Text>
+                                </View>
+                                <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '900' }}>VIEW LOG</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: colors.cardBorder }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accentGold }} />
+                    <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textMain }}>Active Support Session</Text>
+                  </View>
+                  <TouchableOpacity 
+                    onPress={resolveActiveSession}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 0.5, borderColor: '#10B981' }}
+                    activeOpacity={0.7}
+                  >
+                    <CheckCircle size={12} color="#10B981" />
+                    <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>Close Session</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  ref={chatScrollRef}
+                  contentContainerStyle={styles.chatScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
+                >
+                  {chatLoading ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+                      <ActivityIndicator size="large" color={colors.accentGold} />
+                      <Text style={{ color: colors.textSub, marginTop: 12, fontSize: 12, fontWeight: '700' }}>
+                        Connecting to Support Desk...
+                      </Text>
+                    </View>
+                  ) : (
+                    messages.map((msg) => {
+                      const isUser = msg.sender === 'user' || msg.sender === 'customer';
+                      return (
+                        <View
+                          key={msg.id}
+                          style={[
+                            styles.messageContainer,
+                            isUser ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.messageBubble,
+                              isUser
+                                ? { backgroundColor: colors.chatUserBg, borderBottomRightRadius: 4 }
+                                : { backgroundColor: colors.chatRiderBg, borderBottomLeftRadius: 4, borderColor: colors.cardBorder, borderWidth: 1 }
+                            ]}
+                          >
+                            <Text style={[styles.messageText, { color: isUser ? '#000000' : colors.textMain }]}>
+                              {msg.text}
+                            </Text>
+                          </View>
+                          <Text style={styles.messageTime}>{msg.time}</Text>
+                        </View>
+                      );
+                    })
+                  )}
+
+                  {isTyping && (
+                    <View style={[styles.messageContainer, { alignSelf: 'flex-start' }]}>
+                      <View style={[styles.messageBubble, styles.typingBubble, { backgroundColor: colors.chatRiderBg, borderColor: colors.cardBorder, borderWidth: 1 }]}>
+                        <ActivityIndicator size="small" color={colors.accentGold} />
+                        <Text style={[styles.typingText, { color: colors.textSub }]}>Support agent is writing...</Text>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+
+                <View style={[styles.inputBar, { borderColor: colors.cardBorder }]}>
+                  <TextInput
+                    style={[styles.chatInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                    placeholder="Type your message..."
+                    placeholderTextColor={colors.textSub}
+                    value={inputText}
+                    onChangeText={setInputText}
+                    onSubmitEditing={handleSendMessage}
+                  />
+                  <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}>
+                    <LinearGradient
+                      colors={colors.goldGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.sendButtonGrad}
+                    >
+                      <Send size={15} color="#000000" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         )}
       </View>

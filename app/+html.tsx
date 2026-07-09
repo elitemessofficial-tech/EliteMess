@@ -36,4 +36,11 @@ body {
   body {
     background-color: #000;
   }
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }`;

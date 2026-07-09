@@ -1,100 +1,60 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import styled from 'styled-components';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Animated } from 'react-native';
 
 interface LoaderProps {
   color?: string;
 }
 
 const Loader = ({ color = '#D4AF37' }: LoaderProps) => {
+  const anim1 = useRef(new Animated.Value(1)).current;
+  const anim2 = useRef(new Animated.Value(1)).current;
+  const anim3 = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const createAnimation = (value: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(value, {
+            toValue: 1.6,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 1.0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.delay(200),
+        ])
+      );
+    };
+
+    const a1 = createAnimation(anim1, 0);
+    const a2 = createAnimation(anim2, 150);
+    const a3 = createAnimation(anim3, 300);
+
+    a1.start();
+    a2.start();
+    a3.start();
+
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+    };
+  }, []);
+
   return (
     <View style={styles.container}>
-      <StyledWrapper $color={color}>
-        <div className="loader">
-          <div className="justify-content-center jimu-primary-loading" />
-        </div>
-      </StyledWrapper>
+      <View style={styles.loaderContainer}>
+        <Animated.View style={[styles.bar, { backgroundColor: color, transform: [{ scaleY: anim1 }] }]} />
+        <Animated.View style={[styles.bar, { backgroundColor: color, transform: [{ scaleY: anim2 }] }]} />
+        <Animated.View style={[styles.bar, { backgroundColor: color, transform: [{ scaleY: anim3 }] }]} />
+      </View>
     </View>
   );
-}
-
-const StyledWrapper = styled.div<{ $color: string }>`
-  position: relative;
-  width: 60px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  .loader {
-    position: absolute;
-    width: 60px;
-    height: 40px;
-  }
-
-  .jimu-primary-loading:before,
-  .jimu-primary-loading:after {
-    position: absolute;
-    top: 0;
-    content: '';
-  }
-
-  .jimu-primary-loading:before {
-    left: -16px;
-  }
-
-  .jimu-primary-loading:after {
-    left: 16px;
-    -webkit-animation-delay: 0.32s !important;
-    animation-delay: 0.32s !important;
-  }
-
-  .jimu-primary-loading:before,
-  .jimu-primary-loading:after,
-  .jimu-primary-loading {
-    background: ${props => props.$color};
-    -webkit-animation: loading-keys-app-loading 0.8s infinite ease-in-out;
-    animation: loading-keys-app-loading 0.8s infinite ease-in-out;
-    width: 10px;
-    height: 24px;
-  }
-
-  .jimu-primary-loading {
-    text-indent: -9999em;
-    margin: auto;
-    position: absolute;
-    left: 25px;
-    top: 8px;
-    -webkit-animation-delay: 0.16s !important;
-    animation-delay: 0.16s !important;
-  }
-
-  @-webkit-keyframes loading-keys-app-loading {
-    0%, 80%, 100% {
-      opacity: .75;
-      box-shadow: 0 0 ${props => props.$color};
-      height: 24px;
-    }
-    40% {
-      opacity: 1;
-      box-shadow: 0 -6px ${props => props.$color};
-      height: 30px;
-    }
-  }
-
-  @keyframes loading-keys-app-loading {
-    0%, 80%, 100% {
-      opacity: .75;
-      box-shadow: 0 0 ${props => props.$color};
-      height: 24px;
-    }
-    40% {
-      opacity: 1;
-      box-shadow: 0 -6px ${props => props.$color};
-      height: 30px;
-    }
-  }
-`;
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -103,7 +63,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 80,
     width: '100%',
-  }
+  },
+  loaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+  },
+  bar: {
+    width: 6,
+    height: 20,
+    borderRadius: 3,
+  },
 });
 
 export default Loader;

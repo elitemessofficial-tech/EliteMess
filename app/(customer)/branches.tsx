@@ -11,10 +11,14 @@ import {
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
+import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star } from 'lucide-react-native';
+import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map } from 'lucide-react-native';
+import * as Location from 'expo-location';
+import { calculateHaversineDistance, formatDistance } from '../../src/utils/distance';
+import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 
@@ -23,9 +27,90 @@ export default function BranchesScreen() {
   const { isDark, toggleTheme } = useAppTheme();
 
   const [branches, setBranches] = useState<any[]>([]);
+  const [rawBranches, setRawBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Geolocation & Map Address states
+  const [selectedAddress, setSelectedAddress] = useState<AddressDetails | null>(null);
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+
   const pulseAnim = React.useRef(new Animated.Value(0.4)).current;
+  const themeAnim = React.useRef(new Animated.Value(isDark ? 1 : 0)).current;
+
+  // Sorting and formatting nearest branches
+  const sortAndFormatBranches = (rawList: any[], coords: { latitude: number; longitude: number } | null) => {
+    if (!coords) {
+      return rawList.map(b => ({
+        ...b,
+        distance: b.distance || (b.id === 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c' ? '1.1 km' : '0.3 km')
+      }));
+    }
+
+    return [...rawList].map(branch => {
+      const lat = branch.latitude || 18.4575;
+      const lng = branch.longitude || 73.8088;
+      const dist = calculateHaversineDistance(coords.latitude, coords.longitude, lat, lng);
+      return {
+        ...branch,
+        distanceVal: dist,
+        distance: formatDistance(dist)
+      };
+    }).sort((a, b) => a.distanceVal - b.distanceVal);
+  };
+
+  // Re-sort branches whenever coordinates or raw list changes
+  useEffect(() => {
+    if (rawBranches.length > 0) {
+      setBranches(sortAndFormatBranches(rawBranches, userCoords));
+    }
+  }, [userCoords, rawBranches]);
+
+  // Load saved location on startup or request GPS fallback
+  useEffect(() => {
+    const initializeLocation = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('user_selected_address');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setSelectedAddress(parsed);
+          setUserCoords({ latitude: parsed.latitude, longitude: parsed.longitude });
+          return;
+        }
+
+        // GPS Live fallback detection
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setUserCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        }
+      } catch (e) {
+        console.warn('Failed to initialize location on startup:', e);
+      }
+    };
+    initializeLocation();
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(themeAnim, {
+      toValue: isDark ? 1 : 0,
+      duration: 500, // smooth cross-fade
+      useNativeDriver: true,
+    }).start();
+  }, [isDark]);
+
+  const getBranchImages = (branchId: string) => {
+    if (branchId === 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c') {
+      return {
+        day: require('../../assets/images/Hotel_warje_day.png'),
+        night: require('../../assets/images/Hotel_warje_night.png')
+      };
+    }
+    return {
+      day: require('../../assets/images/Hotel_narhe_day.png'),
+      night: require('../../assets/images/Hotel_narhe_night.png')
+    };
+  };
 
   useEffect(() => {
     let animation: Animated.CompositeAnimation | null = null;
@@ -63,21 +148,21 @@ export default function BranchesScreen() {
         
         if (error) throw error;
         
-        if (data && data.length > 0) {
-          setBranches(data);
-        } else {
-          // Empty or unseeded, use fallback seeds
-          setBranches([
-            { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', distance: '0.3 km' },
-            { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', distance: '1.1 km' }
-          ]);
-        }
+        const listToUse = data && data.length > 0 ? data : [
+          { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', latitude: 12.9715987, longitude: 77.5945627 },
+          { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', latitude: 12.998492, longitude: 77.6120384 }
+        ];
+
+        setRawBranches(listToUse);
+        setBranches(sortAndFormatBranches(listToUse, userCoords));
       } catch (e) {
         console.error('Failed to load branches from Supabase:', e);
-        setBranches([
-          { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', distance: '0.3 km' },
-          { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', distance: '1.1 km' }
-        ]);
+        const fallbacks = [
+          { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', latitude: 12.9715987, longitude: 77.5945627 },
+          { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', latitude: 12.998492, longitude: 77.6120384 }
+        ];
+        setRawBranches(fallbacks);
+        setBranches(sortAndFormatBranches(fallbacks, userCoords));
       } finally {
         setLoading(false);
       }
@@ -164,39 +249,52 @@ export default function BranchesScreen() {
     distance: string,
     index?: number
   ) => {
+    const imgs = getBranchImages(branchId);
     return (
-      <View key={branchId || `branch-key-${index}`} style={[styles.branchCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-        {/* Top Half: Photo Placeholder */}
-        <View style={styles.photoBox}>
-          <View style={styles.photoPill}>
-            <Text style={[styles.photoPillText, { color: colors.textSub }]}>Branch Photo</Text>
+      <AnimatedEntrance 
+        key={branchId || `branch-key-${index}`} 
+        delay={(index || 0) * 100}
+      >
+        <View style={[styles.branchCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+          {/* Top Half: Photo with smooth cross-fade */}
+          <View style={styles.photoBox}>
+            <Image 
+              source={imgs.day}
+              style={styles.branchImage}
+              resizeMode="cover"
+            />
+            <Animated.Image 
+              source={imgs.night}
+              style={[styles.branchImage, { opacity: themeAnim }]}
+              resizeMode="cover"
+            />
+          </View>
+
+          {/* Bottom Half: Details */}
+          <View style={styles.cardDetails}>
+            <View style={styles.titleRow}>
+              <View style={styles.titleLeft}>
+                <View style={[styles.statusDot, { backgroundColor: colors.statusGreen }]} />
+                <Text style={[styles.cardTitle, { color: colors.textMain }]}>{title}</Text>
+              </View>
+              <View style={[styles.distanceBadge, { borderColor: 'rgba(212, 175, 55, 0.3)' }]}>
+                <Text style={[styles.distanceText, { color: colors.accentGold }]}>{distance}</Text>
+              </View>
+            </View>
+
+            <Text style={[styles.cardSubtitle, { color: colors.textSub }]}>{subtitle}</Text>
+
+            {/* Select button */}
+            <TouchableOpacity 
+              style={[styles.selectBtn, { borderColor: 'rgba(212, 175, 55, 0.25)' }]} 
+              onPress={() => handleSelectBranch(branchId)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.selectBtnText, { color: colors.accentGold }]}>Select Branch →</Text>
+            </TouchableOpacity>
           </View>
         </View>
-
-        {/* Bottom Half: Details */}
-        <View style={styles.cardDetails}>
-          <View style={styles.titleRow}>
-            <View style={styles.titleLeft}>
-              <View style={[styles.statusDot, { backgroundColor: colors.statusGreen }]} />
-              <Text style={[styles.cardTitle, { color: colors.textMain }]}>{title}</Text>
-            </View>
-            <View style={[styles.distanceBadge, { borderColor: 'rgba(212, 175, 55, 0.3)' }]}>
-              <Text style={[styles.distanceText, { color: colors.accentGold }]}>{distance}</Text>
-            </View>
-          </View>
-
-          <Text style={[styles.cardSubtitle, { color: colors.textSub }]}>{subtitle}</Text>
-
-          {/* Select button */}
-          <TouchableOpacity 
-            style={[styles.selectBtn, { borderColor: 'rgba(212, 175, 55, 0.25)' }]} 
-            onPress={() => handleSelectBranch(branchId)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.selectBtnText, { color: colors.accentGold }]}>Select Branch →</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      </AnimatedEntrance>
     );
   };
 
@@ -240,6 +338,32 @@ export default function BranchesScreen() {
           </Text>
         </View>
 
+        {/* Address Selection Card */}
+        <TouchableOpacity
+          style={[styles.addressCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
+          onPress={() => setShowPicker(true)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.addressCardLeft}>
+            {selectedAddress?.label === 'Home' ? (
+              <Home size={16} color={colors.accentGold} />
+            ) : selectedAddress?.label === 'Work' ? (
+              <Briefcase size={16} color={colors.accentGold} />
+            ) : (
+              <MapPin size={16} color={colors.accentGold} />
+            )}
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: colors.accentGold, letterSpacing: 1.5 }}>DELIVERING TO</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginTop: 2 }} numberOfLines={1}>
+                {selectedAddress 
+                  ? `${selectedAddress.label} (${selectedAddress.flatNo}, ${selectedAddress.address})` 
+                  : 'Set your delivery location...'}
+              </Text>
+            </View>
+          </View>
+          <ChevronRight size={16} color={colors.textSub} />
+        </TouchableOpacity>
+
         <View style={styles.cardContainer}>
           {loading ? (
             <>
@@ -261,55 +385,41 @@ export default function BranchesScreen() {
       </ScrollView>
 
       {/* Bottom Tab Navigation Bar */}
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(true)} onPress={() => router.replace('/(customer)/branches')}>
-            <Home size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
-            <ShoppingBag size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/account')}>
-            <User size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Profile</Text>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.92)' : 'rgba(245, 245, 247, 0.95)',
-              borderColor: colors.cardBorder 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(true)} onPress={() => router.replace('/(customer)/branches')}>
-            <Home size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
-            <ShoppingBag size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/account')}>
-            <User size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Profile</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.bottomTabContainer, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <TouchableOpacity style={getTabStyle(true)} onPress={() => router.replace('/(customer)/branches')}>
+          <Home size={18} color={colors.accentGold} />
+          <Text style={[styles.tabText, { color: colors.accentGold }]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
+          <ShoppingBag size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/account')}>
+          <User size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Profile</Text>
+        </TouchableOpacity>
+      </BlurView>
+      {/* Location Picker Modal Overlay */}
+      <LocationPickerModal
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onAddressSaved={(addr) => {
+          setSelectedAddress(addr);
+          setUserCoords({ latitude: addr.latitude, longitude: addr.longitude });
+        }}
+      />
     </View>
   );
 }
@@ -317,6 +427,26 @@ export default function BranchesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  addressCard: {
+    borderRadius: 20,
+    borderWidth: 0.8,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  addressCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
   },
   headerRightContainer: {
     flexDirection: 'row',
@@ -357,6 +487,9 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     gap: 20,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   branchCard: {
     borderRadius: 24,
@@ -365,7 +498,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   photoBox: {
-    height: 140,
+    width: '100%',
+    aspectRatio: 16 / 9,
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderWidth: 0.8,
@@ -373,6 +507,16 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
+    overflow: 'hidden',
+  },
+  branchImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   photoPill: {
     borderRadius: 99,

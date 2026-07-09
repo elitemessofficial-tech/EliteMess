@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
+import AnimatedEntrance from '../../components/AnimatedEntrance';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ShoppingCart, ChevronLeft, Plus, Minus } from 'lucide-react-native';
@@ -32,15 +33,34 @@ interface MenuItem {
 }
 
 const MOCK_MENU: MenuItem[] = [
-  { id: '1', name: 'Truffle Arancini', description: 'Crisp saffron rice, black truffle, parmesan cream', price: 1200, category: 'Starters' },
-  { id: '2', name: 'Wagyu Sliders', description: 'Aged cheddar, caramelized onion, brioche bun', price: 1600, category: 'Starters' },
-  { id: '3', name: 'Miso Black Cod', description: 'Silky glaze, charred baby bok choy, citrus', price: 2400, category: 'Mains' },
-  { id: '4', name: 'Valrhona Chocolate Tart', description: 'Salted caramel, vanilla bean, gold leaf', price: 900, category: 'Desserts' },
-  { id: '5', name: 'Gourmet Truffle Burger', description: 'Double Angus beef patty, Swiss cheese, truffle aioli, brioche bun.', price: 1500, category: 'Mains' },
-  { id: '6', name: 'Iced Caramel Macchiato', description: 'Freshly brewed espresso, steamed milk, vanilla syrup, caramel drizzle.', price: 450, category: 'Beverages' },
+  { id: 'm1', name: "Crispy Paneer", price: 239, category: "Veg Starter", description: "Crisp fried paneer tossed in savory spices" },
+  { id: 'm2', name: "Masala Papad", price: 49, category: "Papad", description: "Fried or roasted papad topped with spicy onion tomato mix" },
+  { id: 'm3', name: "Chicken Chilli", price: 239, category: "Non-Veg Starter", description: "Tender chicken chunks in spicy chilli glaze" },
+  { id: 'm4', name: "Paneer Tikka", price: 239, category: "Tandoor Veg Starter", description: "Skewered char-grilled spiced paneer cubes" },
+  { id: 'm5', name: "Paneer Butter Masala", price: 259, category: "Main Course Veg", description: "Paneer in rich tomato, butter, and cashew gravy" },
+  { id: 'm6', name: "Dal Fry", price: 139, category: "Main Course Veg", description: "Yellow lentils tempered with ghee, cumin, onion, and garlic" }
 ];
 
-const CATEGORIES = ['All', 'Starters', 'Mains', 'Desserts', 'Beverages'];
+const CATEGORIES = [
+  'All',
+  'Veg Starter',
+  'Papad',
+  'Non-Veg Starter',
+  'Fish Starter',
+  'Tandoor Veg Starter',
+  'Tandoor Non-Veg Starter',
+  'Main Course Veg',
+  'Maharashtra Special Veg',
+  'Non-Veg Main Course (Chicken & Egg)',
+  'Non-Veg Main Course (Mutton)',
+  'Rice & Biryani',
+  'Indian Breads',
+  'Maharashtrian Thali & Veg Thali',
+  'Kolhapuri Lal Masala Thali',
+  'Chicken Dum Murgha & Maharaja Group Dishes',
+  'Special Kala Masala Thali (Black Gravy)',
+  'Bhigwan Special Chilapi Thali (Fish)'
+];
 
 export default function MenuScreen() {
   const router = useRouter();
@@ -115,136 +135,115 @@ export default function MenuScreen() {
     ? branchItems 
     : branchItems.filter(item => item.category === selectedCategory);
 
-  const renderItem = ({ item }: { item: MenuItem }) => {
+  const renderItem = ({ item, index }: { item: MenuItem; index: number }) => {
     const qty = cart[item.id] || 0;
     const isUnavailable = item.is_available === false;
     
     return (
-      <View style={[
-        styles.cardWrapper, 
-        { backgroundColor: colors.cardBg, borderColor: colors.cardBorder },
-        isUnavailable && { opacity: 0.6 }
-      ]}>
-        <View style={styles.cardContent}>
-          {/* Left Details */}
-          <View style={styles.menuInfo}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <Text style={[styles.menuName, { color: colors.textMain }]}>{item.name}</Text>
-              {isUnavailable && (
-                <View style={styles.unavailableBadge}>
-                  <Text style={styles.unavailableBadgeText}>NOT DELIVERABLE</Text>
-                </View>
-              )}
-            </View>
-            <Text style={[styles.menuDescription, { color: colors.textSub }]}>{item.description}</Text>
-            
-            <View style={styles.priceRow}>
-              <Text style={[styles.menuPrice, { color: colors.accentGold }]}>
-                ₹ {item.price.toLocaleString()}
-              </Text>
+      <AnimatedEntrance delay={index * 60}>
+        <View style={[
+          styles.cardWrapper, 
+          { backgroundColor: colors.cardBg, borderColor: colors.cardBorder },
+          isUnavailable && { opacity: 0.6 }
+        ]}>
+          <View style={styles.cardContent}>
+            {/* Left Details */}
+            <View style={styles.menuInfo}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={[styles.menuName, { color: colors.textMain }]}>{item.name}</Text>
+                {isUnavailable && (
+                  <View style={styles.unavailableBadge}>
+                    <Text style={styles.unavailableBadgeText}>NOT DELIVERABLE</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.menuDescription, { color: colors.textSub }]}>{item.description}</Text>
               
-              {isUnavailable ? (
-                <View style={styles.unavailablePlaceholder}>
-                  <Text style={styles.unavailablePlaceholderText}>Temporarily Out</Text>
-                </View>
-              ) : qty > 0 ? (
-                <View style={styles.quantityControl}>
-                  <TouchableOpacity style={styles.qtyBtn} onPress={() => handleRemoveFromCart(item.id)}>
-                    <Minus size={11} color="#000000" />
+              <View style={styles.priceRow}>
+                <Text style={[styles.menuPrice, { color: colors.accentGold }]}>
+                  ₹ {item.price.toLocaleString()}
+                </Text>
+                
+                {isUnavailable ? (
+                  <View style={styles.unavailablePlaceholder}>
+                    <Text style={styles.unavailablePlaceholderText}>Temporarily Out</Text>
+                  </View>
+                ) : qty > 0 ? (
+                  <View style={styles.quantityControl}>
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => handleRemoveFromCart(item.id)}>
+                      <Minus size={11} color="#000000" />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyVal}>{qty}</Text>
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => handleAddToCart(item.id)}>
+                      <Plus size={11} color="#000000" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={[styles.plusCircle, { backgroundColor: colors.accentGold }]}
+                    onPress={() => handleAddToCart(item.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={14} color="#000000" />
                   </TouchableOpacity>
-                  <Text style={styles.qtyVal}>{qty}</Text>
-                  <TouchableOpacity style={styles.qtyBtn} onPress={() => handleAddToCart(item.id)}>
-                    <Plus size={11} color="#000000" />
-                  </TouchableOpacity>
-                </View>
+                )}
+              </View>
+            </View>
+            
+            {/* Right Image */}
+            <View style={styles.photoContainer}>
+              {item.image_url ? (
+                <Image 
+                  source={{ uri: item.image_url }} 
+                  style={styles.foodPhoto} 
+                  resizeMode="cover"
+                />
               ) : (
-                <TouchableOpacity 
-                  style={[styles.plusCircle, { backgroundColor: colors.accentGold }]}
-                  onPress={() => handleAddToCart(item.id)}
-                  activeOpacity={0.8}
-                >
-                  <Plus size={14} color="#000000" />
-                </TouchableOpacity>
+                <Text style={styles.photoText}>Food Photo</Text>
               )}
             </View>
-          </View>
-          
-          {/* Right Image */}
-          <View style={styles.photoContainer}>
-            {item.image_url ? (
-              <Image 
-                source={{ uri: item.image_url }} 
-                style={styles.foodPhoto} 
-                resizeMode="cover"
-              />
-            ) : (
-              <Text style={styles.photoText}>Food Photo</Text>
-            )}
           </View>
         </View>
-      </View>
+      </AnimatedEntrance>
     );
   };
 
   const renderFloatingFooter = () => (
     <View style={styles.floatingFooterContainer}>
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.footerInner, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
-        >
-          <View style={styles.footerSummary}>
-            <Text style={[styles.footerTitle, { color: colors.textMain }]}>
-              {cartTotalItems} Item{cartTotalItems > 1 ? 's' : ''} · ₹ {cartTotalPrice.toLocaleString()}
-            </Text>
-            <Text style={[styles.footerSubtitle, { color: colors.textSub }]}>Luxury cart ready</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.checkoutBtn}
-            onPress={() => router.push('/(customer)/cart')}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={colors.goldGrad}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.checkoutBtnGrad}
-            >
-              <Text style={styles.checkoutBtnText}>Checkout →</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View style={[styles.footerInner, { backgroundColor: isDark ? 'rgba(20, 20, 18, 0.96)' : 'rgba(245, 245, 247, 0.95)', borderColor: colors.cardBorder }]}>
-          <View style={styles.footerSummary}>
-            <Text style={[styles.footerTitle, { color: colors.textMain }]}>
-              {cartTotalItems} Item{cartTotalItems > 1 ? 's' : ''} · ₹ {cartTotalPrice.toLocaleString()}
-            </Text>
-            <Text style={[styles.footerSubtitle, { color: colors.textSub }]}>Luxury cart ready</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.checkoutBtn}
-            onPress={() => router.push('/(customer)/cart')}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={colors.goldGrad}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.checkoutBtnGrad}
-            >
-              <Text style={styles.checkoutBtnText}>Checkout →</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.footerInner, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <View style={styles.footerSummary}>
+          <Text style={[styles.footerTitle, { color: colors.textMain }]}>
+            {cartTotalItems} Item{cartTotalItems > 1 ? 's' : ''} · ₹ {cartTotalPrice.toLocaleString()}
+          </Text>
+          <Text style={[styles.footerSubtitle, { color: colors.textSub }]}>Luxury cart ready</Text>
         </View>
-      )}
+        <TouchableOpacity 
+          style={styles.checkoutBtn}
+          onPress={() => router.push('/(customer)/cart')}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={colors.goldGrad}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.checkoutBtnGrad}
+          >
+            <Text style={styles.checkoutBtnText}>Checkout →</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </BlurView>
     </View>
   );
 
@@ -381,7 +380,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   categoryPill: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 0.8,
@@ -391,7 +390,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   categoryText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   listContainer: {

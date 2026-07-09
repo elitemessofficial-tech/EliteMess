@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -16,8 +16,9 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
+import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
@@ -37,6 +38,8 @@ interface DBOrder {
   tip_amount?: number;
   created_at: string;
   delivery_address: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
   notes?: string;
   status: string;
   profiles?: {
@@ -53,6 +56,26 @@ interface DBOrder {
   };
 }
 
+const MENU_CATEGORIES = [
+  'Veg Starter',
+  'Papad',
+  'Non-Veg Starter',
+  'Fish Starter',
+  'Tandoor Veg Starter',
+  'Tandoor Non-Veg Starter',
+  'Main Course Veg',
+  'Maharashtra Special Veg',
+  'Non-Veg Main Course (Chicken & Egg)',
+  'Non-Veg Main Course (Mutton)',
+  'Rice & Biryani',
+  'Indian Breads',
+  'Maharashtrian Thali & Veg Thali',
+  'Kolhapuri Lal Masala Thali',
+  'Chicken Dum Murgha & Maharaja Group Dishes',
+  'Special Kala Masala Thali (Black Gravy)',
+  'Bhigwan Special Chilapi Thali (Fish)'
+];
+
 export default function OwnerDashboard() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
@@ -60,10 +83,20 @@ export default function OwnerDashboard() {
   const [orders, setOrders] = useState<DBOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetailOrder, setSelectedDetailOrder] = useState<DBOrder | null>(null);
-  const [activeSegment, setActiveSegment] = useState<'orders' | 'reviews' | 'menu' | 'sales'>('orders');
+  const [activeSegment, setActiveSegment] = useState<'orders' | 'reviews' | 'menu' | 'sales' | 'support'>('orders');
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [salesFilter, setSalesFilter] = useState<'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lifetime'>('lifetime');
   const [salesDropdownOpen, setSalesDropdownOpen] = useState(false);
+  const [supportChats, setSupportChats] = useState<any[]>([]);
+  const [loadingSupport, setLoadingSupport] = useState(false);
+  const [selectedChatOrder, setSelectedChatOrder] = useState<any | null>(null);
+  const selectedChatOrderRef = useRef<any>(null);
+  useEffect(() => {
+    selectedChatOrderRef.current = selectedChatOrder;
+  }, [selectedChatOrder]);
+  const [ownerReplyText, setOwnerReplyText] = useState('');
+  const chatScrollRef = useRef<ScrollView>(null);
+  const [supportTab, setSupportTab] = useState<'active' | 'resolved'>('active');
 
   // Menu Customization States
   const [menuItems, setMenuItems] = useState<any[]>([]);
@@ -71,8 +104,9 @@ export default function OwnerDashboard() {
   const [newItemDesc, setNewItemDesc] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemImage, setNewItemImage] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState<'Starters' | 'Mains' | 'Desserts' | 'Beverages'>('Starters');
+  const [newItemCategory, setNewItemCategory] = useState<string>('Veg Starter');
   const [addingItem, setAddingItem] = useState(false);
+  const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>('All');
 
   // States for Inline Edits
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
@@ -165,6 +199,8 @@ export default function OwnerDashboard() {
           total_amount,
           created_at,
           delivery_address,
+          delivery_latitude,
+          delivery_longitude,
           notes,
           status,
           tip_amount,
@@ -207,7 +243,8 @@ export default function OwnerDashboard() {
               profiles: Array.isArray(order.deliveries.profiles) ? order.deliveries.profiles[0] : order.deliveries.profiles
             } : null)
       }));
-      setOrders(formatted);
+      const normalOrders = formatted.filter((o: any) => o.delivery_address !== 'SUPPORT_TICKET');
+      setOrders(normalOrders);
 
       // Load Reviews from AsyncStorage
       const savedReviews = await AsyncStorage.getItem('hotelbet_reviews');
@@ -219,10 +256,53 @@ export default function OwnerDashboard() {
         }));
         setCustomerReviews(reviewList);
       }
+      
+      fetchSupportChats();
     } catch (e) {
       console.error('Failed to load operations data in Owner Dashboard:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSupportChats = async () => {
+    try {
+      setLoadingSupport(true);
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          customer_id,
+          notes,
+          updated_at,
+          status,
+          profiles (
+            full_name,
+            phone_number
+          )
+        `)
+        .eq('delivery_address', 'SUPPORT_TICKET')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((order: any) => ({
+        ...order,
+        profiles: Array.isArray(order.profiles) ? order.profiles[0] : order.profiles
+      }));
+
+      setSupportChats(formatted);
+
+      if (selectedChatOrderRef.current) {
+        const current = formatted.find(c => c.id === selectedChatOrderRef.current.id);
+        if (current) {
+          setSelectedChatOrder(current);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch support chats:", e);
+    } finally {
+      setLoadingSupport(false);
     }
   };
 
@@ -570,7 +650,7 @@ export default function OwnerDashboard() {
               </View>
             ) : (
               <View style={styles.queueContainer}>
-                {orders.map((order) => {
+                {orders.map((order, index) => {
                   const guestName = order.profiles?.full_name || 'Guest Customer';
                   const elapsedMins = Math.round((Date.now() - new Date(order.created_at).getTime()) / 60000);
                   const timeLabel = elapsedMins <= 0 ? 'Just now' : `${elapsedMins}m ago`;
@@ -579,118 +659,231 @@ export default function OwnerDashboard() {
                   const priceLabel = `₹${parseFloat(order.total_amount as any).toLocaleString()}`;
                   
                   return (
-                    <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} key={order.id}>
-                      <TouchableOpacity 
-                        onPress={() => setSelectedDetailOrder(order)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.cardHeader}>
-                          <Text style={[styles.orderId, { color: colors.accentGold }]}>
-                            #{order.id.slice(0, 8).toUpperCase()}
-                          </Text>
-                          <Text style={[styles.orderItems, { color: colors.textMain }]}>
-                            {itemsCount} item{itemsCount !== 1 ? 's' : ''} · {priceLabel}
-                          </Text>
-                        </View>
-                        
-                        <View style={styles.cardMid}>
-                          <Text style={[styles.guestName, { color: colors.textMain }]}>
-                            {guestName} ({order.profiles?.phone_number || 'No Phone'})
-                          </Text>
-                          <Text style={[styles.timeText, { color: colors.textSub }]}>{timeLabel}</Text>
-                        </View>
-
-                        {/* Display items names detail */}
-                        {order.order_items && order.order_items.length > 0 && (
-                          <View style={styles.itemsListing}>
-                            {order.order_items.map((item, idx) => (
-                              <Text key={idx} style={[styles.itemsListingText, { color: colors.textSub }]}>
-                                • {item.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{item.quantity}</Text>
-                              </Text>
-                            ))}
+                    <AnimatedEntrance key={order.id} delay={index * 80}>
+                      <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                        <TouchableOpacity 
+                          onPress={() => setSelectedDetailOrder(order)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.cardHeader}>
+                            <Text style={[styles.orderId, { color: colors.accentGold }]}>
+                              #{order.id.slice(0, 8).toUpperCase()}
+                            </Text>
+                            <Text style={[styles.orderItems, { color: colors.textMain }]}>
+                              {itemsCount} item{itemsCount !== 1 ? 's' : ''} · {priceLabel}
+                            </Text>
                           </View>
-                        )}
-                        
-                        <Text style={[styles.kitchenText, { color: colors.textMain }]}>
-                          Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
-                        </Text>
+                          
+                          <View style={styles.cardMid}>
+                            <Text style={[styles.guestName, { color: colors.textMain }]}>
+                              {guestName} ({order.profiles?.phone_number || 'No Phone'})
+                            </Text>
+                            <Text style={[styles.timeText, { color: colors.textSub }]}>{timeLabel}</Text>
+                          </View>
 
-                        {order.notes ? (
-                          <Text style={[styles.notesText, { color: colors.textSub }]}>
-                            Notes: "{order.notes}"
+                          {/* Display items names detail */}
+                          {order.order_items && order.order_items.length > 0 && (
+                            <View style={styles.itemsListing}>
+                              {order.order_items.map((item, idx) => (
+                                <Text key={idx} style={[styles.itemsListingText, { color: colors.textSub }]}>
+                                  • {item.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{item.quantity}</Text>
+                                </Text>
+                              ))}
+                            </View>
+                          )}
+                          
+                          <Text style={[styles.kitchenText, { color: colors.textMain }]}>
+                            Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
                           </Text>
-                        ) : null}
 
-                        {/* Delivery assignment display */}
-                        {order.deliveries ? (
-                          <Text style={[styles.riderAssignmentText, { color: colors.statusGreen }]}>
-                            Rider Assigned: {order.deliveries.profiles?.full_name || 'Elite Rider Alpha'} ({order.deliveries.status.toUpperCase()})
-                          </Text>
-                        ) : null}
+                          {order.delivery_latitude && order.delivery_longitude ? (
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accentGold, marginTop: 2, marginBottom: 4 }}>
+                              📍 Coords: {order.delivery_latitude.toFixed(6)}, {order.delivery_longitude.toFixed(6)}
+                            </Text>
+                          ) : null}
 
-                        <View style={[styles.statusBanner, { backgroundColor: 'rgba(255, 255, 255, 0.02)' }]}>
-                          <Text style={[styles.statusBannerText, { color: colors.accentGold }]}>
-                            STATUS: {order.status.toUpperCase()}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
+                          {order.notes ? (
+                            <Text style={[styles.notesText, { color: colors.textSub }]}>
+                              Notes: "{order.notes}"
+                            </Text>
+                          ) : null}
 
-                      {/* Actions */}
-                      <View style={styles.actionsRow}>
-                        {order.status === 'pending' && (
-                          <>
+                          {/* Delivery assignment display */}
+                          {order.deliveries ? (
+                            <Text style={[styles.riderAssignmentText, { color: colors.statusGreen }]}>
+                              Rider Assigned: {order.deliveries.profiles?.full_name || 'Elite Rider Alpha'} ({order.deliveries.status.toUpperCase()})
+                            </Text>
+                          ) : null}
+
+                          <View style={[styles.statusBanner, { backgroundColor: 'rgba(255, 255, 255, 0.02)' }]}>
+                            <Text style={[styles.statusBannerText, { color: colors.accentGold }]}>
+                              STATUS: {order.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {/* Actions */}
+                        <View style={styles.actionsRow}>
+                          {order.status === 'pending' && (
+                            <>
+                              <TouchableOpacity 
+                                style={[styles.actionBtn, { borderColor: colors.accentGold }]}
+                                onPress={() => handleUpdateStatus(order.id, 'accepted')}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={[styles.btnText, { color: colors.accentGold }]}>Accept Order</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={[styles.actionBtn, { borderColor: '#EF4444' }]}
+                                onPress={() => handleUpdateStatus(order.id, 'cancelled')}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={[styles.btnText, { color: '#EF4444' }]}>Reject Order</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+
+                          {order.status === 'accepted' && (
                             <TouchableOpacity 
                               style={[styles.actionBtn, { borderColor: colors.accentGold }]}
-                              onPress={() => handleUpdateStatus(order.id, 'accepted')}
+                              onPress={() => handleUpdateStatus(order.id, 'preparing')}
                               activeOpacity={0.8}
                             >
-                              <Text style={[styles.btnText, { color: colors.accentGold }]}>Accept Order</Text>
+                              <Text style={[styles.btnText, { color: colors.accentGold }]}>Start Cooking</Text>
                             </TouchableOpacity>
+                          )}
+
+                          {order.status === 'preparing' && (
                             <TouchableOpacity 
-                              style={[styles.actionBtn, { borderColor: '#EF4444' }]}
-                              onPress={() => handleUpdateStatus(order.id, 'cancelled')}
+                              style={[styles.actionBtn, { borderColor: colors.statusGreen }]}
+                              onPress={() => handleUpdateStatus(order.id, 'ready_for_pickup')}
                               activeOpacity={0.8}
                             >
-                              <Text style={[styles.btnText, { color: '#EF4444' }]}>Reject Order</Text>
+                              <Text style={[styles.btnText, { color: colors.statusGreen }]}>Mark Ready</Text>
                             </TouchableOpacity>
-                          </>
-                        )}
+                          )}
 
-                        {order.status === 'accepted' && (
-                          <TouchableOpacity 
-                            style={[styles.actionBtn, { borderColor: colors.accentGold }]}
-                            onPress={() => handleUpdateStatus(order.id, 'preparing')}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.btnText, { color: colors.accentGold }]}>Start Cooking</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {order.status === 'preparing' && (
-                          <TouchableOpacity 
-                            style={[styles.actionBtn, { borderColor: colors.statusGreen }]}
-                            onPress={() => handleUpdateStatus(order.id, 'ready_for_pickup')}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.btnText, { color: colors.statusGreen }]}>Mark Ready</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {order.status === 'ready_for_pickup' && !order.deliveries && (
-                          <TouchableOpacity 
-                            style={[styles.actionBtn, { borderColor: colors.accentGold }]}
-                            onPress={() => handleAssignRider(order.id)}
-                            activeOpacity={0.8}
-                          >
-                            <Text style={[styles.btnText, { color: colors.textMain }]}>Assign Rider</Text>
-                          </TouchableOpacity>
-                        )}
+                          {order.status === 'ready_for_pickup' && !order.deliveries && (
+                            <TouchableOpacity 
+                              style={[styles.actionBtn, { borderColor: colors.accentGold }]}
+                              onPress={() => handleAssignRider(order.id)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.btnText, { color: colors.textMain }]}>Assign Rider</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
-                    </View>
+                    </AnimatedEntrance>
                   );
                 })}
               </View>
             )}
+          </>
+        ) : activeSegment === 'support' ? (
+          // ================= SUPPORT HELPDESK TAB =================
+          <>
+            <View style={styles.listHeaderRow}>
+              <View style={styles.listHeaderLeft}>
+                <Text style={[styles.listHeaderTitle, { color: colors.accentGold }]}>HELPDESK</Text>
+                <View style={[styles.liveDot, { backgroundColor: colors.accentGold }]} />
+              </View>
+              <Text style={[styles.realtimeText, { color: colors.textSub }]}>Live Support Chats</Text>
+            </View>
+
+            <View style={[styles.segmentContainer, { marginBottom: 12, marginTop: 4 }]}>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, supportTab === 'active' && styles.segmentBtnActive, { borderColor: colors.cardBorder }]}
+                onPress={() => setSupportTab('active')}
+              >
+                <Text style={[styles.segmentBtnText, { color: supportTab === 'active' ? colors.bg : colors.textMain }]}>Active Chats</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.segmentBtn, supportTab === 'resolved' && styles.segmentBtnActive, { borderColor: colors.cardBorder }]}
+                onPress={() => setSupportTab('resolved')}
+              >
+                <Text style={[styles.segmentBtnText, { color: supportTab === 'resolved' ? colors.bg : colors.textMain }]}>Resolved History</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ gap: 12, marginTop: 8 }}>
+              {(() => {
+                const filtered = supportChats.filter(c => {
+                  if (supportTab === 'active') return c.status === 'cancelled';
+                  return c.status === 'delivered';
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, alignItems: 'center', padding: 30 }]}>
+                      <MessageSquare size={32} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 8 }} />
+                      <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>
+                        {supportTab === 'active' ? 'No Active Chats' : 'No Resolved History'}
+                      </Text>
+                      <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                        {supportTab === 'active' 
+                          ? 'No customer has an active support chat open.' 
+                          : 'No resolved support chats found.'}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                return filtered.map((chat, idx) => {
+                  let parsedMsgs = [];
+                  try { parsedMsgs = JSON.parse(chat.notes); } catch (e) {}
+                  const lastMsg = parsedMsgs[parsedMsgs.length - 1];
+                  const unreadCount = parsedMsgs.filter((m: any) => m.sender === 'customer').length;
+
+                  return (
+                    <AnimatedEntrance key={chat.id} delay={idx * 60}>
+                      <TouchableOpacity
+                        style={[
+                          styles.orderCard, 
+                          { 
+                            backgroundColor: colors.cardBg, 
+                            borderColor: selectedChatOrder?.id === chat.id ? colors.accentGold : colors.cardBorder,
+                            padding: 16 
+                          }
+                        ]}
+                        onPress={() => {
+                          setSelectedChatOrder(chat);
+                          setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 150);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textMain }}>
+                              {chat.profiles?.full_name || 'Guest Customer'}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }} numberOfLines={1}>
+                              {lastMsg ? `${lastMsg.sender === 'customer' ? 'Customer' : 'Owner'}: ${lastMsg.text}` : 'No messages'}
+                            </Text>
+                          </View>
+                          
+                          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                            <Text style={{ fontSize: 9, color: colors.textSub }}>
+                              {lastMsg ? lastMsg.time : ''}
+                            </Text>
+                            {chat.status === 'cancelled' && unreadCount > 0 && (
+                              <View style={{ backgroundColor: colors.accentGold, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                <Text style={{ color: '#000000', fontSize: 9, fontWeight: '900' }}>Active</Text>
+                              </View>
+                            )}
+                            {chat.status === 'delivered' && (
+                              <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 0.5, borderColor: '#10B981' }}>
+                                <Text style={{ color: '#10B981', fontSize: 9, fontWeight: '900' }}>Resolved</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    </AnimatedEntrance>
+                  );
+                });
+              })()}
+            </View>
           </>
         ) : activeSegment === 'reviews' ? (
           // ================= REVIEWS TAB =================
@@ -714,62 +907,64 @@ export default function OwnerDashboard() {
                 </View>
               ) : (
                 customerReviews.map((review, idx) => (
-                  <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} key={idx}>
-                    <View style={styles.cardHeader}>
-                      <Text style={[styles.orderId, { color: colors.accentGold }]}>
-                        #{review.orderId.slice(0, 8).toUpperCase()}
-                      </Text>
-                      <Text style={[styles.orderItems, { color: colors.textSub, fontSize: 11, fontWeight: '600' }]}>
-                        {review.timestamp}
-                      </Text>
-                    </View>
-
-                    <View style={styles.cardMid}>
-                      <Text style={[styles.guestName, { color: colors.textMain }]}>{review.customerName}</Text>
-                    </View>
-
-                    <View style={{ marginTop: 8, gap: 6 }}>
-                      {/* Food Feedback */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 90 }}>Food Quality:</Text>
-                        <View style={{ flexDirection: 'row' }}>
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star 
-                              key={i} 
-                              size={12} 
-                              color={i < review.orderRating ? colors.accentGold : 'rgba(255,255,255,0.1)'} 
-                              fill={i < review.orderRating ? colors.accentGold : 'transparent'} 
-                            />
-                          ))}
-                        </View>
-                      </View>
-                      {review.orderText ? (
-                        <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', paddingLeft: 6, borderLeftWidth: 1.5, borderLeftColor: colors.accentGold, marginBottom: 4 }}>
-                          "{review.orderText}"
+                  <AnimatedEntrance key={review.orderId || idx} delay={idx * 80}>
+                    <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                      <View style={styles.cardHeader}>
+                        <Text style={[styles.orderId, { color: colors.accentGold }]}>
+                          #{review.orderId.slice(0, 8).toUpperCase()}
                         </Text>
-                      ) : null}
-
-                      {/* Delivery Feedback */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 90 }}>Delivery Speed:</Text>
-                        <View style={{ flexDirection: 'row' }}>
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Star 
-                              key={i} 
-                              size={12} 
-                              color={i < review.deliveryRating ? colors.accentGold : 'rgba(255,255,255,0.1)'} 
-                              fill={i < review.deliveryRating ? colors.accentGold : 'transparent'} 
-                            />
-                          ))}
-                        </View>
-                      </View>
-                      {review.deliveryText ? (
-                        <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', paddingLeft: 6, borderLeftWidth: 1.5, borderLeftColor: colors.accentGold }}>
-                          "{review.deliveryText}"
+                        <Text style={[styles.orderItems, { color: colors.textSub, fontSize: 11, fontWeight: '600' }]}>
+                          {review.timestamp}
                         </Text>
-                      ) : null}
+                      </View>
+
+                      <View style={styles.cardMid}>
+                        <Text style={[styles.guestName, { color: colors.textMain }]}>{review.customerName}</Text>
+                      </View>
+
+                      <View style={{ marginTop: 8, gap: 6 }}>
+                        {/* Food Feedback */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 90 }}>Food Quality:</Text>
+                          <View style={{ flexDirection: 'row' }}>
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star 
+                                key={i} 
+                                size={12} 
+                                color={i < review.orderRating ? colors.accentGold : 'rgba(255,255,255,0.1)'} 
+                                fill={i < review.orderRating ? colors.accentGold : 'transparent'} 
+                              />
+                            ))}
+                          </View>
+                        </View>
+                        {review.orderText ? (
+                          <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', paddingLeft: 6, borderLeftWidth: 1.5, borderLeftColor: colors.accentGold, marginBottom: 4 }}>
+                            "{review.orderText}"
+                          </Text>
+                        ) : null}
+
+                        {/* Delivery Feedback */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 90 }}>Delivery Speed:</Text>
+                          <View style={{ flexDirection: 'row' }}>
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star 
+                                key={i} 
+                                size={12} 
+                                color={i < review.deliveryRating ? colors.accentGold : 'rgba(255,255,255,0.1)'} 
+                                fill={i < review.deliveryRating ? colors.accentGold : 'transparent'} 
+                              />
+                            ))}
+                          </View>
+                        </View>
+                        {review.deliveryText ? (
+                          <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', paddingLeft: 6, borderLeftWidth: 1.5, borderLeftColor: colors.accentGold }}>
+                            "{review.deliveryText}"
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
-                  </View>
+                  </AnimatedEntrance>
                 ))
               )}
             </View>
@@ -818,14 +1013,14 @@ export default function OwnerDashboard() {
 
                 {/* Category Selector Segment */}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1.5 }} contentContainerStyle={{ gap: 4, alignItems: 'center' }}>
-                  {['Starters', 'Mains', 'Desserts', 'Beverages'].map((cat) => (
+                  {MENU_CATEGORIES.map((cat) => (
                     <TouchableOpacity
                       key={cat}
                       style={[
                         styles.catPill,
                         newItemCategory === cat && { backgroundColor: colors.accentGold }
                       ]}
-                      onPress={() => setNewItemCategory(cat as any)}
+                      onPress={() => setNewItemCategory(cat)}
                     >
                       <Text style={[styles.catPillText, { color: newItemCategory === cat ? '#000000' : colors.textMain }]}>
                         {cat}
@@ -859,107 +1054,131 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
+            {/* Category Filter for browsing */}
+            <View style={{ marginBottom: 12 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+                {['All', ...MENU_CATEGORIES].map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.catPill,
+                      selectedMenuCategory === cat && { backgroundColor: colors.accentGold }
+                    ]}
+                    onPress={() => setSelectedMenuCategory(cat)}
+                  >
+                    <Text style={[styles.catPillText, { color: selectedMenuCategory === cat ? '#000000' : colors.textMain }]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             {/* Existing Menu Items list */}
             <View style={{ gap: 16, marginTop: 12 }}>
               {menuItems.length === 0 ? (
-                <ActivityIndicator size="small" color={colors.accentGold} style={{ marginTop: 20 }} />
+                <Loader />
               ) : (
-                menuItems.map((item) => {
+                (selectedMenuCategory === 'All' ? menuItems : menuItems.filter(item => item.category === selectedMenuCategory)).map((item, index) => {
                   const currentPrice = editPrices[item.id] || '';
                   const currentDesc = editDescs[item.id] || '';
                   const currentAvail = editAvail[item.id] !== undefined ? editAvail[item.id] : true;
                   const currentImage = editImages[item.id] || '';
 
                   return (
-                    <View 
-                      style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} 
-                      key={item.id}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          {item.image_url ? (
-                            <Image 
-                              source={{ uri: item.image_url }} 
-                              style={{ width: 36, height: 36, borderRadius: 8 }} 
-                              resizeMode="cover"
+                    <AnimatedEntrance key={item.id} delay={index * 80}>
+                      <View 
+                        style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} 
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            {item.image_url ? (
+                              <Image 
+                                source={{ uri: item.image_url }} 
+                                style={{ width: 36, height: 36, borderRadius: 8 }} 
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: colors.accentGold, borderStyle: 'dashed' }}>
+                                <Text style={{ fontSize: 7, color: colors.textSub, fontWeight: '700' }}>No Pic</Text>
+                              </View>
+                            )}
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textMain }}>{item.name}</Text>
+                          </View>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.accentGold, textTransform: 'uppercase' }}>
+                            {item.category}
+                          </Text>
+                        </View>
+
+                        {/* Price, Description & Image edits */}
+                        <View style={{ marginTop: 10, gap: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Price (₹):</Text>
+                            <TextInput 
+                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                              value={currentPrice}
+                              onChangeText={(text) => setEditPrices(prev => ({ ...prev, [item.id]: text }))}
+                              keyboardType="numeric"
                             />
-                          ) : (
-                            <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', borderWidth: 0.5, borderColor: colors.accentGold, borderStyle: 'dashed' }}>
-                              <Text style={{ fontSize: 7, color: colors.textSub, fontWeight: '700' }}>No Pic</Text>
-                            </View>
-                          )}
-                          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textMain }}>{item.name}</Text>
+                          </View>
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Description:</Text>
+                            <TextInput 
+                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                              value={currentDesc}
+                              onChangeText={(text) => setEditDescs(prev => ({ ...prev, [item.id]: text }))}
+                            />
+                          </View>
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Image URL:</Text>
+                            <TextInput 
+                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                              value={currentImage}
+                              onChangeText={(text) => setEditImages(prev => ({ ...prev, [item.id]: text }))}
+                              placeholder="https://images.unsplash.com/photo..."
+                              placeholderTextColor="#8E8E93"
+                            />
+                          </View>
+
+                          {/* Availability row */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub }}>Available for ordering</Text>
+                            <Switch 
+                              value={currentAvail}
+                              onValueChange={(val) => setEditAvail(prev => ({ ...prev, [item.id]: val }))}
+                              trackColor={{ 
+                                false: isDark ? '#3E3E3E' : '#CBD5E1', 
+                                true: '#10B981' 
+                              }}
+                              thumbColor={currentAvail ? '#FFFFFF' : (isDark ? '#A1A1AA' : '#F4F4F5')}
+                            />
+                          </View>
                         </View>
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.accentGold, textTransform: 'uppercase' }}>
-                          {item.category}
-                        </Text>
+
+                        {/* Action buttons */}
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                          <TouchableOpacity 
+                            style={[styles.menuActionBtn, { borderColor: colors.statusGreen, flex: 2 }]}
+                            onPress={() => handleUpdateMenuItem(item.id, {
+                              price: parseFloat(currentPrice) || 0,
+                              description: currentDesc,
+                              is_available: currentAvail,
+                              image_url: currentImage.trim() || null
+                            })}
+                          >
+                            <Text style={{ color: colors.statusGreen, fontSize: 12, fontWeight: '800' }}>Save Changes</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={[styles.menuActionBtn, { borderColor: '#EF4444', flex: 1 }]}
+                            onPress={() => handleDeleteMenuItem(item.id)}
+                          >
+                            <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '800' }}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-
-                      {/* Price, Description & Image edits */}
-                      <View style={{ marginTop: 10, gap: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Price (₹):</Text>
-                          <TextInput 
-                            style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                            value={currentPrice}
-                            onChangeText={(text) => setEditPrices(prev => ({ ...prev, [item.id]: text }))}
-                            keyboardType="numeric"
-                          />
-                        </View>
-
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Description:</Text>
-                          <TextInput 
-                            style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                            value={currentDesc}
-                            onChangeText={(text) => setEditDescs(prev => ({ ...prev, [item.id]: text }))}
-                          />
-                        </View>
-
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Image URL:</Text>
-                          <TextInput 
-                            style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                            value={currentImage}
-                            onChangeText={(text) => setEditImages(prev => ({ ...prev, [item.id]: text }))}
-                            placeholder="https://images.unsplash.com/photo..."
-                            placeholderTextColor="#8E8E93"
-                          />
-                        </View>
-
-                        {/* Availability row */}
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub }}>Available for ordering</Text>
-                          <Switch 
-                            value={currentAvail}
-                            onValueChange={(val) => setEditAvail(prev => ({ ...prev, [item.id]: val }))}
-                            trackColor={{ false: 'rgba(255, 255, 255, 0.08)', true: 'rgba(255, 255, 255, 0.25)' }}
-                            thumbColor={currentAvail ? '#E5E7EB' : '#767577'}
-                          />
-                        </View>
-                      </View>
-
-                      {/* Action buttons */}
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-                        <TouchableOpacity 
-                          style={[styles.menuActionBtn, { borderColor: colors.statusGreen, flex: 2 }]}
-                          onPress={() => handleUpdateMenuItem(item.id, {
-                            price: parseFloat(currentPrice) || 0,
-                            description: currentDesc,
-                            is_available: currentAvail,
-                            image_url: currentImage.trim() || null
-                          })}
-                        >
-                          <Text style={{ color: colors.statusGreen, fontSize: 12, fontWeight: '800' }}>Save Changes</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.menuActionBtn, { borderColor: '#EF4444', flex: 1 }]}
-                          onPress={() => handleDeleteMenuItem(item.id)}
-                        >
-                          <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '800' }}>Delete</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    </AnimatedEntrance>
                   );
                 })
               )}
@@ -1103,7 +1322,7 @@ export default function OwnerDashboard() {
                   </Text>
                 </View>
               ) : (
-                filteredCompletedOrders.map((order) => {
+                filteredCompletedOrders.map((order, index) => {
                   const dateStr = new Date(order.created_at).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
@@ -1113,20 +1332,21 @@ export default function OwnerDashboard() {
                   const orderName = order.profiles?.full_name || 'Guest Guest';
 
                   return (
-                    <View 
-                      key={order.id}
-                      style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
-                    >
-                      <View style={{ gap: 2 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
-                          #{order.id.slice(0, 8).toUpperCase()}
+                    <AnimatedEntrance key={order.id} delay={index * 80}>
+                      <View 
+                        style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                      >
+                        <View style={{ gap: 2 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textSub }}>{orderName} · {dateStr}</Text>
+                        </View>
+                        <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
+                          ₹{parseFloat(order.total_amount as any).toLocaleString()}
                         </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSub }}>{orderName} · {dateStr}</Text>
                       </View>
-                      <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                        ₹{parseFloat(order.total_amount as any).toLocaleString()}
-                      </Text>
-                    </View>
+                    </AnimatedEntrance>
                   );
                 })
               )}
@@ -1136,79 +1356,54 @@ export default function OwnerDashboard() {
       </ScrollView>
 
       {/* Bottom Tab Navigation Bar */}
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.bottomTabContainer, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'orders' || activeSegment === 'reviews')} 
+          onPress={() => setActiveSegment('orders')}
         >
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'orders' || activeSegment === 'reviews')} 
-            onPress={() => setActiveSegment('orders')}
-          >
-            <Home size={18} color={activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'menu')} 
-            onPress={() => {
-              setActiveSegment('menu');
-              fetchMenuItems();
-            }}
-          >
-            <ClipboardList size={18} color={activeSegment === 'menu' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'menu' ? colors.accentGold : colors.textSub }]}>Menu</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'sales')} 
-            onPress={() => setActiveSegment('sales')}
-          >
-            <DollarSign size={18} color={activeSegment === 'sales' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.92)' : 'rgba(245, 245, 247, 0.95)',
-              borderColor: colors.cardBorder 
-            }
-          ]}
+          <Home size={18} color={activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub }]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'support')} 
+          onPress={() => {
+            setActiveSegment('support');
+            fetchSupportChats();
+          }}
         >
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'orders' || activeSegment === 'reviews')} 
-            onPress={() => setActiveSegment('orders')}
-          >
-            <Home size={18} color={activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'menu')} 
-            onPress={() => {
-              setActiveSegment('menu');
-              fetchMenuItems();
-            }}
-          >
-            <ClipboardList size={18} color={activeSegment === 'menu' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'menu' ? colors.accentGold : colors.textSub }]}>Menu</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'sales')} 
-            onPress={() => setActiveSegment('sales')}
-          >
-            <DollarSign size={18} color={activeSegment === 'sales' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+          <MessageSquare size={18} color={activeSegment === 'support' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'support' ? colors.accentGold : colors.textSub }]}>Support</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'menu')} 
+          onPress={() => {
+            setActiveSegment('menu');
+            fetchMenuItems();
+          }}
+        >
+          <ClipboardList size={18} color={activeSegment === 'menu' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'menu' ? colors.accentGold : colors.textSub }]}>Menu</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'sales')} 
+          onPress={() => setActiveSegment('sales')}
+        >
+          <DollarSign size={18} color={activeSegment === 'sales' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
+        </TouchableOpacity>
+      </BlurView>
 
       {/* Detailed Order Modal for Owner */}
       <Modal
@@ -1300,6 +1495,11 @@ export default function OwnerDashboard() {
                       <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700', marginTop: 2 }}>
                         {selectedDetailOrder.delivery_address}
                       </Text>
+                      {selectedDetailOrder.delivery_latitude && selectedDetailOrder.delivery_longitude ? (
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accentGold, marginTop: 4 }}>
+                          📍 Coordinates: {selectedDetailOrder.delivery_latitude.toFixed(6)}, {selectedDetailOrder.delivery_longitude.toFixed(6)}
+                        </Text>
+                      ) : null}
                     </View>
                     {selectedDetailOrder.notes ? (
                       <View style={{ marginTop: 8, borderTopWidth: 0.8, borderTopColor: colors.cardBorder, paddingTop: 8 }}>
@@ -1425,6 +1625,199 @@ export default function OwnerDashboard() {
                 </TouchableOpacity>
               </ScrollView>
             )}
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Live Support Chat Modal for Owner */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={selectedChatOrder !== null}
+        onRequestClose={() => setSelectedChatOrder(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView 
+            intensity={95} 
+            tint={isDark ? 'dark' : 'light'} 
+            style={[
+              styles.modalContent, 
+              { 
+                borderColor: colors.cardBorder, 
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                maxHeight: '88%',
+                paddingHorizontal: 20
+              }
+            ]}
+          >
+            {selectedChatOrder && (() => {
+              const chat = selectedChatOrder;
+              let parsedMsgs = [];
+              try { parsedMsgs = JSON.parse(chat.notes); } catch (e) {}
+
+              const handleSendOwnerReply = async () => {
+                if (!ownerReplyText.trim()) return;
+                const text = ownerReplyText.trim();
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                const replyObj = {
+                  id: `reply_${Date.now()}`,
+                  sender: 'owner',
+                  text: text,
+                  time: timeStr
+                };
+
+                const updated = [...parsedMsgs, replyObj];
+                setOwnerReplyText('');
+
+                try {
+                  const { error } = await supabase
+                    .from('orders')
+                    .update({ notes: JSON.stringify(updated) })
+                    .eq('id', chat.id);
+
+                  if (error) throw error;
+                  
+                  setSelectedChatOrder({
+                    ...chat,
+                    notes: JSON.stringify(updated)
+                  });
+                  
+                  fetchSupportChats();
+                  setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+                } catch (e) {
+                  console.warn("Failed to send owner support reply:", e);
+                }
+              };
+
+              return (
+                <View style={{ width: '100%', flex: 1 }}>
+                  <View style={{ borderBottomWidth: 0.8, borderBottomColor: colors.cardBorder, paddingBottom: 12, gap: 6 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '900', color: colors.accentGold, letterSpacing: 1.5, textTransform: 'uppercase' }}>operations support</Text>
+                      <TouchableOpacity onPress={() => setSelectedChatOrder(null)} style={{ padding: 4 }}>
+                        <Text style={{ color: colors.textSub, fontSize: 12, fontWeight: '800' }}>Close</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ flex: 1, fontSize: 13, fontWeight: '800', color: colors.textMain }} numberOfLines={1}>
+                        Chat with: {chat.profiles?.full_name || 'Guest Customer'}
+                      </Text>
+                      {chat.status === 'cancelled' && (
+                        <TouchableOpacity 
+                          onPress={async () => {
+                            let parsed = [];
+                            try { parsed = JSON.parse(chat.notes); } catch (e) {}
+                            const closingMsg = {
+                              id: `resolve_${Date.now()}`,
+                              sender: 'owner',
+                              text: '✅ This support session has been closed and resolved by the Owner.',
+                              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            };
+                            const updated = [...parsed, closingMsg];
+                            try {
+                              const { error } = await supabase
+                                .from('orders')
+                                .update({ 
+                                  status: 'delivered',
+                                  notes: JSON.stringify(updated)
+                                })
+                                .eq('id', chat.id);
+                              if (error) throw error;
+                              setSelectedChatOrder(null);
+                              fetchSupportChats();
+                            } catch (e) {
+                              console.warn(e);
+                            }
+                          }}
+                          style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 0.5, borderColor: '#10B981' }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>Resolve Chat</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  <ScrollView
+                    ref={chatScrollRef}
+                    style={{ flex: 1, marginVertical: 12 }}
+                    contentContainerStyle={{ gap: 12, paddingBottom: 16, paddingHorizontal: 16 }}
+                    onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: true })}
+                  >
+                    {parsedMsgs.map((msg: any) => {
+                      const isOwner = msg.sender === 'owner' || msg.sender === 'concierge';
+                      return (
+                        <View
+                          key={msg.id}
+                          style={[
+                            styles.messageContainer,
+                            isOwner ? { alignSelf: 'flex-end', alignItems: 'flex-end' } : { alignSelf: 'flex-start', alignItems: 'flex-start' }
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.messageBubble,
+                              isOwner
+                                ? { backgroundColor: colors.accentGold, borderBottomRightRadius: 4 }
+                                : { backgroundColor: colors.inputBg, borderBottomLeftRadius: 4, borderColor: colors.cardBorder, borderWidth: 1 }
+                            ]}
+                          >
+                            <Text style={{ color: isOwner ? '#000000' : colors.textMain, fontSize: 12, fontWeight: '600' }}>
+                              {msg.text}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 8, color: colors.textSub, marginTop: 2 }}>{msg.time}</Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {chat.status === 'cancelled' ? (
+                    <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 12, borderTopWidth: 0.8, borderTopColor: colors.cardBorder, alignItems: 'center' }}>
+                      <TextInput
+                        style={{ 
+                          flex: 1, 
+                          height: 42, 
+                          borderRadius: 12, 
+                          borderWidth: 0.8, 
+                          borderColor: colors.cardBorder, 
+                          backgroundColor: colors.inputBg, 
+                          color: colors.textMain, 
+                          paddingHorizontal: 12,
+                          fontSize: 12
+                        }}
+                        placeholder="Type reply to customer..."
+                        placeholderTextColor={colors.textSub}
+                        value={ownerReplyText}
+                        onChangeText={setOwnerReplyText}
+                        onSubmitEditing={handleSendOwnerReply}
+                      />
+                      <TouchableOpacity 
+                        onPress={handleSendOwnerReply}
+                        style={{ 
+                          height: 42, 
+                          width: 70, 
+                          backgroundColor: colors.accentGold, 
+                          borderRadius: 12, 
+                          justifyContent: 'center', 
+                          alignItems: 'center' 
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={{ color: '#000000', fontSize: 12, fontWeight: '900' }}>Send</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ paddingVertical: 14, borderTopWidth: 0.8, borderTopColor: colors.cardBorder, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '800' }}>
+                        🔒 This support session was resolved and closed.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
           </BlurView>
         </View>
       </Modal>
@@ -1745,6 +2138,15 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 12,
     letterSpacing: 0.5,
+  },
+  messageContainer: {
+    marginVertical: 4,
+    maxWidth: '80%',
+  },
+  messageBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
   },
   menuCard: {
     borderRadius: 20,

@@ -1,7 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, StatusBar } from 'react-native';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ThemeProvider, useAppTheme } from '../src/context/ThemeContext';
@@ -16,12 +15,12 @@ function RootLayoutInner() {
     headerBg: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)',
     headerText: isDark ? '#F8FAFC' : '#0F172A',
     headerBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
-    statusBar: isDark ? 'light' : 'dark',
+    statusBar: isDark ? 'light-content' : 'dark-content',
   };
 
   return (
     <>
-      <StatusBar style={theme.statusBar as any} />
+      <StatusBar barStyle={theme.statusBar as any} translucent={true} backgroundColor="transparent" />
       <Stack
         screenOptions={{
           headerShown: false,

@@ -20,6 +20,7 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
+import LocationPickerModal from '../../src/components/LocationPickerModal';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -58,6 +59,7 @@ export default function AccountScreen() {
   const [newAddressText, setNewAddressText] = useState('');
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [showAddressForm, setShowAddressForm] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -373,10 +375,7 @@ export default function AccountScreen() {
               <TouchableOpacity 
                 style={[styles.addAddressBtn, { borderColor: colors.accentGold, marginTop: 12 }]}
                 onPress={() => {
-                  setEditingAddressId(null);
-                  setNewAddressText('');
-                  setNewLabel('Home');
-                  setShowAddressForm(true);
+                  setShowPicker(true);
                 }}
               >
                 <Plus size={14} color={colors.accentGold} style={{ marginRight: 6 }} />
@@ -506,55 +505,40 @@ export default function AccountScreen() {
       </ScrollView>
 
       {/* Bottom Tab Navigation Bar */}
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/branches')}>
-            <Home size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
-            <ShoppingBag size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(true)}>
-            <User size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Profile</Text>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.92)' : 'rgba(245, 245, 247, 0.95)',
-              borderColor: colors.cardBorder 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/branches')}>
-            <Home size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
-            <ShoppingBag size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(true)}>
-            <User size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Profile</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.bottomTabContainer, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/branches')}>
+          <Home size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
+          <ShoppingBag size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(true)}>
+          <User size={18} color={colors.accentGold} />
+          <Text style={[styles.tabText, { color: colors.accentGold }]}>Profile</Text>
+        </TouchableOpacity>
+      </BlurView>
+
+      <LocationPickerModal
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onAddressSaved={() => {
+          loadSavedAddresses();
+        }}
+      />
     </View>
   );
 }

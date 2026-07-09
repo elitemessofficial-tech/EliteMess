@@ -323,55 +323,32 @@ export default function RiderProfileScreen() {
       </ScrollView>
 
       {/* Bottom Tab Navigation Bar */}
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=deliveries')}>
-            <Home size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Deliveries</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=earnings')}>
-            <DollarSign size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(true)}>
-            <User size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Account</Text>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.92)' : 'rgba(245, 245, 247, 0.95)',
-              borderColor: colors.cardBorder 
-            }
-          ]}
-        >
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=deliveries')}>
-            <Home size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Deliveries</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=earnings')}>
-            <DollarSign size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={getTabStyle(true)}>
-            <User size={18} color={colors.accentGold} />
-            <Text style={[styles.tabText, { color: colors.accentGold }]}>Account</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.bottomTabContainer, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=deliveries')}>
+          <Home size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Deliveries</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(rider)/rider_dashboard?segment=earnings')}>
+          <DollarSign size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Earnings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={getTabStyle(true)}>
+          <User size={18} color={colors.accentGold} />
+          <Text style={[styles.tabText, { color: colors.accentGold }]}>Account</Text>
+        </TouchableOpacity>
+      </BlurView>
     </View>
   );
 }

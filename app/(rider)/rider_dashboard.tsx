@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  TextInput
+  TextInput,
+  Linking
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
+import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Home, ShoppingBag, Navigation, MapPin, Sun, Moon, LogOut, PackageCheck, ClipboardCheck, DollarSign, CheckCircle, AlertCircle, ShieldCheck, ChevronDown } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
@@ -69,6 +71,22 @@ export default function RiderDashboard() {
   const [availableOrders, setAvailableOrders] = useState<DBAvailableOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [riderId, setRiderId] = useState<string | null>(null);
+  const [selectedDetailDelivery, setSelectedDetailDelivery] = useState<any | null>(null);
+
+  const handleOpenMap = (lat?: number, lng?: number) => {
+    if (!lat || !lng) return;
+    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
+    const latLng = `${lat},${lng}`;
+    const label = 'Delivery Location';
+    const url = Platform.select({
+      ios: `${scheme}${label}@${latLng}`,
+      android: `${scheme}${latLng}(${label})`,
+      web: `https://www.google.com/maps/search/?api=1&query=${latLng}`
+    });
+    if (url) {
+      Linking.openURL(url);
+    }
+  };
 
   // Segment Tab & Earnings states
   const { segment } = useLocalSearchParams<{ segment?: string }>();
@@ -230,6 +248,8 @@ export default function RiderDashboard() {
               id,
               total_amount,
               delivery_address,
+              delivery_latitude,
+              delivery_longitude,
               notes,
               delivery_phone,
               status,
@@ -240,6 +260,13 @@ export default function RiderDashboard() {
               branches (
                 name,
                 address
+              ),
+              order_items (
+                quantity,
+                price_at_order,
+                menu_items (
+                  name
+                )
               )
             )
           `)
@@ -257,7 +284,11 @@ export default function RiderDashboard() {
             orders: {
               ...item.orders,
               profiles: Array.isArray(item.orders.profiles) ? item.orders.profiles[0] : item.orders.profiles,
-              branches: Array.isArray(item.orders.branches) ? item.orders.branches[0] : item.orders.branches
+              branches: Array.isArray(item.orders.branches) ? item.orders.branches[0] : item.orders.branches,
+              order_items: (item.orders.order_items || []).map((oi: any) => ({
+                ...oi,
+                menu_items: Array.isArray(oi.menu_items) ? oi.menu_items[0] : oi.menu_items
+              }))
             }
           }));
         setActiveDeliveries(formattedActive);
@@ -269,10 +300,14 @@ export default function RiderDashboard() {
             id,
             total_amount,
             delivery_address,
+            delivery_latitude,
+            delivery_longitude,
             notes,
+            delivery_phone,
             status,
             profiles (
-              full_name
+              full_name,
+              phone_number
             ),
             branches (
               name,
@@ -282,6 +317,13 @@ export default function RiderDashboard() {
               id,
               rider_id,
               status
+            ),
+            order_items (
+              quantity,
+              price_at_order,
+              menu_items (
+                name
+              )
             )
           `)
           .eq('status', 'ready_for_pickup');
@@ -298,7 +340,11 @@ export default function RiderDashboard() {
             ...order,
             profiles: Array.isArray(order.profiles) ? order.profiles[0] : order.profiles,
             branches: Array.isArray(order.branches) ? order.branches[0] : order.branches,
-            deliveries: Array.isArray(order.deliveries) ? order.deliveries[0] : order.deliveries
+            deliveries: Array.isArray(order.deliveries) ? order.deliveries[0] : order.deliveries,
+            order_items: (order.order_items || []).map((oi: any) => ({
+              ...oi,
+              menu_items: Array.isArray(oi.menu_items) ? oi.menu_items[0] : oi.menu_items
+            }))
           }));
         setAvailableOrders(claimable);
 
@@ -314,7 +360,26 @@ export default function RiderDashboard() {
               id,
               total_amount,
               delivery_address,
-              tip_amount
+              delivery_latitude,
+              delivery_longitude,
+              notes,
+              delivery_phone,
+              tip_amount,
+              profiles (
+                full_name,
+                phone_number
+              ),
+              branches (
+                name,
+                address
+              ),
+              order_items (
+                quantity,
+                price_at_order,
+                menu_items (
+                  name
+                )
+              )
             )
           `)
           .eq('rider_id', userId)
@@ -328,7 +393,11 @@ export default function RiderDashboard() {
             orders: {
               ...item.orders,
               profiles: Array.isArray(item.orders.profiles) ? item.orders.profiles[0] : item.orders.profiles,
-              branches: Array.isArray(item.orders.branches) ? item.orders.branches[0] : item.orders.branches
+              branches: Array.isArray(item.orders.branches) ? item.orders.branches[0] : item.orders.branches,
+              order_items: (item.orders.order_items || []).map((oi: any) => ({
+                ...oi,
+                menu_items: Array.isArray(oi.menu_items) ? oi.menu_items[0] : oi.menu_items
+              }))
             }
           }));
         setCompletedDeliveries(formattedCompleted);
@@ -577,106 +646,112 @@ export default function RiderDashboard() {
               <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold }]}>CURRENT ACTIVE DELIVERY</Text>
               
               {activeTask ? (
-                <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-                  {/* Top Label & Mode Pill */}
-                  <View style={styles.cardTopRow}>
-                    <View>
-                      <Text style={[styles.cardLabel, { color: colors.accentGold }]}>ACTIVE TASK</Text>
-                      <Text style={[styles.orderId, { color: colors.textMain }]}>
-                        #{activeTask.orders.id.slice(0, 8).toUpperCase()}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.riderModeBadge}>
-                      <Navigation size={12} color={colors.accentGold} style={styles.navigationIcon} />
-                      <Text style={[styles.riderModeText, { color: colors.accentGold }]}>
-                        {activeTask.status.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Details Grid */}
-                  <View style={styles.gridContainer}>
-                    <View style={styles.gridRow}>
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.gridLabel, { color: colors.textSub }]}>PICKUP FROM</Text>
-                        <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                          {activeTask.orders.branches?.name || 'Hotel Bet - Main Lobby'}
-                        </Text>
-                        <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
-                          {activeTask.orders.branches?.address}
+                <AnimatedEntrance delay={0}>
+                  <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                    <TouchableOpacity onPress={() => setSelectedDetailDelivery({ type: 'active', ...activeTask })} activeOpacity={0.8}>
+                    {/* Top Label & Mode Pill */}
+                    <View style={styles.cardTopRow}>
+                      <View>
+                        <Text style={[styles.cardLabel, { color: colors.accentGold }]}>ACTIVE TASK</Text>
+                        <Text style={[styles.orderId, { color: colors.textMain }]}>
+                          #{activeTask.orders.id.slice(0, 8).toUpperCase()}
                         </Text>
                       </View>
                       
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.gridLabel, { color: colors.textSub }]}>CUSTOMER</Text>
-                        <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                          {activeTask.orders.profiles?.full_name || 'Guest Customer'}
-                        </Text>
-                        <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
-                          Phone: {activeTask.orders.delivery_phone}
+                      <View style={styles.riderModeBadge}>
+                        <Navigation size={12} color={colors.accentGold} style={styles.navigationIcon} />
+                        <Text style={[styles.riderModeText, { color: colors.accentGold }]}>
+                          {activeTask.status.toUpperCase()}
                         </Text>
                       </View>
                     </View>
-                    
-                    <View style={styles.gridRow}>
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.gridLabel, { color: colors.textSub }]}>DELIVERY LOCATION</Text>
-                        <Text style={[styles.gridValue, { color: colors.textMain }]}>
-                          {activeTask.orders.delivery_address}
-                        </Text>
+
+                    {/* Details Grid */}
+                    <View style={styles.gridContainer}>
+                      <View style={styles.gridRow}>
+                        <View style={styles.gridCol}>
+                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>PICKUP FROM</Text>
+                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                            {activeTask.orders.branches?.name || 'Hotel Bet - Main Lobby'}
+                          </Text>
+                          <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
+                            {activeTask.orders.branches?.address}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.gridCol}>
+                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>CUSTOMER</Text>
+                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                            {activeTask.orders.profiles?.full_name || 'Guest Customer'}
+                          </Text>
+                          <Text style={[styles.gridSubValue, { color: colors.textSub }]}>
+                            Phone: {activeTask.orders.delivery_phone}
+                          </Text>
+                        </View>
                       </View>
                       
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.gridLabel, { color: colors.textSub }]}>TOTAL VALUE</Text>
-                        <Text style={[styles.gridValue, { color: colors.accentGold }]}>
-                          ₹{parseFloat(activeTask.orders.total_amount as any).toLocaleString()}
-                        </Text>
+                      <View style={styles.gridRow}>
+                        <View style={styles.gridCol}>
+                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>DELIVERY LOCATION</Text>
+                          <Text style={[styles.gridValue, { color: colors.textMain }]}>
+                            {activeTask.orders.delivery_address}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.gridCol}>
+                          <Text style={[styles.gridLabel, { color: colors.textSub }]}>TOTAL VALUE</Text>
+                          <Text style={[styles.gridValue, { color: colors.accentGold }]}>
+                            ₹{parseFloat(activeTask.orders.total_amount as any).toLocaleString()}
+                          </Text>
+                        </View>
                       </View>
                     </View>
+
+                    {activeTask.orders.notes ? (
+                      <>
+                        <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
+                        <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
+                        <Text style={[styles.deliveryNotesText, { color: colors.textSub }]}>
+                          "{activeTask.orders.notes}"
+                        </Text>
+                      </>
+                    ) : null}
+                    </TouchableOpacity>
+
+                    {/* Action Buttons */}
+                    <View style={styles.riderActionsRow}>
+                      {activeTask.status === 'assigned' && (
+                        <TouchableOpacity 
+                          style={[styles.riderActionBtn, { backgroundColor: colors.accentGold }]}
+                          onPress={() => handlePickUpOrder(activeTask.id, activeTask.orders.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.riderActionBtnText}>Confirm Pickup</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {activeTask.status === 'picked_up' && (
+                        <TouchableOpacity 
+                          style={[styles.riderActionBtn, { backgroundColor: colors.statusGreen }]}
+                          onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '')}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.riderActionBtnText, { color: '#FFFFFF' }]}>Complete Delivery</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
-
-                  {activeTask.orders.notes ? (
-                    <>
-                      <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
-                      <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
-                      <Text style={[styles.deliveryNotesText, { color: colors.textSub }]}>
-                        "{activeTask.orders.notes}"
-                      </Text>
-                    </>
-                  ) : null}
-
-                  {/* Action Buttons */}
-                  <View style={styles.riderActionsRow}>
-                    {activeTask.status === 'assigned' && (
-                      <TouchableOpacity 
-                        style={[styles.riderActionBtn, { backgroundColor: colors.accentGold }]}
-                        onPress={() => handlePickUpOrder(activeTask.id, activeTask.orders.id)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.riderActionBtnText}>Confirm Pickup</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {activeTask.status === 'picked_up' && (
-                      <TouchableOpacity 
-                        style={[styles.riderActionBtn, { backgroundColor: colors.statusGreen }]}
-                        onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '')}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.riderActionBtnText, { color: '#FFFFFF' }]}>Complete Delivery</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+                </AnimatedEntrance>
               ) : (
-                <View style={[styles.emptyTaskCard, { borderColor: colors.cardBorder, backgroundColor: colors.cardBg }]}>
-                  <ClipboardCheck size={28} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 8 }} />
-                  <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13 }}>No Active Delivery</Text>
-                  <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
-                    Claim an available order below to start earning.
-                  </Text>
-                </View>
+                <AnimatedEntrance delay={0}>
+                  <View style={[styles.emptyTaskCard, { borderColor: colors.cardBorder, backgroundColor: colors.cardBg }]}>
+                    <ClipboardCheck size={28} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 8 }} />
+                    <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13 }}>No Active Delivery</Text>
+                    <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+                      Claim an available order below to start earning.
+                    </Text>
+                  </View>
+                </AnimatedEntrance>
               )}
             </View>
 
@@ -694,36 +769,39 @@ export default function RiderDashboard() {
                 </View>
               ) : (
                 <View style={{ gap: 12 }}>
-                  {availableOrders.map((order) => (
-                    <View 
-                      style={[styles.availableCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} 
-                      key={order.id}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={[styles.availableId, { color: colors.accentGold }]}>
-                          #{order.id.slice(0, 8).toUpperCase()}
-                        </Text>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
-                          ₹{parseFloat(order.total_amount as any).toLocaleString()}
-                        </Text>
-                      </View>
-
-                      <Text style={[styles.availableDetailText, { color: colors.textMain, marginTop: 8 }]}>
-                        Pickup: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.branches?.name || 'Hotel Bet Downtown'}</Text>
-                      </Text>
-
-                      <Text style={[styles.availableDetailText, { color: colors.textMain, marginTop: 4 }]}>
-                        Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
-                      </Text>
-
+                  {availableOrders.map((order, index) => (
+                    <AnimatedEntrance key={order.id} delay={index * 80}>
                       <TouchableOpacity 
-                        style={[styles.claimBtn, { backgroundColor: colors.accentGold }]}
-                        onPress={() => handleClaimOrder(order.id)}
+                        style={[styles.availableCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]} 
+                        onPress={() => setSelectedDetailDelivery({ type: 'available', ...order })}
                         activeOpacity={0.8}
                       >
-                        <Text style={styles.claimBtnText}>Claim & Deliver</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={[styles.availableId, { color: colors.accentGold }]}>
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
+                            ₹{parseFloat(order.total_amount as any).toLocaleString()}
+                          </Text>
+                        </View>
+
+                        <Text style={[styles.availableDetailText, { color: colors.textMain, marginTop: 8 }]}>
+                          Pickup: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.branches?.name || 'Hotel Bet Downtown'}</Text>
+                        </Text>
+
+                        <Text style={[styles.availableDetailText, { color: colors.textMain, marginTop: 4 }]}>
+                          Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
+                        </Text>
+
+                        <TouchableOpacity 
+                          style={[styles.claimBtn, { backgroundColor: colors.accentGold }]}
+                          onPress={() => handleClaimOrder(order.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.claimBtnText}>Claim & Deliver</Text>
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </View>
+                    </AnimatedEntrance>
                   ))}
                 </View>
               )}
@@ -743,7 +821,7 @@ export default function RiderDashboard() {
                 </View>
               ) : (
                 <View style={{ gap: 12 }}>
-                  {completedDeliveries.map((delivery) => {
+                  {completedDeliveries.map((delivery, index) => {
                     const dateStr = new Date(delivery.updated_at).toLocaleDateString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -752,26 +830,29 @@ export default function RiderDashboard() {
                     });
 
                     return (
-                      <View 
-                        key={delivery.id}
-                        style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }]}
-                      >
-                        <View style={{ gap: 2, flex: 1, marginRight: 10 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
-                            #{delivery.orders.id.slice(0, 8).toUpperCase()}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
-                            {delivery.orders.delivery_address}
-                          </Text>
-                          <Text style={{ fontSize: 10, color: colors.textSub }}>Completed: {dateStr}</Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                            +₹150
-                          </Text>
-                          <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>DELIVERED</Text>
-                        </View>
-                      </View>
+                      <AnimatedEntrance key={delivery.id} delay={index * 80}>
+                        <TouchableOpacity 
+                          style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }]}
+                          onPress={() => setSelectedDetailDelivery({ type: 'history', ...delivery })}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ gap: 2, flex: 1, marginRight: 10 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                              #{delivery.orders.id.slice(0, 8).toUpperCase()}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
+                              {delivery.orders.delivery_address}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: colors.textSub }}>Completed: {dateStr}</Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
+                              +₹150
+                            </Text>
+                            <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>DELIVERED</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </AnimatedEntrance>
                     );
                   })}
                 </View>
@@ -921,7 +1002,7 @@ export default function RiderDashboard() {
                   </Text>
                 </View>
               ) : (
-                filteredDeliveries.map((delivery) => {
+                filteredDeliveries.map((delivery, index) => {
                   const dateStr = new Date(delivery.updated_at).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
@@ -930,31 +1011,34 @@ export default function RiderDashboard() {
                   });
 
                   return (
-                    <View 
-                      key={delivery.id}
-                      style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }]}
-                    >
-                      <View style={{ gap: 2, flex: 1, marginRight: 10 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
-                          #{delivery.orders.id.slice(0, 8).toUpperCase()}
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
-                          {delivery.orders.delivery_address}
-                        </Text>
-                        <Text style={{ fontSize: 10, color: colors.textSub }}>Completed: {dateStr}</Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                          +₹{150 + (delivery.orders?.tip_amount || 0)}
-                        </Text>
-                        {delivery.orders?.tip_amount > 0 && (
-                          <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800', marginVertical: 2 }}>
-                            Includes ₹{delivery.orders.tip_amount} Tip
+                    <AnimatedEntrance key={delivery.id} delay={index * 80}>
+                      <TouchableOpacity 
+                        style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }]}
+                        onPress={() => setSelectedDetailDelivery({ type: 'history', ...delivery })}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ gap: 2, flex: 1, marginRight: 10 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                            #{delivery.orders.id.slice(0, 8).toUpperCase()}
                           </Text>
-                        )}
-                        <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>PAID</Text>
-                      </View>
-                    </View>
+                          <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
+                            {delivery.orders.delivery_address}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: colors.textSub }}>Completed: {dateStr}</Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
+                            +₹{150 + (delivery.orders?.tip_amount || 0)}
+                          </Text>
+                          {delivery.orders?.tip_amount > 0 && (
+                            <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800', marginVertical: 2 }}>
+                              Includes ₹{delivery.orders.tip_amount} Tip
+                            </Text>
+                          )}
+                          <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>PAID</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </AnimatedEntrance>
                   );
                 })
               )}
@@ -1051,72 +1135,199 @@ export default function RiderDashboard() {
         </View>
       </Modal>
 
-      {/* Bottom Tab Navigation Bar */}
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView 
-          intensity={70} 
-          tint={isDark ? 'dark' : 'light'} 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              borderColor: colors.cardBorder, 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.5)' : 'rgba(255, 255, 255, 0.5)' 
-            }
-          ]}
-        >
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'deliveries')} 
-            onPress={() => setActiveSegment('deliveries')}
+      {/* Delivery Detail Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={selectedDetailDelivery !== null}
+        onRequestClose={() => setSelectedDetailDelivery(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView 
+            intensity={95} 
+            tint={isDark ? 'dark' : 'light'} 
+            style={[
+              styles.modalContent, 
+              { 
+                borderColor: colors.cardBorder, 
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                maxHeight: '85%'
+              }
+            ]}
           >
-            <Home size={18} color={activeSegment === 'deliveries' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'deliveries' ? colors.accentGold : colors.textSub }]}>Deliveries</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'earnings')} 
-            onPress={() => setActiveSegment('earnings')}
-          >
-            <DollarSign size={18} color={activeSegment === 'earnings' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'earnings' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.push('/(rider)/rider_profile')}>
-            <User size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Account</Text>
-          </TouchableOpacity>
-        </BlurView>
-      ) : (
-        <View 
-          style={[
-            styles.bottomTabContainer, 
-            { 
-              backgroundColor: isDark ? 'rgba(10, 10, 8, 0.92)' : 'rgba(245, 245, 247, 0.95)',
-              borderColor: colors.cardBorder 
-            }
-          ]}
-        >
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'deliveries')} 
-            onPress={() => setActiveSegment('deliveries')}
-          >
-            <Home size={18} color={activeSegment === 'deliveries' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'deliveries' ? colors.accentGold : colors.textSub }]}>Deliveries</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={getTabStyle(activeSegment === 'earnings')} 
-            onPress={() => setActiveSegment('earnings')}
-          >
-            <DollarSign size={18} color={activeSegment === 'earnings' ? colors.accentGold : colors.textSub} />
-            <Text style={[styles.tabText, { color: activeSegment === 'earnings' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={getTabStyle(false)} onPress={() => router.push('/(rider)/rider_profile')}>
-            <User size={18} color={colors.textSub} />
-            <Text style={[styles.tabText, { color: colors.textSub }]}>Account</Text>
-          </TouchableOpacity>
+            {selectedDetailDelivery && (() => {
+              const delivery = selectedDetailDelivery;
+              const orderData = delivery.orders || delivery;
+              const status = delivery.status || orderData.status;
+              const type = delivery.type;
+
+              return (
+                <View style={{ width: '100%', flexShrink: 1 }}>
+                  <Text style={[styles.modalTitle, { color: colors.accentGold }]}>DELIVERY DETAILS</Text>
+                  
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ marginVertical: 12 }} contentContainerStyle={{ gap: 16 }}>
+                    
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
+                        Order ID: <Text style={{ color: colors.accentGold }}>#{orderData.id.slice(0, 8).toUpperCase()}</Text>
+                      </Text>
+                      <View style={[styles.riderModeBadge, { backgroundColor: status === 'delivered' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(212, 175, 55, 0.15)' }]}>
+                        <Text style={[styles.riderModeText, { color: status === 'delivered' ? colors.statusGreen : colors.accentGold }]}>
+                          {status.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.detailBlock}>
+                      <Text style={[styles.detailLabel, { color: colors.accentGold }]}>CUSTOMER</Text>
+                      <Text style={[styles.detailText, { color: colors.textMain, fontWeight: '800' }]}>
+                        {orderData.profiles?.full_name || 'Guest Customer'}
+                      </Text>
+                      {orderData.delivery_phone ? (
+                        <TouchableOpacity onPress={() => Linking.openURL(`tel:${orderData.delivery_phone}`)}>
+                          <Text style={{ fontSize: 12, color: colors.accentGold, textDecorationLine: 'underline', marginTop: 4, fontWeight: '700' }}>
+                            📞 Call: {orderData.delivery_phone}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.detailBlock}>
+                      <Text style={[styles.detailLabel, { color: colors.accentGold }]}>PICKUP FROM</Text>
+                      <Text style={[styles.detailText, { color: colors.textMain, fontWeight: '800' }]}>
+                        {orderData.branches?.name || 'Hotel Bet'}
+                      </Text>
+                      <Text style={[styles.detailSubText, { color: colors.textSub }]}>
+                        {orderData.branches?.address || 'Hotel Bet lobby'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailBlock}>
+                      <Text style={[styles.detailLabel, { color: colors.accentGold }]}>DELIVER TO</Text>
+                      <Text style={[styles.detailText, { color: colors.textMain, fontWeight: '800' }]}>
+                        {orderData.delivery_address}
+                      </Text>
+                      
+                      {orderData.delivery_latitude && orderData.delivery_longitude ? (
+                        <View style={{ marginTop: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub }}>
+                            Exact Location (Coordinates):
+                          </Text>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.accentGold, marginTop: 2 }}>
+                            📍 {orderData.delivery_latitude.toFixed(6)}, {orderData.delivery_longitude.toFixed(6)}
+                          </Text>
+                          
+                          <TouchableOpacity 
+                            style={[styles.mapNavBtn, { borderColor: colors.accentGold, borderWidth: 1 }]}
+                            onPress={() => handleOpenMap(orderData.delivery_latitude, orderData.delivery_longitude)}
+                            activeOpacity={0.8}
+                          >
+                            <Navigation size={13} color={colors.accentGold} style={{ marginRight: 6 }} />
+                            <Text style={styles.mapNavBtnText}>Open Navigation / Google Maps</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.detailBlock}>
+                      <Text style={[styles.detailLabel, { color: colors.accentGold }]}>ORDER ITEMS</Text>
+                      {orderData.order_items && orderData.order_items.length > 0 ? (
+                        <View style={{ gap: 6, marginTop: 4 }}>
+                          {orderData.order_items.map((oi: any, idx: number) => (
+                            <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '600' }}>
+                                • {oi.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold, fontWeight: '800' }}>x{oi.quantity}</Text>
+                              </Text>
+                              <Text style={{ fontSize: 12, color: colors.textSub }}>
+                                ₹{(oi.price_at_order * oi.quantity).toLocaleString()}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : (
+                        <Text style={[styles.detailSubText, { color: colors.textSub }]}>No items listing available</Text>
+                      )}
+                    </View>
+
+                    {orderData.notes ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={[styles.detailLabel, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
+                        <Text style={[styles.detailSubText, { color: colors.textSub, fontStyle: 'italic' }]}>
+                          "{orderData.notes}"
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 0.8, borderTopColor: colors.cardBorder, paddingTop: 12, marginTop: 4 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>Total Amount</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '900', color: colors.accentGold }}>
+                        ₹{parseFloat(orderData.total_amount as any).toLocaleString()}
+                      </Text>
+                    </View>
+                  </ScrollView>
+
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                    <TouchableOpacity 
+                      style={[styles.modalBtn, { flex: 1, borderColor: colors.cardBorder }]} 
+                      onPress={() => setSelectedDetailDelivery(null)}
+                    >
+                      <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13, textAlign: 'center' }}>Close</Text>
+                    </TouchableOpacity>
+
+                    {type === 'available' && (
+                      <TouchableOpacity 
+                        style={[styles.modalBtn, { flex: 1.5, backgroundColor: colors.accentGold, borderColor: colors.accentGold }]} 
+                        onPress={() => {
+                          handleClaimOrder(orderData.id);
+                          setSelectedDetailDelivery(null);
+                        }}
+                      >
+                        <Text style={{ color: '#000000', fontWeight: '900', fontSize: 13, textAlign: 'center' }}>Claim & Deliver</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })()}
+          </BlurView>
         </View>
-      )}
+      </Modal>
+
+      {/* Bottom Tab Navigation Bar */}
+      <BlurView 
+        intensity={95} 
+        tint={isDark ? 'dark' : 'light'} 
+        blurMethod="dimezisBlurView"
+        style={[
+          styles.bottomTabContainer, 
+          { 
+            borderColor: colors.cardBorder, 
+            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1
+          }
+        ]}
+      >
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'deliveries')} 
+          onPress={() => setActiveSegment('deliveries')}
+        >
+          <Home size={18} color={activeSegment === 'deliveries' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'deliveries' ? colors.accentGold : colors.textSub }]}>Deliveries</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={getTabStyle(activeSegment === 'earnings')} 
+          onPress={() => setActiveSegment('earnings')}
+        >
+          <DollarSign size={18} color={activeSegment === 'earnings' ? colors.accentGold : colors.textSub} />
+          <Text style={[styles.tabText, { color: activeSegment === 'earnings' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.push('/(rider)/rider_profile')}>
+          <User size={18} color={colors.textSub} />
+          <Text style={[styles.tabText, { color: colors.textSub }]}>Account</Text>
+        </TouchableOpacity>
+      </BlurView>
     </View>
   );
 }
@@ -1522,5 +1733,38 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 12,
     letterSpacing: 0.5,
+  },
+  detailBlock: {
+    paddingBottom: 4,
+  },
+  detailLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  detailText: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  detailSubText: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  mapNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginTop: 10,
+    backgroundColor: 'rgba(212, 175, 55, 0.05)',
+  },
+  mapNavBtnText: {
+    color: '#D4AF37',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

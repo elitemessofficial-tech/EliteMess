@@ -144,7 +144,7 @@ export default function EntrypointIndex() {
         </View>
 
         {/* Action text */}
-        <Text style={styles.text}>Initializing premium services...</Text>
+        <Text style={styles.text}>Initializing services...</Text>
       </Animated.View>
     </LinearGradient>
   );

@@ -20,6 +20,8 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
+import AnimatedEntrance from '../../components/AnimatedEntrance';
+import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
 
@@ -61,9 +63,12 @@ export default function CartScreen() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [selectedLatitude, setSelectedLatitude] = useState<number | null>(null);
+  const [selectedLongitude, setSelectedLongitude] = useState<number | null>(null);
 
   // Saved Addresses state
-  const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string }[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string; latitude?: number; longitude?: number }[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 
   // Success Lottie Modal States
@@ -104,6 +109,8 @@ export default function CartScreen() {
         if (parsed.length > 0 && !address) {
           setAddress(parsed[0].address);
           setSelectedAddressId(parsed[0].id);
+          setSelectedLatitude(parsed[0].latitude || null);
+          setSelectedLongitude(parsed[0].longitude || null);
         }
       } else {
         setSavedAddresses([]);
@@ -378,8 +385,8 @@ export default function CartScreen() {
           status: 'pending',
           total_amount: total,
           delivery_address: address,
-          delivery_latitude: 12.9715987,
-          delivery_longitude: 77.5945627,
+          delivery_latitude: selectedLatitude || 18.4575,
+          delivery_longitude: selectedLongitude || 73.8088,
           delivery_phone: '+15550192834',
           notes: notes,
           delivery_otp: otpCode
@@ -692,59 +699,90 @@ export default function CartScreen() {
             <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY ADDRESS</Text>
 
             {/* Saved Address Pills Selector */}
-            {savedAddresses.length > 0 && (
-              <View style={{ marginBottom: 12 }}>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+            <View style={{ marginBottom: 12 }}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+              >
+                {/* Locate on Map Option */}
+                <TouchableOpacity
+                  style={[
+                    styles.addressSelectPill,
+                    { 
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.accentGold,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderStyle: 'dashed'
+                    }
+                  ]}
+                  onPress={() => setShowPicker(true)}
+                  activeOpacity={0.8}
                 >
-                  {savedAddresses.map((item) => {
-                    const isSelected = selectedAddressId === item.id || address === item.address;
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[
-                          styles.addressSelectPill,
-                          { 
-                            backgroundColor: isSelected ? colors.accentGold : colors.cardBg,
-                            borderColor: isSelected ? colors.accentGold : colors.cardBorder,
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            borderRadius: 12,
-                            borderWidth: 1,
-                          }
-                        ]}
-                        onPress={() => {
-                          setAddress(item.address);
-                          setSelectedAddressId(item.id);
+                  <MapPin size={12} color={colors.accentGold} style={{ marginRight: 4 }} />
+                  <Text 
+                    style={{ 
+                      color: colors.accentGold, 
+                      fontWeight: '800', 
+                      fontSize: 11 
+                    }}
+                  >
+                    + Add New (Map)
+                  </Text>
+                </TouchableOpacity>
+
+                {savedAddresses.map((item) => {
+                  const isSelected = selectedAddressId === item.id || address === item.address;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[
+                        styles.addressSelectPill,
+                        { 
+                          backgroundColor: isSelected ? colors.accentGold : colors.cardBg,
+                          borderColor: isSelected ? colors.accentGold : colors.cardBorder,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                        }
+                      ]}
+                      onPress={() => {
+                        setAddress(item.address);
+                        setSelectedAddressId(item.id);
+                        setSelectedLatitude(item.latitude || null);
+                        setSelectedLongitude(item.longitude || null);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      {item.label === 'Home' ? (
+                        <Home size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
+                      ) : item.label === 'Work' ? (
+                        <Briefcase size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
+                      ) : (
+                        <MapPin size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
+                      )}
+                      <Text 
+                        style={{ 
+                          color: isSelected ? '#000000' : colors.textMain, 
+                          fontWeight: '800', 
+                          fontSize: 11 
                         }}
-                        activeOpacity={0.8}
                       >
-                        {item.label === 'Home' ? (
-                          <Home size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
-                        ) : item.label === 'Work' ? (
-                          <Briefcase size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
-                        ) : (
-                          <MapPin size={12} color={isSelected ? '#000000' : colors.accentGold} style={{ marginRight: 4 }} />
-                        )}
-                        <Text 
-                          style={{ 
-                            color: isSelected ? '#000000' : colors.textMain, 
-                            fontWeight: '800', 
-                            fontSize: 11 
-                          }}
-                        >
-                          {item.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
 
             <TextInput
               style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
@@ -753,9 +791,20 @@ export default function CartScreen() {
                 setAddress(text);
                 setSelectedAddressId(null); // Clear selection when user edits manually
               }}
-              placeholder="Room number or suite name..."
+              placeholder="Delivery address..."
               placeholderTextColor="#8E8E93"
             />
+
+            {/* Pick from Map helper link */}
+            <TouchableOpacity 
+              onPress={() => setShowPicker(true)} 
+              style={{ alignSelf: 'flex-start', marginTop: -8, marginBottom: 16, paddingLeft: 4, flexDirection: 'row', alignItems: 'center' }}
+            >
+              <MapPin size={12} color={colors.accentGold} style={{ marginRight: 4 }} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accentGold }}>
+                Locate or select address on map
+              </Text>
+            </TouchableOpacity>
 
             {/* Instructions Form Box */}
             <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>SPECIAL INSTRUCTIONS</Text>
@@ -806,194 +855,198 @@ export default function CartScreen() {
               </View>
             ) : (
               <View style={styles.listContainer}>
-                {orders.map((order) => {
+                {orders.map((order, index) => {
                   const review = reviews[order.id];
                   const isEditing = activeFormOrderId === order.id;
 
                   return (
-                    <View
+                    <AnimatedEntrance
                       key={order.id}
-                      style={[
-                        styles.orderHistoryCard,
-                        { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }
-                      ]}
+                      delay={index * 80}
                     >
-                      {/* Touchable Info block */}
-                      <TouchableOpacity
-                        onPress={() => router.push({ pathname: '/(customer)/order/[id]', params: { id: order.id } })}
-                        activeOpacity={0.7}
+                      <View
+                        style={[
+                          styles.orderHistoryCard,
+                          { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }
+                        ]}
                       >
-                        {/* Card Header Info */}
-                        <View style={styles.cardHeader}>
-                          <View>
-                            <Text style={[styles.orderIdText, { color: colors.accentGold }]}>
-                              #{order.id.slice(0, 8).toUpperCase()}
-                            </Text>
-                            <Text style={[styles.orderDate, { color: colors.textSub }]}>
-                              {new Date(order.created_at).toLocaleString()}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={[styles.orderAmount, { color: colors.textMain }]}>
-                              ₹ {parseFloat(order.total_amount as any).toLocaleString()}
-                            </Text>
-                            <View style={[styles.statusTag, { backgroundColor: order.status === 'delivered' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(212, 175, 55, 0.1)' }]}>
-                              <Text style={[styles.statusTagText, { color: order.status === 'delivered' ? '#10B981' : colors.accentGold }]}>
-                                {order.status.toUpperCase()}
+                        {/* Touchable Info block */}
+                        <TouchableOpacity
+                          onPress={() => router.push({ pathname: '/(customer)/order/[id]', params: { id: order.id } })}
+                          activeOpacity={0.7}
+                        >
+                          {/* Card Header Info */}
+                          <View style={styles.cardHeader}>
+                            <View>
+                              <Text style={[styles.orderIdText, { color: colors.accentGold }]}>
+                                #{order.id.slice(0, 8).toUpperCase()}
+                              </Text>
+                              <Text style={[styles.orderDate, { color: colors.textSub }]}>
+                                {new Date(order.created_at).toLocaleString()}
                               </Text>
                             </View>
-                          </View>
-                        </View>
-
-                        {/* Display items list inside history card */}
-                        {order.order_items && order.order_items.length > 0 && (
-                          <View style={styles.historyItemsList}>
-                            {order.order_items.map((entry, entryIdx) => (
-                              <Text key={entry.id || entryIdx} style={[styles.historyItemRowText, { color: colors.textSub }]}>
-                                • {entry.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{entry.quantity}</Text>
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={[styles.orderAmount, { color: colors.textMain }]}>
+                                ₹ {parseFloat(order.total_amount as any).toLocaleString()}
                               </Text>
-                            ))}
-                          </View>
-                        )}
-
-                        {order.delivery_address ? (
-                          <Text style={[styles.addressText, { color: colors.textSub }]} numberOfLines={1}>
-                            Deliver to: {order.delivery_address}
-                          </Text>
-                        ) : null}
-
-                        {order.status !== 'pending' && order.status !== 'delivered' && order.status !== 'cancelled' && order.delivery_otp ? (
-                          <View style={[styles.otpDisplayContainer, { backgroundColor: isDark ? 'rgba(212, 175, 55, 0.05)' : 'rgba(212, 175, 55, 0.08)', borderColor: colors.cardBorder }]}>
-                            <Text style={[styles.otpDisplayText, { color: colors.textSub }]}>
-                              Share this 8-digit OTP with the rider on delivery:
-                            </Text>
-                            <Text style={[styles.otpDisplayCode, { color: colors.accentGold }]}>
-                              {order.delivery_otp}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </TouchableOpacity>
-
-                      {order.status !== 'cancelled' && (
-                        <>
-                          <View style={[styles.divider, { backgroundColor: colors.cardBorder, marginVertical: 10 }]} />
-
-                          {/* Review Detail (Submitted vs Form View) */}
-                          {review ? (
-                            <View style={styles.reviewSummaryBlock}>
-                              <View style={styles.badgeRow}>
-                                <CheckCircle size={14} color="#10B981" />
-                                <Text style={styles.completedReviewText}>Review Submitted</Text>
-                              </View>
-
-                              {/* Order Feedback */}
-                              <View style={styles.feedbackRow}>
-                                <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
-                                {renderStars(review.orderRating)}
-                              </View>
-                              {review.orderText ? (
-                                <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                                  "{review.orderText}"
+                              <View style={[styles.statusTag, { backgroundColor: order.status === 'delivered' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(212, 175, 55, 0.1)' }]}>
+                                <Text style={[styles.statusTagText, { color: order.status === 'delivered' ? '#10B981' : colors.accentGold }]}>
+                                  {order.status.toUpperCase()}
                                 </Text>
-                              ) : null}
-
-                              {/* Delivery Feedback */}
-                              <View style={[styles.feedbackRow, { marginTop: 10 }]}>
-                                <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
-                                {renderStars(review.deliveryRating)}
-                              </View>
-                              {review.deliveryText ? (
-                                <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                                  "{review.deliveryText}"
-                                </Text>
-                              ) : null}
-                            </View>
-                          ) : isEditing ? (
-                            <View style={styles.formBlock}>
-                              <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
-                              <View style={styles.ratingStarsRow}>
-                                {renderStars(orderRating, setOrderRating)}
-                                <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
-                              </View>
-                              <TextInput
-                                style={[
-                                  styles.formInput,
-                                  { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                                ]}
-                                value={orderText}
-                                onChangeText={setOrderText}
-                                placeholder="How was the food quality and preparation?"
-                                placeholderTextColor="#8E8E93"
-                              />
-
-                              <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
-                              <View style={styles.ratingStarsRow}>
-                                {renderStars(deliveryRating, setDeliveryRating)}
-                                <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
-                              </View>
-                              <TextInput
-                                style={[
-                                  styles.formInput,
-                                  { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                                ]}
-                                value={deliveryText}
-                                onChangeText={setDeliveryText}
-                                placeholder="Was the delivery quick and rider polite?"
-                                placeholderTextColor="#8E8E93"
-                              />
-
-                              {/* Buttons */}
-                              <View style={styles.buttonRow}>
-                                <TouchableOpacity
-                                  style={styles.cancelBtn}
-                                  onPress={() => setActiveFormOrderId(null)}
-                                >
-                                  <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                  style={styles.submitBtnWrapper}
-                                  onPress={() => handleSubmitReview(order.id)}
-                                >
-                                  <LinearGradient
-                                    colors={colors.goldGrad}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
-                                    style={styles.submitBtn}
-                                  >
-                                    <Text style={styles.submitBtnText}>Submit Review</Text>
-                                  </LinearGradient>
-                                </TouchableOpacity>
                               </View>
                             </View>
-                          ) : order.status === 'pending' ? (
-                            <TouchableOpacity
-                              style={[styles.writeReviewBtn, { borderColor: '#EF4444' }]}
-                              onPress={() => handleCancelOrder(order.id)}
-                              disabled={cancellingOrderId === order.id}
-                              activeOpacity={0.8}
-                            >
-                              {cancellingOrderId === order.id ? (
-                                <ActivityIndicator size="small" color="#EF4444" />
-                              ) : (
-                                <Text style={[styles.writeReviewBtnText, { color: '#EF4444' }]}>
-                                  Cancel Order
+                          </View>
+
+                          {/* Display items list inside history card */}
+                          {order.order_items && order.order_items.length > 0 && (
+                            <View style={styles.historyItemsList}>
+                              {order.order_items.map((entry, entryIdx) => (
+                                <Text key={entry.id || entryIdx} style={[styles.historyItemRowText, { color: colors.textSub }]}>
+                                  • {entry.menu_items?.name || 'Menu Item'} <Text style={{ color: colors.accentGold }}>x{entry.quantity}</Text>
                                 </Text>
-                              )}
-                            </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity
-                              style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
-                              onPress={() => setActiveFormOrderId(order.id)}
-                            >
-                              <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
-                                Leave Feedback
-                              </Text>
-                            </TouchableOpacity>
+                              ))}
+                            </View>
                           )}
-                        </>
-                      )}
-                    </View>
+
+                          {order.delivery_address ? (
+                            <Text style={[styles.addressText, { color: colors.textSub }]} numberOfLines={1}>
+                              Deliver to: {order.delivery_address}
+                            </Text>
+                          ) : null}
+
+                          {order.status !== 'pending' && order.status !== 'delivered' && order.status !== 'cancelled' && order.delivery_otp ? (
+                            <View style={[styles.otpDisplayContainer, { backgroundColor: isDark ? 'rgba(212, 175, 55, 0.05)' : 'rgba(212, 175, 55, 0.08)', borderColor: colors.cardBorder }]}>
+                              <Text style={[styles.otpDisplayText, { color: colors.textSub }]}>
+                                Share this 8-digit OTP with the rider on delivery:
+                              </Text>
+                              <Text style={[styles.otpDisplayCode, { color: colors.accentGold }]}>
+                                {order.delivery_otp}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+
+                        {order.status !== 'cancelled' && (
+                          <>
+                            <View style={[styles.divider, { backgroundColor: colors.cardBorder, marginVertical: 10 }]} />
+
+                            {/* Review Detail (Submitted vs Form View) */}
+                            {review ? (
+                              <View style={styles.reviewSummaryBlock}>
+                                <View style={styles.badgeRow}>
+                                  <CheckCircle size={14} color="#10B981" />
+                                  <Text style={styles.completedReviewText}>Review Submitted</Text>
+                                </View>
+
+                                {/* Order Feedback */}
+                                <View style={styles.feedbackRow}>
+                                  <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
+                                  {renderStars(review.orderRating)}
+                                </View>
+                                {review.orderText ? (
+                                  <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                    "{review.orderText}"
+                                  </Text>
+                                ) : null}
+
+                                {/* Delivery Feedback */}
+                                <View style={[styles.feedbackRow, { marginTop: 10 }]}>
+                                  <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
+                                  {renderStars(review.deliveryRating)}
+                                </View>
+                                {review.deliveryText ? (
+                                  <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                    "{review.deliveryText}"
+                                  </Text>
+                                ) : null}
+                              </View>
+                            ) : isEditing ? (
+                              <View style={styles.formBlock}>
+                                <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
+                                <View style={styles.ratingStarsRow}>
+                                  {renderStars(orderRating, setOrderRating)}
+                                  <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
+                                </View>
+                                <TextInput
+                                  style={[
+                                    styles.formInput,
+                                    { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                  ]}
+                                  value={orderText}
+                                  onChangeText={setOrderText}
+                                  placeholder="How was the food quality and preparation?"
+                                  placeholderTextColor="#8E8E93"
+                                />
+
+                                <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
+                                <View style={styles.ratingStarsRow}>
+                                  {renderStars(deliveryRating, setDeliveryRating)}
+                                  <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
+                                </View>
+                                <TextInput
+                                  style={[
+                                    styles.formInput,
+                                    { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                  ]}
+                                  value={deliveryText}
+                                  onChangeText={setDeliveryText}
+                                  placeholder="Was the delivery quick and rider polite?"
+                                  placeholderTextColor="#8E8E93"
+                                />
+
+                                {/* Buttons */}
+                                <View style={styles.buttonRow}>
+                                  <TouchableOpacity
+                                    style={styles.cancelBtn}
+                                    onPress={() => setActiveFormOrderId(null)}
+                                  >
+                                    <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.submitBtnWrapper}
+                                    onPress={() => handleSubmitReview(order.id)}
+                                  >
+                                    <LinearGradient
+                                      colors={colors.goldGrad}
+                                      start={{ x: 0, y: 0 }}
+                                      end={{ x: 1, y: 0 }}
+                                      style={styles.submitBtn}
+                                    >
+                                      <Text style={styles.submitBtnText}>Submit Review</Text>
+                                    </LinearGradient>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            ) : order.status === 'pending' ? (
+                              <TouchableOpacity
+                                style={[styles.writeReviewBtn, { borderColor: '#EF4444' }]}
+                                onPress={() => handleCancelOrder(order.id)}
+                                disabled={cancellingOrderId === order.id}
+                                activeOpacity={0.8}
+                              >
+                                {cancellingOrderId === order.id ? (
+                                  <ActivityIndicator size="small" color="#EF4444" />
+                                ) : (
+                                  <Text style={[styles.writeReviewBtnText, { color: '#EF4444' }]}>
+                                    Cancel Order
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                            ) : (
+                              <TouchableOpacity
+                                style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
+                                onPress={() => setActiveFormOrderId(order.id)}
+                              >
+                                <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
+                                  Leave Feedback
+                                </Text>
+                              </TouchableOpacity>
+                            )}
+                          </>
+                        )}
+                      </View>
+                    </AnimatedEntrance>
                   );
                 })}
               </View>
@@ -1099,6 +1152,18 @@ export default function CartScreen() {
           </BlurView>
         </View>
       </Modal>
+
+      <LocationPickerModal
+        visible={showPicker}
+        onClose={() => setShowPicker(false)}
+        onAddressSaved={(addressDetails: AddressDetails) => {
+          loadSavedAddressesInCart();
+          const cleanAddr = `${addressDetails.flatNo}, ${addressDetails.address}${addressDetails.landmark ? ` (Landmark: ${addressDetails.landmark})` : ''}`;
+          setAddress(cleanAddr);
+          setSelectedAddressId(addressDetails.id);
+          setShowPicker(false);
+        }}
+      />
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { ChevronLeft } from 'lucide-react-native';
@@ -12,6 +12,7 @@ interface FloatingHeaderProps {
   showBackButton?: boolean;
   rightContent?: React.ReactNode;
   leftContent?: React.ReactNode;
+  blurTarget?: React.RefObject<any>;
 }
 
 export default function FloatingHeader({
@@ -21,19 +22,24 @@ export default function FloatingHeader({
   showBackButton = false,
   rightContent,
   leftContent,
+  blurTarget,
 }: FloatingHeaderProps) {
   const router = useRouter();
   const { isDark } = useAppTheme();
 
   const theme = {
-    bg: isDark ? 'rgba(15, 23, 42, 0.45)' : 'rgba(255, 255, 255, 0.45)',
+    bg: isDark ? 'rgba(15, 15, 12, 0.45)' : 'rgba(255, 255, 255, 0.45)',
     border: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
     text: isDark ? '#FFFFFF' : '#0F172A',
     textSub: isDark ? '#AEAEB2' : '#64748B',
     accentGold: '#D4AF37',
   };
 
-  const topOffset = Platform.OS === 'ios' ? 48 : 16;
+  const topOffset = Platform.OS === 'ios'
+    ? 48
+    : Platform.OS === 'android'
+      ? (StatusBar.currentHeight || 38)
+      : 16;
   const isCentered = titleAlign === 'center';
 
   const renderContent = () => (
@@ -42,14 +48,14 @@ export default function FloatingHeader({
         {leftContent ? (
           leftContent
         ) : showBackButton ? (
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               if (router.canGoBack()) {
                 router.back();
               } else {
                 router.replace('/(customer)/branches');
               }
-            }} 
+            }}
             style={[
               styles.backCircle,
               {
@@ -63,7 +69,7 @@ export default function FloatingHeader({
         ) : (
           isCentered && <View style={{ width: 36 }} />
         )}
-        
+
         {isCentered && (
           <View style={styles.titleContainerAbsolute}>
             {title ? (
@@ -103,21 +109,22 @@ export default function FloatingHeader({
 
   return (
     <View style={[styles.outerContainer, { top: topOffset }]}>
-      {Platform.OS === 'ios' || Platform.OS === 'web' ? (
-        <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={styles.blurContainer}>
-          {renderContent()}
-        </BlurView>
-      ) : (
-        <View style={[
-          styles.solidContainer, 
-          { 
-            borderColor: theme.border, 
-            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)' 
+      <BlurView
+        intensity={75}
+        tint={isDark ? 'dark' : 'light'}
+        blurMethod="dimezisBlurView"
+        blurTarget={blurTarget}
+        style={[
+          styles.blurContainer,
+          {
+            backgroundColor: isDark ? 'rgba(15, 15, 12, 0.35)' : 'rgba(255, 255, 255, 0.35)',
+            borderWidth: 1,
+            borderColor: theme.border
           }
-        ]}>
-          {renderContent()}
-        </View>
-      )}
+        ]}
+      >
+        {renderContent()}
+      </BlurView>
     </View>
   );
 }
