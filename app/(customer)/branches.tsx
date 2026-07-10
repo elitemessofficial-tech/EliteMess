@@ -16,7 +16,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map, X, Plus, CheckCircle } from 'lucide-react-native';
+import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map, X, Plus, CheckCircle, MessageSquare } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { calculateHaversineDistance, formatDistance } from '../../src/utils/distance';
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
@@ -421,6 +421,37 @@ export default function BranchesScreen() {
           <Text style={[styles.tabText, { color: colors.textSub }]}>Profile</Text>
         </TouchableOpacity>
       </BlurView>
+
+      {/* Floating Support Sign */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          bottom: Platform.OS === 'ios' ? 104 : 96,
+          right: 24,
+          backgroundColor: colors.accentGold,
+          width: 50,
+          height: 50,
+          borderRadius: 25,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: colors.accentGold,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.35,
+          shadowRadius: 10,
+          elevation: 8,
+          zIndex: 9999,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 255, 255, 0.2)'
+        }}
+        activeOpacity={0.85}
+        onPress={() => router.push('/(customer)/support')}
+      >
+        <Image 
+          source={require('../../assets/images/customer-service.png')}
+          style={{ width: 28, height: 28, resizeMode: 'contain' }}
+        />
+      </TouchableOpacity>
+
       {/* Location Picker Modal Overlay */}
       <LocationPickerModal
         visible={showPicker}

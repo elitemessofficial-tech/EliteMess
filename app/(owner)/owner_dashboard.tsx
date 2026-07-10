@@ -159,6 +159,7 @@ export default function OwnerDashboard() {
     accentGold: '#D4AF37', // Gold highlight
     statusYellow: '#EAB308',
     statusGreen: '#10B981',
+    statusRed: '#EF4444',
     inputBg: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)',
     goldGrad: (isDark ? ['#B88E2F', '#D4AF37'] : ['#D4AF37', '#B88E2F']) as [string, string],
   };
@@ -330,7 +331,17 @@ export default function OwnerDashboard() {
         .order('created_at', { ascending: false });
       if (error) throw error;
       
-      const loaded = data || [];
+      const rawList = data || [];
+      const seenNames = new Set<string>();
+      const loaded: any[] = [];
+      rawList.forEach((item: any) => {
+        const lowerName = item.name.trim().toLowerCase();
+        if (!seenNames.has(lowerName)) {
+          seenNames.add(lowerName);
+          loaded.push(item);
+        }
+      });
+
       setMenuItems(loaded);
       
       // Initialize edit states
@@ -356,13 +367,18 @@ export default function OwnerDashboard() {
   };
 
   const handleUpdateMenuItem = async (id: string, updatedFields: { price: number; description: string; is_available: boolean; image_url?: string | null }) => {
+    const localItem = menuItems.find(item => item.id === id);
+    if (!localItem) return;
+
     try {
+      // Update item across all locations with the same name
       const { error } = await supabase
         .from('menu_items')
         .update(updatedFields)
-        .eq('id', id);
+        .eq('name', localItem.name);
+
       if (error) throw error;
-      Alert.alert('Success', 'Menu item updated successfully.');
+      Alert.alert('Success', 'Menu item updated successfully across all branches.');
       fetchMenuItems();
     } catch (err: any) {
       Alert.alert('Update Failed', err.message);
@@ -370,13 +386,18 @@ export default function OwnerDashboard() {
   };
 
   const handleDeleteMenuItem = async (id: string) => {
+    const localItem = menuItems.find(item => item.id === id);
+    if (!localItem) return;
+
     try {
+      // Delete item across all locations with the same name
       const { error } = await supabase
         .from('menu_items')
         .delete()
-        .eq('id', id);
+        .eq('name', localItem.name);
+
       if (error) throw error;
-      Alert.alert('Success', 'Menu item deleted successfully.');
+      Alert.alert('Success', 'Menu item deleted successfully across all branches.');
       fetchMenuItems();
     } catch (err: any) {
       Alert.alert('Delete Failed', err.message);
@@ -405,21 +426,30 @@ export default function OwnerDashboard() {
         throw new Error('Price must be a positive number');
       }
 
+      // Fetch all branches
+      const { data: branchesData, error: branchesErr } = await supabase
+        .from('branches')
+        .select('id');
+        
+      if (branchesErr) throw branchesErr;
+      
+      const insertRows = (branchesData || []).map((branch: any) => ({
+        branch_id: branch.id,
+        name: newItemName.trim(),
+        description: newItemDesc.trim(),
+        price: priceNum,
+        category: newItemCategory,
+        image_url: newItemImage.trim() || null,
+        is_available: true
+      }));
+
       const { error } = await supabase
         .from('menu_items')
-        .insert({
-          branch_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-          name: newItemName.trim(),
-          description: newItemDesc.trim(),
-          price: priceNum,
-          category: newItemCategory,
-          image_url: newItemImage.trim() || null,
-          is_available: true
-        });
+        .insert(insertRows);
 
       if (error) throw error;
 
-      Alert.alert('Success', 'New menu item added to database!');
+      Alert.alert('Success', 'New menu item added to all branches!');
       setNewItemName('');
       setNewItemDesc('');
       setNewItemPrice('');
@@ -540,6 +570,7 @@ export default function OwnerDashboard() {
   // Status-based stats calculation
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   const activeDeliveriesCount = orders.filter(o => ['ready_for_pickup', 'out_for_delivery'].includes(o.status)).length;
+  const activeSupportCount = supportChats.filter(c => c.status === 'cancelled').length;
 
   // Sales & Earnings Calculation Helpers
   const completedOrders = orders.filter(o => o.status === 'delivered');
@@ -1409,8 +1440,30 @@ export default function OwnerDashboard() {
           style={getTabStyle(activeSegment === 'orders' || activeSegment === 'reviews')} 
           onPress={() => setActiveSegment('orders')}
         >
-          <Home size={18} color={activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub} />
-          <Text style={[styles.tabText, { color: activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub }]}>Home</Text>
+          <View style={{ position: 'relative' }}>
+            <Home size={18} color={activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub} />
+            {pendingCount > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: -8,
+                right: -8,
+                backgroundColor: colors.statusRed,
+                borderRadius: 9,
+                minWidth: 16,
+                height: 16,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingHorizontal: 3,
+                borderWidth: 1,
+                borderColor: colors.bg
+              }}>
+                <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '900' }}>
+                  {pendingCount}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.tabText, { color: activeSegment === 'orders' || activeSegment === 'reviews' ? colors.accentGold : colors.textSub, marginTop: 2 }]}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={getTabStyle(activeSegment === 'support')} 
@@ -1419,8 +1472,30 @@ export default function OwnerDashboard() {
             fetchSupportChats();
           }}
         >
-          <MessageSquare size={18} color={activeSegment === 'support' ? colors.accentGold : colors.textSub} />
-          <Text style={[styles.tabText, { color: activeSegment === 'support' ? colors.accentGold : colors.textSub }]}>Support</Text>
+          <View style={{ position: 'relative' }}>
+            <MessageSquare size={18} color={activeSegment === 'support' ? colors.accentGold : colors.textSub} />
+            {activeSupportCount > 0 && (
+              <View style={{
+                position: 'absolute',
+                top: -8,
+                right: -8,
+                backgroundColor: colors.statusRed,
+                borderRadius: 9,
+                minWidth: 16,
+                height: 16,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingHorizontal: 3,
+                borderWidth: 1,
+                borderColor: colors.bg
+              }}>
+                <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '900' }}>
+                  {activeSupportCount}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.tabText, { color: activeSegment === 'support' ? colors.accentGold : colors.textSub, marginTop: 2 }]}>Support</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={getTabStyle(activeSegment === 'menu')} 

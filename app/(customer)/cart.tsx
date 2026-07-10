@@ -593,9 +593,9 @@ export default function CartScreen() {
                     ₹{placedOrder.total_amount.toLocaleString()}
                   </Text>
                 </View>
-                <View style={styles.successDetailsRow}>
-                  <Text style={[styles.successDetailsLabel, { color: colors.textSub }]}>Address:</Text>
-                  <Text style={[styles.successDetailsVal, { color: colors.textMain, flex: 1, textAlign: 'right' }]} numberOfLines={1}>
+                <View style={[styles.successDetailsRow, { flexDirection: 'column', alignItems: 'flex-start', marginTop: 4 }]}>
+                  <Text style={[styles.successDetailsLabel, { color: colors.textSub, marginBottom: 2 }]}>Address:</Text>
+                  <Text style={[styles.successDetailsVal, { color: colors.textMain, fontSize: 11, lineHeight: 16 }]} numberOfLines={2}>
                     {placedOrder.delivery_address}
                   </Text>
                 </View>
@@ -703,14 +703,49 @@ export default function CartScreen() {
               <Text style={[styles.cardLabel, { color: colors.accentGold }]}>ORDER ITEMS</Text>
 
               {getCartItemsList().map((entry, idx) => (
-                <View style={styles.itemRow} key={idx}>
-                  <View style={styles.itemNameWrapper}>
-                    <Text style={[styles.itemNameText, { color: colors.textMain }]}>{entry.item.name}</Text>
-                    <View style={styles.qtyBadge}>
-                      <Text style={[styles.qtyBadgeText, { color: colors.accentGold }]}>{entry.qty}</Text>
-                    </View>
+                <View style={[styles.itemRow, { justifyContent: 'space-between' }]} key={idx}>
+                  {/* Left Column: Item Name */}
+                  <Text style={[styles.itemNameText, { color: colors.textMain, flex: 1.4, marginRight: 8 }]} numberOfLines={1}>
+                    {entry.item.name}
+                  </Text>
+                  
+                  {/* Center Column: Add & Remove quantity selectors (aligned vertically) */}
+                  <View style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    backgroundColor: colors.inputBg, 
+                    borderRadius: 14, 
+                    borderWidth: 1, 
+                    borderColor: colors.cardBorder, 
+                    width: 76,
+                    height: 28,
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 2,
+                    marginRight: 16
+                  }}>
+                    <TouchableOpacity 
+                      onPress={() => removeFromCart(entry.item.id)}
+                      style={{ width: 24, height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: colors.accentGold, fontSize: 15, fontWeight: '900' }}>-</Text>
+                    </TouchableOpacity>
+                    
+                    <Text style={{ color: colors.textMain, fontSize: 11, fontWeight: '900' }}>
+                      {entry.qty}
+                    </Text>
+                    
+                    <TouchableOpacity 
+                      onPress={() => addToCart(entry.item.id)}
+                      style={{ width: 24, height: '100%', justifyContent: 'center', alignItems: 'center' }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ color: colors.accentGold, fontSize: 15, fontWeight: '900' }}>+</Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={[styles.itemPriceText, { color: colors.accentGold }]}>
+
+                  {/* Right Column: Price */}
+                  <Text style={[styles.itemPriceText, { color: colors.accentGold, width: 70, textAlign: 'right' }]}>
                     ₹{(entry.item.price * entry.qty).toLocaleString()}
                   </Text>
                 </View>

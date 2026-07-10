@@ -439,7 +439,7 @@ export default function SupportScreen() {
                   <Phone size={18} color={colors.accentGold} />
                   <View>
                     <Text style={[styles.contactLabel, { color: colors.textMain }]}>Phone Hotline</Text>
-                    <Text style={[styles.contactValue, { color: colors.textSub }]}>+1 (800) 555-0199</Text>
+                    <Text style={[styles.contactValue, { color: colors.textSub }]}>+91 98765 43210</Text>
                   </View>
                 </View>
                 <Text style={{ color: colors.accentGold, fontWeight: '800', fontSize: 11 }}>CALL NOW</Text>
