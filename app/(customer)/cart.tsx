@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -82,6 +82,7 @@ export default function CartScreen() {
   const [toastTitle, setToastTitle] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const toastTimeoutRef = React.useRef<any>(null);
+  const mainScrollRef = useRef<ScrollView>(null);
 
   const showToast = (title: string, message: string, type: 'success' | 'error' | 'info' = 'success') => {
     if (toastTimeoutRef.current) {
@@ -199,6 +200,10 @@ export default function CartScreen() {
         supabase.removeChannel(channel);
       };
     }
+  }, [selectedTab]);
+
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [selectedTab]);
 
   const fetchOrdersAndReviews = async () => {
@@ -661,7 +666,7 @@ export default function CartScreen() {
         showBackButton={true}
       />
 
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <ScrollView ref={mainScrollRef} contentContainerStyle={styles.contentContainer}>
         {/* Segmented Control */}
         <View style={styles.segmentContainer}>
           <TouchableOpacity

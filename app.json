@@ -8,7 +8,8 @@
     "scheme": "hoteldeliveryapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.narayan4256k.hoteldeliveryapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -44,6 +45,12 @@
       "eas": {
         "projectId": "ee1df252-e984-41d2-9785-03f8063d837d"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ee1df252-e984-41d2-9785-03f8063d837d"
     }
   }
 }

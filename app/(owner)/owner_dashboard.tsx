@@ -19,10 +19,11 @@ import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
+import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface OrderItem {
@@ -97,7 +98,12 @@ export default function OwnerDashboard() {
   }, [selectedChatOrder]);
   const [ownerReplyText, setOwnerReplyText] = useState('');
   const chatScrollRef = useRef<ScrollView>(null);
+  const mainScrollRef = useRef<ScrollView>(null);
   const [supportTab, setSupportTab] = useState<'active' | 'resolved'>('active');
+
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [activeSegment]);
 
   const handleOpenMap = (lat?: number, lng?: number) => {
     if (!lat || !lng) return;
@@ -462,6 +468,38 @@ export default function OwnerDashboard() {
     }
   };
 
+  // Pick an image from device gallery and return base64 data URI
+  const pickImage = async (target: 'new' | string) => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant gallery access to upload menu images.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.6,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]?.base64) {
+        const mimeType = result.assets[0].mimeType || 'image/jpeg';
+        const dataUri = `data:${mimeType};base64,${result.assets[0].base64}`;
+        
+        if (target === 'new') {
+          setNewItemImage(dataUri);
+        } else {
+          setEditImages(prev => ({ ...prev, [target]: dataUri }));
+        }
+      }
+    } catch (e: any) {
+      Alert.alert('Upload Failed', e.message || 'Could not pick image.');
+    }
+  };
+
   useEffect(() => {
     fetchOrdersAndReviews();
 
@@ -622,7 +660,7 @@ export default function OwnerDashboard() {
         )}
       />
 
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <ScrollView ref={mainScrollRef} contentContainerStyle={styles.contentContainer}>
         {/* Statistics Summary Widgets - only on Home/Reviews tabs */}
         {(activeSegment === 'orders' || activeSegment === 'reviews') && (
           <View style={styles.summaryContainer}>
@@ -1097,13 +1135,19 @@ export default function OwnerDashboard() {
                 </ScrollView>
               </View>
 
-              <TextInput 
-                style={[styles.menuFormInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain, marginTop: 12 }]}
-                value={newItemImage}
-                onChangeText={setNewItemImage}
-                placeholder="Image URL (e.g. https://images.unsplash.com/photo...)"
-                placeholderTextColor="#8E8E93"
-              />
+              <TouchableOpacity 
+                style={[styles.menuFormInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                onPress={() => pickImage('new')}
+                activeOpacity={0.7}
+              >
+                <Camera size={16} color={colors.accentGold} />
+                <Text style={{ color: newItemImage ? colors.textMain : '#8E8E93', fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                  {newItemImage ? 'Image Selected ✓' : 'Upload Image from Device'}
+                </Text>
+                {newItemImage ? (
+                  <Image source={{ uri: newItemImage }} style={{ width: 28, height: 28, borderRadius: 6 }} resizeMode="cover" />
+                ) : null}
+              </TouchableOpacity>
 
               <TouchableOpacity 
                 style={styles.menuFormBtn}
@@ -1199,14 +1243,20 @@ export default function OwnerDashboard() {
                           </View>
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Image URL:</Text>
-                            <TextInput 
-                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                              value={currentImage}
-                              onChangeText={(text) => setEditImages(prev => ({ ...prev, [item.id]: text }))}
-                              placeholder="https://images.unsplash.com/photo..."
-                              placeholderTextColor="#8E8E93"
-                            />
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Image:</Text>
+                            <TouchableOpacity
+                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                              onPress={() => pickImage(item.id)}
+                              activeOpacity={0.7}
+                            >
+                              <Camera size={13} color={colors.accentGold} />
+                              <Text style={{ color: currentImage ? colors.textMain : '#8E8E93', fontSize: 11, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                                {currentImage ? 'Image Set ✓' : 'Upload'}
+                              </Text>
+                              {currentImage ? (
+                                <Image source={{ uri: currentImage }} style={{ width: 22, height: 22, borderRadius: 4 }} resizeMode="cover" />
+                              ) : null}
+                            </TouchableOpacity>
                           </View>
 
                           {/* Availability row */}
