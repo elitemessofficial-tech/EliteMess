@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ThemeProvider, useAppTheme } from '../src/context/ThemeContext';
 import { CartProvider } from '../src/context/CartContext';
+import { AuthProvider } from '@descope/react-native-sdk';
 
 function RootLayoutInner() {
   const { isDark } = useAppTheme();
@@ -50,13 +51,16 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
+  const descopeProjectId = process.env.EXPO_PUBLIC_DESCOPE_PROJECT_ID || 'P3GOuYyRSvFn6eKacCsTAkE5QFhF';
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <CartProvider>
-          <RootLayoutInner />
-        </CartProvider>
-      </ThemeProvider>
+      <AuthProvider projectId={descopeProjectId}>
+        <ThemeProvider>
+          <CartProvider>
+            <RootLayoutInner />
+          </CartProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

@@ -22,10 +22,12 @@ import { calculateHaversineDistance, formatDistance } from '../../src/utils/dist
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
+import { useSession } from '@descope/react-native-sdk';
 
 export default function BranchesScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
+  const { session } = useSession();
 
   const [branches, setBranches] = useState<any[]>([]);
   const [rawBranches, setRawBranches] = useState<any[]>([]);
@@ -205,6 +207,8 @@ export default function BranchesScreen() {
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem('demo_role');
+    await AsyncStorage.removeItem('user_selected_role');
+    await AsyncStorage.removeItem('vip_session_active');
     router.replace('/(auth)/login');
   };
 
@@ -345,7 +349,9 @@ export default function BranchesScreen() {
           style={[styles.addressCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
           onPress={async () => {
             try {
-              const saved = await AsyncStorage.getItem('hotelbet_saved_addresses');
+              const descopeUid = session?.user?.userId || 'guest';
+              const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+              const saved = await AsyncStorage.getItem(storageKey);
               setSavedAddresses(saved ? JSON.parse(saved) : []);
             } catch (e) {
               console.warn(e);

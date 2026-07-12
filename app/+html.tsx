@@ -37,10 +37,12 @@ body {
     background-color: #000;
   }
 }
-*::-webkit-scrollbar {
-  display: none;
+html, body, #root, * {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
-* {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar, *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }`;

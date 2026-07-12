@@ -21,6 +21,7 @@ import { User, Home, ShoppingBag, Navigation, MapPin, Sun, Moon, LogOut, Package
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
+import { useSession } from '@descope/react-native-sdk';
 
 interface DBActiveDelivery {
   id: string;
@@ -66,6 +67,7 @@ interface DBAvailableOrder {
 export default function RiderDashboard() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
+  const { session } = useSession();
 
   const [activeDeliveries, setActiveDeliveries] = useState<DBActiveDelivery[]>([]);
   const [availableOrders, setAvailableOrders] = useState<DBAvailableOrder[]>([]);
@@ -218,9 +220,13 @@ export default function RiderDashboard() {
 
   const fetchRiderData = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      let userId = session?.user?.userId;
       
-      let userId = session?.user?.id;
+      if (!userId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        userId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!userId) {
         try {
           const { data } = await supabase.auth.signInAnonymously();
@@ -589,6 +595,8 @@ export default function RiderDashboard() {
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem('demo_role');
+    await AsyncStorage.removeItem('user_selected_role');
+    await AsyncStorage.removeItem('vip_session_active');
     router.replace('/(auth)/login');
   };
 

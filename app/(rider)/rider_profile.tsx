@@ -19,10 +19,12 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
+import { useSession } from '@descope/react-native-sdk';
 
 export default function RiderProfileScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
+  const { session, clearSession } = useSession();
 
   // Custom Toast/Alert State
   const [toastVisible, setToastVisible] = useState(false);
@@ -83,9 +85,13 @@ export default function RiderProfileScreen() {
   const fetchProfileAndStats = async () => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
+      let currentUserId = session?.user?.userId;
       
-      let currentUserId = session?.user?.id;
+      if (!currentUserId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        currentUserId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!currentUserId) {
         try {
           const { data } = await supabase.auth.signInAnonymously();
@@ -158,7 +164,10 @@ export default function RiderProfileScreen() {
       setUpdating(true);
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: fullName })
+        .update({ 
+          full_name: fullName,
+          phone_number: phoneNumber
+        })
         .eq('id', userId);
 
       if (error) throw error;
@@ -173,6 +182,9 @@ export default function RiderProfileScreen() {
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('vip_session_active');
+      await clearSession();
       await supabase.auth.signOut();
       router.replace('/(auth)/login');
     } catch (e) {
@@ -265,6 +277,18 @@ export default function RiderProfileScreen() {
                 onChangeText={setFullName}
                 placeholder="Enter your full name..."
                 placeholderTextColor={colors.textSub}
+              />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.textSub }]}>Phone Number</Text>
+              <TextInput 
+                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                value={phoneNumber}
+                onChangeText={setPhoneNumber}
+                placeholder="Enter your phone number..."
+                placeholderTextColor={colors.textSub}
+                keyboardType="phone-pad"
               />
             </View>
 

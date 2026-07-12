@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { MapPin, Navigation, Home, Briefcase, X, Map } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
+import { useSession } from '@descope/react-native-sdk';
 
 const { width, height } = Dimensions.get('window');
 
@@ -39,6 +40,7 @@ interface LocationPickerModalProps {
 
 export default function LocationPickerModal({ visible, onClose, onAddressSaved }: LocationPickerModalProps) {
   const { isDark } = useAppTheme();
+  const { session } = useSession();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const geocodeTimeoutRef = useRef<any>(null);
 
@@ -51,6 +53,8 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const [isOrderingForSomeoneElse, setIsOrderingForSomeoneElse] = useState(false);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -210,10 +214,14 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
 
       await AsyncStorage.setItem('user_selected_address', JSON.stringify(addressDetails));
 
-      const existing = await AsyncStorage.getItem('hotelbet_saved_addresses');
+      const descopeUid = session?.user?.userId || 'guest';
+      const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+      const existing = await AsyncStorage.getItem(storageKey);
       const parsed = existing ? JSON.parse(existing) : [];
       
-      const newFullAddress = `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})`;
+      const contactPhone = isOrderingForSomeoneElse ? recipientPhone.trim() : (session?.user?.phone || '');
+      const phoneSuffix = contactPhone ? ` - Contact: ${contactPhone}` : '';
+      const newFullAddress = `${addressDetails.flatNo}, ${addressDetails.address} (Landmark: ${addressDetails.landmark})${phoneSuffix}`;
       const updated = [
         {
           id: addressDetails.id,
@@ -225,11 +233,13 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
         ...parsed.filter((item: any) => item.address !== newFullAddress)
       ];
 
-      await AsyncStorage.setItem('hotelbet_saved_addresses', JSON.stringify(updated));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
 
       onAddressSaved(addressDetails);
       setFlatNo('');
       setLandmark('');
+      setRecipientPhone('');
+      setIsOrderingForSomeoneElse(false);
       setLabel('Home');
       onClose();
     } catch (e) {
@@ -415,6 +425,55 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
               value={landmark}
               onChangeText={setLandmark}
             />
+
+            {/* Recipient Phone Choice */}
+            <Text style={[styles.inputLabel, { color: colors.accentGold }]}>ORDERING FOR SOMEONE ELSE?</Text>
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 40,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: !isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                  backgroundColor: !isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+                onPress={() => setIsOrderingForSomeoneElse(false)}
+              >
+                <Text style={{ color: !isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>No (Use My Number)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 40,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                  backgroundColor: isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+                onPress={() => setIsOrderingForSomeoneElse(true)}
+              >
+                <Text style={{ color: isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>Yes (Enter Recipient's)</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isOrderingForSomeoneElse && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={[styles.inputLabel, { color: colors.accentGold }]}>RECIPIENT'S PHONE NUMBER</Text>
+                <TextInput
+                  style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                  placeholder="e.g. +91 99999 99999"
+                  placeholderTextColor={colors.textSub}
+                  value={recipientPhone}
+                  onChangeText={setRecipientPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            )}
 
             {/* Label Pills row */}
             <Text style={[styles.inputLabel, { color: colors.accentGold }]}>SAVE ADDRESS AS</Text>

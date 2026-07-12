@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  useColorScheme, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  useColorScheme,
   Platform,
   ScrollView,
   Image
@@ -127,22 +127,22 @@ export default function MenuScreen() {
     removeFromCart(id);
   };
 
-  const branchItems = selectedBranchId 
+  const branchItems = selectedBranchId
     ? menuItems.filter(item => item.branch_id === selectedBranchId)
     : menuItems;
 
-  const filteredMenu = selectedCategory === 'All' 
-    ? branchItems 
+  const filteredMenu = selectedCategory === 'All'
+    ? branchItems
     : branchItems.filter(item => item.category === selectedCategory);
 
   const renderItem = ({ item, index }: { item: MenuItem; index: number }) => {
     const qty = cart[item.id] || 0;
     const isUnavailable = item.is_available === false;
-    
+
     return (
       <AnimatedEntrance delay={index * 60}>
         <View style={[
-          styles.cardWrapper, 
+          styles.cardWrapper,
           { backgroundColor: colors.cardBg, borderColor: colors.cardBorder },
           isUnavailable && { opacity: 0.6 }
         ]}>
@@ -158,12 +158,12 @@ export default function MenuScreen() {
                 )}
               </View>
               <Text style={[styles.menuDescription, { color: colors.textSub }]}>{item.description}</Text>
-              
+
               <View style={styles.priceRow}>
                 <Text style={[styles.menuPrice, { color: colors.accentGold }]}>
                   ₹ {item.price.toLocaleString()}
                 </Text>
-                
+
                 {isUnavailable ? (
                   <View style={styles.unavailablePlaceholder}>
                     <Text style={styles.unavailablePlaceholderText}>Temporarily Out</Text>
@@ -179,7 +179,7 @@ export default function MenuScreen() {
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.plusCircle, { backgroundColor: colors.accentGold }]}
                     onPress={() => handleAddToCart(item.id)}
                     activeOpacity={0.8}
@@ -189,13 +189,13 @@ export default function MenuScreen() {
                 )}
               </View>
             </View>
-            
+
             {/* Right Image */}
             <View style={styles.photoContainer}>
               {item.image_url ? (
-                <Image 
-                  source={{ uri: item.image_url }} 
-                  style={styles.foodPhoto} 
+                <Image
+                  source={{ uri: item.image_url }}
+                  style={styles.foodPhoto}
                   resizeMode="cover"
                 />
               ) : (
@@ -210,14 +210,14 @@ export default function MenuScreen() {
 
   const renderFloatingFooter = () => (
     <View style={styles.floatingFooterContainer}>
-      <BlurView 
-        intensity={95} 
-        tint={isDark ? 'dark' : 'light'} 
+      <BlurView
+        intensity={95}
+        tint={isDark ? 'dark' : 'light'}
         blurMethod="dimezisBlurView"
         style={[
-          styles.footerInner, 
-          { 
-            borderColor: colors.cardBorder, 
+          styles.footerInner,
+          {
+            borderColor: colors.cardBorder,
             backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
             borderWidth: 1
           }
@@ -229,7 +229,7 @@ export default function MenuScreen() {
           </Text>
           <Text style={[styles.footerSubtitle, { color: colors.textSub }]}>Luxury cart ready</Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.checkoutBtn}
           onPress={() => router.push('/(customer)/cart')}
           activeOpacity={0.85}
@@ -249,13 +249,13 @@ export default function MenuScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <FloatingHeader 
+      <FloatingHeader
         title={branchName}
         titleAlign="center"
         showBackButton={true}
         rightContent={(
-          <TouchableOpacity 
-            onPress={() => router.push('/(customer)/cart')} 
+          <TouchableOpacity
+            onPress={() => router.push('/(customer)/cart')}
             style={[
               styles.cartCircle,
               {
@@ -277,8 +277,8 @@ export default function MenuScreen() {
 
       {/* Categories Horizontal Pill scroller */}
       <View style={styles.categoryWrapper}>
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryContainer}
         >
@@ -289,7 +289,7 @@ export default function MenuScreen() {
                 key={category}
                 style={[
                   styles.categoryPill,
-                  { 
+                  {
                     backgroundColor: isActive ? 'transparent' : colors.pillInactive,
                     borderColor: isActive ? 'transparent' : 'rgba(255,255,255,0.08)',
                   }
@@ -305,9 +305,9 @@ export default function MenuScreen() {
                     style={StyleSheet.absoluteFill}
                   />
                 ) : null}
-                <Text 
+                <Text
                   style={[
-                    styles.categoryText, 
+                    styles.categoryText,
                     { color: isActive ? '#000000' : colors.textMain }
                   ]}
                 >
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   },
   cartCircle: {
     width: 36,
-  height: 36,
+    height: 36,
     borderRadius: 18,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',

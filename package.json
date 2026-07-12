@@ -1,8 +1,9 @@
 {
-  "name": "hotel-delivery-app",
+  "name": "hotel-bet",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@descope/react-native-sdk": "^0.11.1",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.110.0",

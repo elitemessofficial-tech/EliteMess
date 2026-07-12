@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -15,12 +15,34 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronDown } from 'lucide-react-native';
+import LottieView from 'lottie-react-native';
 import { supabase } from '../../src/services/supabase';
+import envBypass from '../../src/config/env_bypass.json';
 import { useAppTheme } from '../../src/context/ThemeContext';
+
+import { useDescope, useSession } from '@descope/react-native-sdk';
+
+const isSpecialOwnerNumber = (phoneStr: string) => {
+  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS || '8390279723,9999999999';
+  const numbers = envVal.split(',').map(n => n.trim().replace(/\D/g, ''));
+  const cleanPhone = phoneStr.replace(/\D/g, '');
+  return numbers.some(n => cleanPhone.endsWith(n) && n.length >= 5);
+};
+
+const isVipNumber = (phoneStr: string) => {
+  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '7777777777';
+  const cleanVip = vipVal.replace(/\D/g, '');
+  const cleanPhone = phoneStr.replace(/\D/g, '');
+  return cleanPhone.endsWith(cleanVip) && cleanVip.length >= 5;
+};
 
 export default function PhoneLoginScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
+  const sdk = useDescope();
+  const { session, manageSession } = useSession();
+
+  const codeInputRef = useRef<TextInput>(null);
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [confirmCode, setConfirmCode] = useState('');
@@ -29,9 +51,82 @@ export default function PhoneLoginScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [codeFocused, setCodeFocused] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [showNameForm, setShowNameForm] = useState(false);
+  const [descopeUserData, setDescopeUserData] = useState<any>(null);
+  const [showSuccessOnboarding, setShowSuccessOnboarding] = useState(false);
+  const [showRoleSelection, setShowRoleSelection] = useState(false);
+  const [showOwnerSelection, setShowOwnerSelection] = useState(false);
+  const [showVipSelection, setShowVipSelection] = useState(false);
 
   // Selected demo role in segmented control
   const [selectedDemoRole, setSelectedDemoRole] = useState<'customer' | 'owner' | 'rider'>('customer');
+
+  useEffect(() => {
+    const checkVipSession = async () => {
+      const isVipActive = await AsyncStorage.getItem('vip_session_active');
+      if (isVipActive === 'true') {
+        const storedRole = await AsyncStorage.getItem('user_selected_role');
+        if (storedRole) {
+          if (storedRole === 'customer') router.replace('/');
+          else if (storedRole === 'owner') router.replace('/(owner)/owner_dashboard');
+          else if (storedRole === 'rider') router.replace('/(rider)/rider_dashboard');
+        } else {
+          setShowVipSelection(true);
+          setDescopeUserData({ uid: 'vip_user_id', phone: `+91${process.env.EXPO_PUBLIC_VIP_NUMBER || '7777777777'}` });
+        }
+        return true;
+      }
+      return false;
+    };
+
+    const runChecks = async () => {
+      const isVip = await checkVipSession();
+      if (isVip) return;
+
+      if (session) {
+        try {
+          const uid = session.user.userId;
+          const phone = session.user.phone || '';
+
+          if (phone && isSpecialOwnerNumber(phone)) {
+            const storedRole = await AsyncStorage.getItem('user_selected_role');
+            if (storedRole) {
+              router.replace(storedRole === 'owner' ? '/(owner)/owner_dashboard' : '/');
+            } else {
+              setShowOwnerSelection(true);
+              setDescopeUserData({ uid, phone });
+            }
+            return;
+          }
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', uid)
+            .single();
+
+          if (profile && profile.role === 'rider') {
+            const storedRole = await AsyncStorage.getItem('user_selected_role');
+            if (storedRole) {
+              router.replace(storedRole === 'rider' ? '/(rider)/rider_dashboard' : '/');
+            } else {
+              setShowRoleSelection(true);
+              setDescopeUserData({ uid, phone });
+            }
+          } else if (profile && profile.role === 'owner') {
+            router.replace('/(owner)/owner_dashboard');
+          } else {
+            router.replace('/');
+          }
+        } catch (e) {
+          console.warn('Error checking existing session:', e);
+        }
+      }
+    };
+
+    runChecks();
+  }, [session]);
 
   const colors = {
     bg: '#0F0F0B', // Pitch dark luxury background
@@ -56,12 +151,41 @@ export default function PhoneLoginScreen() {
     setLoading(true);
     setErrorMsg('');
     try {
-      console.log('Firebase verification SMS code requested for:', phoneNumber);
-      setConfirmResult({ 
-        confirm: async (code: string) => ({ 
-          user: { uid: 'mock-firebase-uid-' + Date.now(), phoneNumber } 
-        }) 
-      });
+      const formattedPhone = `+91${phoneNumber.trim()}`;
+      
+      // Check VIP bypass
+      if (isVipNumber(formattedPhone)) {
+        console.log('VIP Number detected, bypassing OTP send.');
+        // Sign in anonymously on Supabase to satisfy RLS
+        await supabase.auth.signInAnonymously();
+        
+        const vipUid = 'vip_user_id';
+        // Upsert standard VIP profile record
+        await supabase
+          .from('profiles')
+          .upsert({
+            id: vipUid,
+            phone_number: formattedPhone,
+            full_name: 'VIP Administrator',
+            role: 'owner'
+          });
+          
+        await AsyncStorage.setItem('vip_session_active', 'true');
+        await AsyncStorage.removeItem('demo_role');
+        
+        setDescopeUserData({ uid: vipUid, phone: formattedPhone });
+        setShowVipSelection(true);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Sending Descope OTP code to:', formattedPhone);
+      
+      // Request Descope OTP code via SMS
+      await sdk.otp.signUpOrIn.sms(formattedPhone);
+      
+      // Save confirmResult to trigger OTP input view
+      setConfirmResult({ phone: formattedPhone });
     } catch (err: any) {
       setErrorMsg(err.message || 'Error sending confirmation SMS');
     } finally {
@@ -78,29 +202,78 @@ export default function PhoneLoginScreen() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const firebaseUserCredential = await confirmResult.confirm(confirmCode);
-      const { uid, phoneNumber: phone } = firebaseUserCredential.user;
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', uid)
-        .single();
+      const formattedPhone = confirmResult.phone;
+      console.log('Verifying Descope OTP code for:', formattedPhone);
       
-      if (profileError || !profile) {
-        await supabase
-          .from('profiles')
-          .insert({
-            id: uid,
-            phone_number: phone || phoneNumber,
-            full_name: 'Guest Guest',
-            role: 'customer'
-          });
+      // Verify OTP code using Descope SDK
+      const response = await sdk.otp.verify.sms(formattedPhone, confirmCode);
+      
+      if (!response.ok || !response.data) {
+        throw new Error(response.error?.errorMessage || 'Invalid verification code');
       }
       
-      console.log('User signed in with Firebase UID:', uid);
-      await AsyncStorage.removeItem('demo_role');
-      router.replace('/');
+      // Persist the session in Descope session manager
+      await manageSession(response.data);
+      
+      // Access the session token and user details from Descope response
+      const sessionToken = response.data.sessionJwt;
+      const refreshSessionToken = response.data.refreshJwt;
+      const descopeUser = response.data.user;
+      
+      if (!descopeUser) {
+        throw new Error('No user data returned from Descope');
+      }
+      const uid = descopeUser.userId;
+
+      // Match Supabase session with Descope session token
+      if (sessionToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: sessionToken,
+          refresh_token: refreshSessionToken || '',
+        });
+        if (sessionError) {
+          console.warn('Failed to sync Descope session with Supabase:', sessionError.message);
+        }
+      }
+
+      // Check/create user profile in Supabase database by uid or by phone number
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .or(`id.eq.${uid},phone_number.eq.${descopeUser.phone || formattedPhone}`)
+        .maybeSingle();
+      
+      const isOwnerNum = isSpecialOwnerNumber(descopeUser.phone || formattedPhone);
+
+      if (profile && profile.full_name && profile.full_name !== 'Guest Customer' && profile.full_name !== 'Guest Guest' && profile.full_name !== 'Pending Rider') {
+        console.log('User profile already exists, role is:', profile.role);
+        await AsyncStorage.removeItem('demo_role');
+
+        // If the profile ID is a temporary one, update it to the proper UID
+        if (profile.id !== uid) {
+          await supabase.from('profiles').delete().eq('id', profile.id);
+          await supabase.from('profiles').insert({
+            id: uid,
+            phone_number: descopeUser.phone || formattedPhone,
+            full_name: profile.full_name,
+            role: isOwnerNum ? 'owner' : profile.role
+          });
+        }
+
+        if (isOwnerNum) {
+          setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
+          setShowOwnerSelection(true);
+        } else if (profile.role === 'rider') {
+          setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
+          setShowRoleSelection(true);
+        } else {
+          router.replace('/');
+        }
+      } else {
+        // Show name setup screen!
+        setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
+        setShowNameForm(true);
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid verification code');
     } finally {
@@ -108,25 +281,68 @@ export default function PhoneLoginScreen() {
     }
   };
 
-  const handleDemoLogin = async () => {
+  const handleSaveNameAndSignIn = async () => {
+    if (!fullName.trim()) {
+      setErrorMsg('Please enter your full name');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
     try {
-      setLoading(true);
-      setErrorMsg('');
-      // Authenticate anonymously in Supabase to receive a valid JWT session for RLS selection
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.warn('Supabase anonymous signin failed, proceeding with demo state only:', error.message);
-      } else {
-        console.log('Supabase anonymous session established:', data.session?.user?.id);
+      if (!descopeUserData) throw new Error('No user metadata found');
+      
+      const { uid, phone } = descopeUserData;
+
+      // Fetch existing profile to check if they are already rider/owner by uid or phone
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .or(`id.eq.${uid},phone_number.eq.${phone}`)
+        .maybeSingle();
+
+      const isOwnerNum = isSpecialOwnerNumber(phone);
+      const finalRole = isOwnerNum ? 'owner' : (existing?.role || 'customer');
+
+      if (existing && existing.id !== uid) {
+        // Delete the temporary profile row so we don't have duplicates or primary key conflicts
+        await supabase.from('profiles').delete().eq('id', existing.id);
       }
-      await AsyncStorage.setItem('demo_role', selectedDemoRole);
-      router.replace('/');
+      
+      // Upsert profile in Supabase database
+      const { error: upsertErr } = await supabase
+        .from('profiles')
+        .upsert({
+          id: uid,
+          phone_number: phone,
+          full_name: fullName.trim(),
+          role: finalRole
+        });
+
+      if (upsertErr) throw upsertErr;
+
+      console.log('User signed in with new profile name, role is:', finalRole);
+      await AsyncStorage.removeItem('demo_role');
+
+      if (isOwnerNum) {
+        setShowOwnerSelection(true);
+      } else if (finalRole === 'rider') {
+        setShowRoleSelection(true);
+      } else {
+        // Activate success animation view!
+        setShowSuccessOnboarding(true);
+        
+        // Delay redirect by 2.5 seconds to show the Lottie tick beautifully
+        setTimeout(() => {
+          router.replace('/');
+        }, 2500);
+      }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save demo bypass');
-    } finally {
+      setErrorMsg(err.message || 'Error saving details');
       setLoading(false);
     }
   };
+
+
 
   const renderLogo = () => (
     <View style={styles.logoWrapper}>
@@ -163,6 +379,25 @@ export default function PhoneLoginScreen() {
     );
   };
 
+  if (showSuccessOnboarding) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }]}>
+        <LottieView
+          source={require('../../assets/images/Greentick.lottie')}
+          autoPlay
+          loop={false}
+          style={{ width: 160, height: 160, marginBottom: 20 }}
+        />
+        <Text style={{ color: '#FFFFFF', fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>
+          Account Created Successfully!
+        </Text>
+        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '500', textAlign: 'center', paddingHorizontal: 32 }}>
+          Welcome to Hotel Bet. Loading your private portal...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {renderLogo()}
@@ -177,7 +412,185 @@ export default function PhoneLoginScreen() {
       {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 
       {renderGlassCard(
-        !confirmResult ? (
+        showVipSelection ? (
+          <View style={styles.formContainer}>
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 6 }}>
+              VIP Control Center
+            </Text>
+            <Text style={{ color: colors.textSub, fontSize: 12, textAlign: 'center', marginBottom: 20 }}>
+              Authorized VIP access. Select view mode:
+            </Text>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'owner');
+                router.replace('/(owner)/owner_dashboard');
+              }} 
+              activeOpacity={0.85}
+              style={{ marginBottom: 10 }}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+              >
+                <Text style={styles.buttonText}>Enter Owner View</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'rider');
+                router.replace('/(rider)/rider_dashboard');
+              }} 
+              activeOpacity={0.85}
+              style={{ marginBottom: 10 }}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+              >
+                <Text style={styles.buttonText}>Enter Rider View</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'customer');
+                router.replace('/');
+              }} 
+              activeOpacity={0.85}
+              style={[styles.secondaryButton, { marginTop: 4, height: 48, justifyContent: 'center' }]}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
+                Enter Customer View
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : showOwnerSelection ? (
+          <View style={styles.formContainer}>
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 6 }}>
+              Select Access View
+            </Text>
+            <Text style={{ color: colors.textSub, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>
+              Your credentials grant owner level privileges. Choose your view portal:
+            </Text>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'owner');
+                router.replace('/(owner)/owner_dashboard');
+              }} 
+              activeOpacity={0.85}
+              style={{ marginBottom: 12 }}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+              >
+                <Text style={styles.buttonText}>Login as Owner</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'customer');
+                router.replace('/');
+              }} 
+              activeOpacity={0.85}
+              style={[styles.secondaryButton, { marginTop: 4, height: 48, justifyContent: 'center' }]}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
+                Login as Customer
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : showRoleSelection ? (
+          <View style={styles.formContainer}>
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 6 }}>
+              Select View Mode
+            </Text>
+            <Text style={{ color: colors.textSub, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>
+              You have rider access. Choose how you want to navigate today:
+            </Text>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'rider');
+                router.replace('/(rider)/rider_dashboard');
+              }} 
+              activeOpacity={0.85}
+              style={{ marginBottom: 12 }}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+              >
+                <Text style={styles.buttonText}>Login as Rider</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.setItem('user_selected_role', 'customer');
+                router.replace('/');
+              }} 
+              activeOpacity={0.85}
+              style={[styles.secondaryButton, { marginTop: 4, height: 48, justifyContent: 'center' }]}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
+                Login as Customer
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : showNameForm ? (
+          <View style={styles.formContainer}>
+            <Text style={[styles.subtitle, { color: colors.textSub, marginBottom: 16, textAlign: 'left', marginTop: 0 }]}>
+              Enter your name to complete your registration:
+            </Text>
+            
+            <View style={[styles.phoneInputContainer, { backgroundColor: colors.inputBg, width: '100%', marginBottom: 16, height: 48, borderRadius: 10, paddingHorizontal: 12, justifyContent: 'center' }]}>
+              <TextInput
+                style={{
+                  color: colors.inputText,
+                  fontSize: 14,
+                  height: '100%',
+                }}
+                placeholder="Full Name"
+                placeholderTextColor={colors.inputPlaceholder}
+                value={fullName}
+                onChangeText={setFullName}
+              />
+            </View>
+
+            <TouchableOpacity 
+              onPress={handleSaveNameAndSignIn} 
+              disabled={loading}
+              activeOpacity={0.85}
+              style={styles.buttonWrapper}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000000" />
+                ) : (
+                  <Text style={styles.buttonText}>Complete Signup</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        ) : !confirmResult ? (
           <View style={styles.formContainer}>
             {/* Split Phone Input Row */}
             <View style={styles.splitInputRow}>
@@ -198,8 +611,12 @@ export default function PhoneLoginScreen() {
                   placeholder="Phone Number"
                   placeholderTextColor={colors.inputPlaceholder}
                   keyboardType="phone-pad"
+                  maxLength={10}
                   value={phoneNumber}
-                  onChangeText={setPhoneNumber}
+                  onChangeText={(val) => {
+                    const digits = val.replace(/\D/g, '');
+                    setPhoneNumber(digits);
+                  }}
                   onFocus={() => setPhoneFocused(true)}
                   onBlur={() => setPhoneFocused(false)}
                 />
@@ -228,25 +645,97 @@ export default function PhoneLoginScreen() {
           </View>
         ) : (
           <View style={styles.formContainer}>
-            <View style={[styles.otpInputContainer, { backgroundColor: colors.inputBg }]}>
-              <TextInput
-                style={[
-                  styles.phoneInput, 
-                  { 
-                    color: colors.inputText,
-                    borderBottomColor: codeFocused ? colors.accentGold : 'transparent'
-                  }
-                ]}
-                placeholder="Enter 6-Digit OTP"
-                placeholderTextColor={colors.inputPlaceholder}
-                keyboardType="number-pad"
-                maxLength={6}
-                value={confirmCode}
-                onChangeText={setConfirmCode}
-                onFocus={() => setCodeFocused(true)}
-                onBlur={() => setCodeFocused(false)}
-              />
-            </View>
+            <TouchableOpacity
+              activeOpacity={0.95}
+              onPress={() => codeInputRef.current?.focus()}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 16 }}
+            >
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {Array.from({ length: 3 }).map((_, idx) => {
+                  const val = confirmCode[idx] || '';
+                  const isFocused = codeFocused && confirmCode.length === idx;
+                  const isFilled = val !== '';
+                  const borderCol = isFilled 
+                    ? '#10B981' 
+                    : isFocused 
+                      ? colors.accentGold 
+                      : 'rgba(255,255,255,0.15)';
+
+                  return (
+                    <View
+                      key={idx}
+                      style={{
+                        width: 40,
+                        height: 52,
+                        borderRadius: 8,
+                        borderWidth: 1.8,
+                        backgroundColor: colors.inputBg,
+                        borderColor: borderCol,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
+                        {val}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Spacing hyphen */}
+              <View style={{ width: 18, alignItems: 'center' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.3)', fontWeight: '800', fontSize: 18 }}>-</Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {Array.from({ length: 3 }).map((_, idx) => {
+                  const realIdx = idx + 3;
+                  const val = confirmCode[realIdx] || '';
+                  const isFocused = codeFocused && confirmCode.length === realIdx;
+                  const isFilled = val !== '';
+                  const borderCol = isFilled 
+                    ? '#10B981' 
+                    : isFocused 
+                      ? colors.accentGold 
+                      : 'rgba(255,255,255,0.15)';
+
+                  return (
+                    <View
+                      key={realIdx}
+                      style={{
+                        width: 40,
+                        height: 52,
+                        borderRadius: 8,
+                        borderWidth: 1.8,
+                        backgroundColor: colors.inputBg,
+                        borderColor: borderCol,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
+                        {val}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </TouchableOpacity>
+
+            <TextInput
+              ref={codeInputRef}
+              style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={confirmCode}
+              onChangeText={(val) => {
+                const digits = val.replace(/\D/g, '');
+                setConfirmCode(digits);
+              }}
+              onFocus={() => setCodeFocused(true)}
+              onBlur={() => setCodeFocused(false)}
+            />
 
             <TouchableOpacity 
               onPress={handleVerifyCode} 
@@ -275,42 +764,9 @@ export default function PhoneLoginScreen() {
         )
       )}
 
-      <Text style={[styles.footerText, { color: colors.textSub }]}>
+      <Text style={[styles.footerText, { color: colors.textSub, marginBottom: 24 }]}>
         By continuing, you agree to our Privacy Policy
       </Text>
-
-      {/* Demo bypass gate */}
-      <View style={[styles.demoContainer, { borderTopColor: 'rgba(255,255,255,0.05)' }]}>
-        <Text style={styles.demoTitle}>DEMO GATEWAY BYPASS</Text>
-        
-        <View style={styles.segmentedControl}>
-          <TouchableOpacity 
-            style={[styles.segmentBtn, selectedDemoRole === 'customer' && styles.segmentBtnActive]} 
-            onPress={() => setSelectedDemoRole('customer')}
-          >
-            <Text style={[styles.segmentText, { color: selectedDemoRole === 'customer' ? '#000000' : '#8E8E93' }]}>Customer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.segmentBtn, selectedDemoRole === 'owner' && styles.segmentBtnActive]} 
-            onPress={() => setSelectedDemoRole('owner')}
-          >
-            <Text style={[styles.segmentText, { color: selectedDemoRole === 'owner' ? '#000000' : '#8E8E93' }]}>Owner</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.segmentBtn, selectedDemoRole === 'rider' && styles.segmentBtnActive]} 
-            onPress={() => setSelectedDemoRole('rider')}
-          >
-            <Text style={[styles.segmentText, { color: selectedDemoRole === 'rider' ? '#000000' : '#8E8E93' }]}>Rider</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.demoGoBtn}
-          onPress={handleDemoLogin}
-        >
-          <Text style={styles.demoGoText}>Enter View</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -409,9 +865,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   phoneInput: {
-    fontSize: 14,
+    fontSize: 16,
     height: '100%',
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 3,
     borderBottomWidth: 1,
     borderBottomColor: 'transparent',
     paddingVertical: 0,

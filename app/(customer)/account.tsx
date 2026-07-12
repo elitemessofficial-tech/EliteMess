@@ -21,8 +21,10 @@ import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
+import { useSession } from '@descope/react-native-sdk';
 
 export default function AccountScreen() {
+  const { session, clearSession } = useSession();
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
 
@@ -60,6 +62,8 @@ export default function AccountScreen() {
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [newRecipientPhone, setNewRecipientPhone] = useState('');
+  const [isOrderingForSomeoneElse, setIsOrderingForSomeoneElse] = useState(false);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -89,9 +93,13 @@ export default function AccountScreen() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
+      let currentUserId = session?.user?.userId;
       
-      let currentUserId = session?.user?.id;
+      if (!currentUserId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        currentUserId = sbSessionData?.session?.user?.id;
+      }
+
       if (!currentUserId) {
         try {
           const { data } = await supabase.auth.signInAnonymously();
@@ -178,7 +186,9 @@ export default function AccountScreen() {
 
   const loadSavedAddresses = async () => {
     try {
-      const saved = await AsyncStorage.getItem('hotelbet_saved_addresses');
+      const descopeUid = session?.user?.userId || 'guest';
+      const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+      const saved = await AsyncStorage.getItem(storageKey);
       if (saved) {
         setAddresses(JSON.parse(saved));
       }
@@ -194,10 +204,13 @@ export default function AccountScreen() {
     }
 
     let updated = [...addresses];
+    const contactPhone = isOrderingForSomeoneElse ? newRecipientPhone.trim() : phoneNumber;
+    const phoneSuffix = contactPhone ? ` - Contact: ${contactPhone}` : '';
+    const finalAddress = `${newAddressText.trim()}${phoneSuffix}`;
     if (editingAddressId) {
       updated = updated.map(item => 
         item.id === editingAddressId 
-          ? { ...item, label: newLabel, address: newAddressText } 
+          ? { ...item, label: newLabel, address: finalAddress } 
           : item
       );
       showToast('Address Updated', 'Saved changes successfully.', 'success');
@@ -205,16 +218,20 @@ export default function AccountScreen() {
       const newItem = {
         id: `addr_${Date.now()}`,
         label: newLabel,
-        address: newAddressText
+        address: finalAddress
       };
       updated.push(newItem);
       showToast('Address Added', 'Saved new address successfully.', 'success');
     }
 
     setAddresses(updated);
-    await AsyncStorage.setItem('hotelbet_saved_addresses', JSON.stringify(updated));
+    const descopeUid = session?.user?.userId || 'guest';
+    const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
 
     setNewAddressText('');
+    setNewRecipientPhone('');
+    setIsOrderingForSomeoneElse(false);
     setNewLabel('Home');
     setEditingAddressId(null);
     setShowAddressForm(false);
@@ -230,13 +247,18 @@ export default function AccountScreen() {
   const handleDeleteAddress = async (id: string) => {
     const updated = addresses.filter(item => item.id !== id);
     setAddresses(updated);
-    await AsyncStorage.setItem('hotelbet_saved_addresses', JSON.stringify(updated));
+    const descopeUid = session?.user?.userId || 'guest';
+    const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
     showToast('Address Deleted', 'Address removed successfully.', 'success');
   };
 
   const handleLogout = async () => {
     try {
       await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('vip_session_active');
+      await clearSession();
       await supabase.auth.signOut();
       router.replace('/(auth)/login');
     } catch (e) {
@@ -437,6 +459,55 @@ export default function AccountScreen() {
                   value={newAddressText}
                   onChangeText={setNewAddressText}
                 />
+
+                {/* Recipient Phone Choice */}
+                <Text style={[styles.inputLabel, { color: colors.textSub }]}>Ordering for someone else?</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12, marginTop: 4 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      height: 38,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: !isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                      backgroundColor: !isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                    onPress={() => setIsOrderingForSomeoneElse(false)}
+                  >
+                    <Text style={{ color: !isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 12 }}>No (Use My Number)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      height: 38,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                      backgroundColor: isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                    onPress={() => setIsOrderingForSomeoneElse(true)}
+                  >
+                    <Text style={{ color: isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 12 }}>Yes (Enter Recipient's)</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {isOrderingForSomeoneElse && (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={[styles.inputLabel, { color: colors.textSub }]}>Recipient's Phone Number</Text>
+                    <TextInput
+                      style={[styles.input, { height: 40, fontSize: 12, paddingHorizontal: 10, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                      placeholder="Mobile number of recipient..."
+                      placeholderTextColor="#8E8E93"
+                      value={newRecipientPhone}
+                      onChangeText={setNewRecipientPhone}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                )}
 
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <TouchableOpacity 

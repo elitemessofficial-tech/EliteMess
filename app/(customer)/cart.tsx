@@ -25,6 +25,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
+import { useSession } from '@descope/react-native-sdk';
 
 interface OrderItem {
   id: string;
@@ -58,6 +59,7 @@ interface Review {
 export default function CartScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
+  const { session } = useSession();
   const { cart, menuItems, addToCart, removeFromCart, clearCart, cartTotalItems, cartTotalPrice, getCartItemsList, loading: cartLoading } = useCart();
 
   // Checkout Form States
@@ -102,7 +104,9 @@ export default function CartScreen() {
 
   const loadSavedAddressesInCart = async () => {
     try {
-      const saved = await AsyncStorage.getItem('hotelbet_saved_addresses');
+      const descopeUid = session?.user?.userId || 'guest';
+      const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
+      const saved = await AsyncStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         setSavedAddresses(parsed);
@@ -209,9 +213,13 @@ export default function CartScreen() {
   const fetchOrdersAndReviews = async () => {
     try {
       setLoadingOrders(true);
-      const { data: { session } } = await supabase.auth.getSession();
-
-      let userId = session?.user?.id;
+      let userId = session?.user?.userId;
+      
+      if (!userId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        userId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!userId) {
         try {
           const { data } = await supabase.auth.signInAnonymously();
@@ -392,9 +400,13 @@ export default function CartScreen() {
         setPlacingOrder(false);
         return;
       }
-      const { data: { session } } = await supabase.auth.getSession();
-      let userId = session?.user?.id;
-
+      let userId = session?.user?.userId;
+      
+      if (!userId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        userId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!userId) {
         try {
           const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();

@@ -5,11 +5,29 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../src/services/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
+import { useSession } from '@descope/react-native-sdk';
 
 const { width } = Dimensions.get('window');
 
+import envBypass from '../src/config/env_bypass.json';
+
+const isSpecialOwnerNumber = (phoneStr: string) => {
+  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS || '8390279723,9999999999';
+  const numbers = envVal.split(',').map(n => n.trim().replace(/\D/g, ''));
+  const cleanPhone = phoneStr.replace(/\D/g, '');
+  return numbers.some(n => cleanPhone.endsWith(n) && n.length >= 5);
+};
+
+const isVipNumber = (phoneStr: string) => {
+  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '7777777777';
+  const cleanVip = vipVal.replace(/\D/g, '');
+  const cleanPhone = phoneStr.replace(/\D/g, '');
+  return cleanPhone.endsWith(cleanVip) && cleanVip.length >= 5;
+};
+
 export default function EntrypointIndex() {
   const router = useRouter();
+  const { session } = useSession();
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -54,6 +72,55 @@ export default function EntrypointIndex() {
         const minDelay = new Promise(resolve => setTimeout(resolve, 4000));
 
         const determineRoute = async () => {
+          const isVipActive = await AsyncStorage.getItem('vip_session_active');
+          if (isVipActive === 'true') {
+            const selectedRole = await AsyncStorage.getItem('user_selected_role');
+            if (selectedRole === 'customer') return '/(customer)/branches';
+            if (selectedRole === 'owner') return '/(owner)/owner_dashboard';
+            if (selectedRole === 'rider') return '/(rider)/rider_dashboard';
+            return '/(auth)/login';
+          }
+
+          if (session) {
+            const uid = session.user.userId;
+            const phone = session.user.phone || '';
+
+            // Check if special owner phone number
+            if (phone && isSpecialOwnerNumber(phone)) {
+              const selectedRole = await AsyncStorage.getItem('user_selected_role');
+              if (selectedRole === 'customer') {
+                return '/(customer)/branches';
+              } else if (selectedRole === 'owner') {
+                return '/(owner)/owner_dashboard';
+              }
+              return '/(auth)/login';
+            }
+
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', uid)
+              .single();
+
+            const role = profile?.role || 'customer';
+
+            if (role === 'rider') {
+              const selectedRole = await AsyncStorage.getItem('user_selected_role');
+              if (selectedRole === 'customer') {
+                return '/(customer)/branches';
+              } else if (selectedRole === 'rider') {
+                return '/(rider)/rider_dashboard';
+              }
+              return '/(auth)/login';
+            }
+
+            if (role === 'owner') {
+              return '/(owner)/owner_dashboard';
+            }
+
+            return '/(customer)/branches';
+          }
+
           const demoRole = await AsyncStorage.getItem('demo_role');
           if (demoRole) {
             if (demoRole === 'customer') return '/(customer)/branches';
@@ -61,9 +128,9 @@ export default function EntrypointIndex() {
             if (demoRole === 'rider') return '/(rider)/rider_dashboard';
           }
 
-          const { data: { session } } = await supabase.auth.getSession();
+          const { data: { session: supabaseSession } } = await supabase.auth.getSession();
 
-          if (!session) {
+          if (!supabaseSession) {
             return '/(auth)/login';
           }
 
@@ -71,7 +138,7 @@ export default function EntrypointIndex() {
           const { data: profile, error } = await supabase
             .from('profiles')
             .select('role')
-            .eq('id', session.user.id)
+            .eq('id', supabaseSession.user.id)
             .single();
 
           if (error || !profile) {

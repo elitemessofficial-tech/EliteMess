@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "hotel-delivery-app",
+    "name": "Hotel Bet",
     "slug": "hotel-delivery-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/hotelbet.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"

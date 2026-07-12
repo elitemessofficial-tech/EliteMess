@@ -34,6 +34,7 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import FloatingHeader from '../../components/FloatingHeader';
 import { supabase } from '../../src/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSession } from '@descope/react-native-sdk';
 
 interface FAQItem {
   id: string;
@@ -49,6 +50,7 @@ interface Message {
 }
 
 export default function SupportScreen() {
+  const { session } = useSession();
   const router = useRouter();
   const { isDark } = useAppTheme();
 
@@ -78,8 +80,13 @@ export default function SupportScreen() {
   const initSupportChat = async () => {
     try {
       setChatLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      let userId = session?.user?.id;
+      let userId = session?.user?.userId;
+      
+      if (!userId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        userId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!userId) {
         try {
           const { data } = await supabase.auth.signInAnonymously();
@@ -135,8 +142,13 @@ export default function SupportScreen() {
   const startNewSession = async () => {
     try {
       setChatLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      let userId = session?.user?.id;
+      let userId = session?.user?.userId;
+      
+      if (!userId) {
+        const { data: sbSessionData } = await supabase.auth.getSession();
+        userId = sbSessionData?.session?.user?.id;
+      }
+      
       if (!userId) {
         userId = 'mock-customer-uid-999';
       }

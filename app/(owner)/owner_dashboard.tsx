@@ -25,6 +25,8 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import LottieView from 'lottie-react-native';
+
 
 interface OrderItem {
   quantity: number;
@@ -85,10 +87,18 @@ export default function OwnerDashboard() {
   const [orders, setOrders] = useState<DBOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetailOrder, setSelectedDetailOrder] = useState<DBOrder | null>(null);
-  const [activeSegment, setActiveSegment] = useState<'orders' | 'reviews' | 'menu' | 'sales' | 'support'>('orders');
+  const [activeSegment, setActiveSegment] = useState<'orders' | 'reviews' | 'menu' | 'sales' | 'support' | 'riders'>('orders');
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [salesFilter, setSalesFilter] = useState<'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lifetime'>('lifetime');
   const [salesDropdownOpen, setSalesDropdownOpen] = useState(false);
+
+  // Rider Management States
+  const [riders, setRiders] = useState<any[]>([]);
+  const [newRiderPhone, setNewRiderPhone] = useState('');
+  const [newRiderName, setNewRiderName] = useState('');
+  const [loadingRiders, setLoadingRiders] = useState(false);
+  const [ridersModalVisible, setRidersModalVisible] = useState(false);
+  const [revokeConfirmData, setRevokeConfirmData] = useState<{ id: string; name: string } | null>(null);
   const [supportChats, setSupportChats] = useState<any[]>([]);
   const [loadingSupport, setLoadingSupport] = useState(false);
   const [selectedChatOrder, setSelectedChatOrder] = useState<any | null>(null);
@@ -104,6 +114,85 @@ export default function OwnerDashboard() {
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [activeSegment]);
+
+  const fetchRiders = async () => {
+    setLoadingRiders(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'rider')
+        .order('full_name', { ascending: true });
+
+      if (error) throw error;
+      setRiders(data || []);
+    } catch (e) {
+      console.error('Failed to load riders list:', e);
+    } finally {
+      setLoadingRiders(false);
+    }
+  };
+
+  const handleAddRider = async () => {
+    const rawPhone = newRiderPhone.trim();
+    if (rawPhone.length !== 10) {
+      if (Platform.OS === 'web') {
+        window.alert('Please enter a valid 10-digit phone number');
+      } else {
+        Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+      }
+      return;
+    }
+    const formattedPhone = `+91${rawPhone}`;
+    setLoadingRiders(true);
+    try {
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('phone_number', formattedPhone)
+        .maybeSingle();
+
+      if (existingProfile) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ role: 'rider' })
+          .eq('id', existingProfile.id);
+
+        if (error) throw error;
+        const msg = `Rider access granted to existing user: ${existingProfile.full_name || rawPhone}`;
+        if (Platform.OS === 'web') window.alert(msg);
+        else Alert.alert('Success', msg);
+      } else {
+        const tempId = `temp_rider_${Date.now()}`;
+        const { error } = await supabase
+          .from('profiles')
+          .insert({
+            id: tempId,
+            phone_number: formattedPhone,
+            full_name: newRiderName.trim() || 'Pending Rider',
+            role: 'rider'
+          });
+
+        if (error) throw error;
+        const msg = `Rider access provisioned for phone: ${formattedPhone}`;
+        if (Platform.OS === 'web') window.alert(msg);
+        else Alert.alert('Success', msg);
+      }
+      setNewRiderPhone('');
+      setNewRiderName('');
+      fetchRiders();
+    } catch (err: any) {
+      const msg = err.message || 'Failed to assign rider role';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Error', msg);
+    } finally {
+      setLoadingRiders(false);
+    }
+  };
+
+  const handleRevokeRider = (id: string, name: string) => {
+    setRevokeConfirmData({ id, name });
+  };
 
   const handleOpenMap = (lat?: number, lng?: number) => {
     if (!lat || !lng) return;
@@ -602,6 +691,8 @@ export default function OwnerDashboard() {
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem('demo_role');
+    await AsyncStorage.removeItem('user_selected_role');
+    await AsyncStorage.removeItem('vip_session_active');
     router.replace('/(auth)/login');
   };
 
@@ -653,6 +744,7 @@ export default function OwnerDashboard() {
                 <Moon size={15} color={colors.accentGold} />
               )}
             </TouchableOpacity>
+
             <TouchableOpacity onPress={handleLogout} style={[styles.headerButton, styles.logoutButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
               <LogOut size={15} color="#EF4444" />
             </TouchableOpacity>
@@ -682,6 +774,46 @@ export default function OwnerDashboard() {
               <Text style={[styles.summaryLabel, { color: colors.accentGold }]}>DELIVERIES</Text>
             </View>
           </View>
+        )}
+
+        {/* Shortcut to Manage Rider Staff - Home screen only */}
+        {(activeSegment === 'orders' || activeSegment === 'reviews') && (
+          <TouchableOpacity 
+            onPress={() => {
+              setRidersModalVisible(true);
+              fetchRiders();
+            }}
+            activeOpacity={0.85}
+            style={{
+              marginBottom: 16,
+              borderRadius: 20,
+              borderWidth: 0.8,
+              borderColor: colors.cardBorder,
+              backgroundColor: colors.cardBg,
+              padding: 16,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}>
+                <User size={18} color={colors.accentGold} />
+              </View>
+              <View>
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>Manage Rider Registry</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Assign roles & revoke rider privileges</Text>
+              </View>
+            </View>
+            <ChevronDown size={16} color={colors.accentGold} style={{ transform: [{ rotate: '-90deg' }] }} />
+          </TouchableOpacity>
         )}
 
         {/* Tab Segments (Rounded Row matching full width) - only on Home/Reviews tabs */}
@@ -1565,6 +1697,270 @@ export default function OwnerDashboard() {
           <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
         </TouchableOpacity>
       </BlurView>
+
+      {/* Rider privileges directory modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={ridersModalVisible}
+        onRequestClose={() => setRidersModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.96)' : 'rgba(255, 255, 255, 0.96)'
+              }
+            ]}
+          >
+            <View style={[styles.modalHeader, { borderBottomColor: colors.cardBorder, paddingBottom: 12 }]}>
+              <Text style={[styles.modalTitleText, { color: colors.accentGold }]}>
+                Rider Staffing Registry
+              </Text>
+              <TouchableOpacity onPress={() => setRidersModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color={colors.textSub} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%', marginTop: 12 }}>
+              <View style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                <Text style={[styles.menuFormTitle, { color: colors.accentGold, marginBottom: 12 }]}>ASSIGN NEW RIDER ROLE</Text>
+                
+                <View style={{ gap: 10 }}>
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, marginBottom: 6 }}>
+                      PHONE NUMBER
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <View style={{
+                        backgroundColor: colors.cardBg,
+                        borderColor: colors.cardBorder,
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        height: 44,
+                        paddingHorizontal: 12,
+                        justifyContent: 'center',
+                      }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>IN +91</Text>
+                      </View>
+                      <TextInput 
+                        style={[styles.menuFormInput, { flex: 1, backgroundColor: colors.cardBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0, height: 44 }]}
+                        value={newRiderPhone}
+                        onChangeText={(val) => setNewRiderPhone(val.replace(/\D/g, ''))}
+                        placeholder="e.g. 8390279723..."
+                        placeholderTextColor="#8E8E93"
+                        keyboardType="number-pad"
+                        maxLength={10}
+                      />
+                    </View>
+                  </View>
+
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, marginBottom: 6 }}>
+                      RIDER FULL NAME (OPTIONAL)
+                    </Text>
+                    <TextInput 
+                      style={[styles.menuFormInput, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0, height: 44 }]}
+                      value={newRiderName}
+                      onChangeText={setNewRiderName}
+                      placeholder="e.g. Rahul Sharma..."
+                      placeholderTextColor="#8E8E93"
+                    />
+                  </View>
+
+                  <TouchableOpacity 
+                    onPress={handleAddRider}
+                    disabled={loadingRiders}
+                    activeOpacity={0.8}
+                    style={{ marginTop: 6 }}
+                  >
+                    <LinearGradient
+                      colors={colors.goldGrad}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={{
+                        height: 44,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {loadingRiders ? (
+                        <ActivityIndicator color="#000000" size="small" />
+                      ) : (
+                        <Text style={{ color: '#000000', fontSize: 13, fontWeight: '900' }}>
+                          Assign Rider Access
+                        </Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={[styles.menuFormTitle, { color: colors.accentGold, marginTop: 12, marginBottom: 8 }]}>
+                ACTIVE RIDERS DIRECTORY
+              </Text>
+              
+              <View style={{ gap: 12, paddingBottom: 32 }}>
+                {loadingRiders && riders.length === 0 ? (
+                  <View style={{ height: 80, justifyContent: 'center' }}>
+                    <Loader />
+                  </View>
+                ) : riders.length === 0 ? (
+                  <View style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, alignItems: 'center', padding: 30 }]}>
+                    <User size={30} color={colors.textSub} style={{ opacity: 0.3, marginBottom: 8 }} />
+                    <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '700' }}>No Riders Assigned</Text>
+                    <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                      Assign a phone number as a rider above. They will get custom rider view options upon login.
+                    </Text>
+                  </View>
+                ) : (
+                  riders.map((rider, index) => (
+                    <AnimatedEntrance key={rider.id} delay={index * 60}>
+                      <View 
+                        style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 }]}
+                      >
+                        <View style={{ gap: 2, flex: 1, marginRight: 8 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
+                            {rider.full_name || 'Rider Staff'}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textSub }}>
+                            {rider.phone_number || 'N/A'}
+                          </Text>
+                        </View>
+                        
+                        <TouchableOpacity 
+                          style={{
+                            borderColor: '#EF4444',
+                            borderWidth: 0.8,
+                            borderRadius: 8,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            justifyContent: 'center',
+                            alignItems: 'center'
+                          }}
+                          onPress={() => handleRevokeRider(rider.id, rider.full_name || rider.phone_number)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>
+                            Revoke Access
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </AnimatedEntrance>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Rider Revoke Confirmation Card Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={revokeConfirmData !== null}
+        onRequestClose={() => setRevokeConfirmData(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              {
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(20, 20, 16, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                padding: 24,
+                borderRadius: 24,
+                width: '85%',
+                maxWidth: 340,
+                alignItems: 'center',
+                borderWidth: 1,
+              }
+            ]}
+          >
+            <LottieView
+              source={require('../../assets/images/wrong.lottie')}
+              autoPlay
+              loop={false}
+              style={{ width: 100, height: 100, marginBottom: 12 }}
+            />
+            
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 8 }}>
+              Revoke Rider Access?
+            </Text>
+            
+            <Text style={{ color: colors.textSub, fontSize: 13, textAlign: 'center', marginBottom: 24, lineHeight: 18 }}>
+              Are you sure you want to revoke rider privileges for <Text style={{ color: colors.accentGold, fontWeight: '700' }}>{revokeConfirmData?.name}</Text>?
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: colors.inputBg,
+                }}
+                onPress={() => setRevokeConfirmData(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 10,
+                  backgroundColor: '#EF4444',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={async () => {
+                  if (!revokeConfirmData) return;
+                  const targetId = revokeConfirmData.id;
+                  setRevokeConfirmData(null);
+                  try {
+                    const { error } = await supabase
+                      .from('profiles')
+                      .update({ role: 'customer' })
+                      .eq('id', targetId);
+
+                    if (error) throw error;
+                    
+                    if (Platform.OS === 'web') {
+                      window.alert('Rider privileges revoked.');
+                    } else {
+                      Alert.alert('Success', 'Rider privileges revoked.');
+                    }
+                    fetchRiders();
+                  } catch (e: any) {
+                    const msg = e.message || 'Failed to revoke rider role';
+                    if (Platform.OS === 'web') {
+                      window.alert(msg);
+                    } else {
+                      Alert.alert('Error', msg);
+                    }
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '900' }}>Revoke</Text>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
 
       {/* Detailed Order Modal for Owner */}
       <Modal
