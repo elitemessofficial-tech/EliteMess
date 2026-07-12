@@ -23,7 +23,7 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { useDescope, useSession } from '@descope/react-native-sdk';
 
 const isSpecialOwnerNumber = (phoneStr: string) => {
-  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS || '8390279723,9999999999';
+  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS;
   const numbers = envVal.split(',').map(n => n.trim().replace(/\D/g, ''));
   const cleanPhone = phoneStr.replace(/\D/g, '');
   return numbers.some(n => cleanPhone.endsWith(n) && n.length >= 5);
@@ -89,6 +89,24 @@ export default function PhoneLoginScreen() {
           const uid = session.user.userId;
           const phone = session.user.phone || '';
 
+          // Fetch profile first to ensure name is configured
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, full_name, role')
+            .or(`id.eq.${uid},phone_number.eq.${phone}`)
+            .maybeSingle();
+
+          const hasValidName = profile && profile.full_name && 
+                               profile.full_name !== 'Guest Customer' && 
+                               profile.full_name !== 'Guest Guest' && 
+                               profile.full_name !== 'Pending Rider';
+
+          if (!hasValidName) {
+            setDescopeUserData({ uid, phone });
+            setShowNameForm(true);
+            return;
+          }
+
           if (phone && isSpecialOwnerNumber(phone)) {
             const storedRole = await AsyncStorage.getItem('user_selected_role');
             if (storedRole) {
@@ -99,12 +117,6 @@ export default function PhoneLoginScreen() {
             }
             return;
           }
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', uid)
-            .single();
 
           if (profile && profile.role === 'rider') {
             const storedRole = await AsyncStorage.getItem('user_selected_role');
@@ -193,8 +205,9 @@ export default function PhoneLoginScreen() {
     }
   };
 
-  const handleVerifyCode = async () => {
-    if (!confirmCode) {
+  const handleVerifyCode = async (codeOverride?: string) => {
+    const codeToVerify = codeOverride || confirmCode;
+    if (!codeToVerify) {
       setErrorMsg('Please enter the 6-digit OTP code');
       return;
     }
@@ -206,7 +219,7 @@ export default function PhoneLoginScreen() {
       console.log('Verifying Descope OTP code for:', formattedPhone);
       
       // Verify OTP code using Descope SDK
-      const response = await sdk.otp.verify.sms(formattedPhone, confirmCode);
+      const response = await sdk.otp.verify.sms(formattedPhone, codeToVerify);
       
       if (!response.ok || !response.data) {
         throw new Error(response.error?.errorMessage || 'Invalid verification code');
@@ -732,13 +745,16 @@ export default function PhoneLoginScreen() {
               onChangeText={(val) => {
                 const digits = val.replace(/\D/g, '');
                 setConfirmCode(digits);
+                if (digits.length === 6) {
+                  handleVerifyCode(digits);
+                }
               }}
               onFocus={() => setCodeFocused(true)}
               onBlur={() => setCodeFocused(false)}
             />
 
             <TouchableOpacity 
-              onPress={handleVerifyCode} 
+              onPress={() => handleVerifyCode()} 
               disabled={loading}
               activeOpacity={0.85}
               style={styles.buttonWrapper}

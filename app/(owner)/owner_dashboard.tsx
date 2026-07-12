@@ -99,6 +99,9 @@ export default function OwnerDashboard() {
   const [loadingRiders, setLoadingRiders] = useState(false);
   const [ridersModalVisible, setRidersModalVisible] = useState(false);
   const [revokeConfirmData, setRevokeConfirmData] = useState<{ id: string; name: string } | null>(null);
+  const [customerInfoProfileId, setCustomerInfoProfileId] = useState<string | null>(null);
+  const [customerInfoData, setCustomerInfoData] = useState<{ profile: any; orders: any[] } | null>(null);
+  const [loadingCustomerInfo, setLoadingCustomerInfo] = useState(false);
   const [supportChats, setSupportChats] = useState<any[]>([]);
   const [loadingSupport, setLoadingSupport] = useState(false);
   const [selectedChatOrder, setSelectedChatOrder] = useState<any | null>(null);
@@ -114,6 +117,65 @@ export default function OwnerDashboard() {
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [activeSegment]);
+
+  useEffect(() => {
+    if (!customerInfoProfileId) {
+      setCustomerInfoData(null);
+      return;
+    }
+    
+    const fetchCustomerDetail = async () => {
+      setLoadingCustomerInfo(true);
+      try {
+        const { data: profile, error: profErr } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', customerInfoProfileId)
+          .single();
+        if (profErr) throw profErr;
+
+        const { data: orders, error: ordErr } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            total_amount,
+            tip_amount,
+            created_at,
+            delivery_address,
+            status,
+            notes,
+            order_items (
+              quantity,
+              price_at_order,
+              menu_items (
+                name
+              )
+            ),
+            deliveries (
+              id,
+              status,
+              profiles (
+                full_name
+              )
+            )
+          `)
+          .eq('customer_id', customerInfoProfileId)
+          .neq('delivery_address', 'SUPPORT_TICKET')
+          .order('created_at', { ascending: false });
+        if (ordErr) throw ordErr;
+
+        setCustomerInfoData({ profile, orders: orders || [] });
+      } catch (err) {
+        console.warn('Error fetching customer detail:', err);
+        showToast('Error', 'Failed to load customer information.', 'error');
+        setCustomerInfoProfileId(null);
+      } finally {
+        setLoadingCustomerInfo(false);
+      }
+    };
+    
+    fetchCustomerDetail();
+  }, [customerInfoProfileId]);
 
   const fetchRiders = async () => {
     setLoadingRiders(true);
@@ -136,11 +198,7 @@ export default function OwnerDashboard() {
   const handleAddRider = async () => {
     const rawPhone = newRiderPhone.trim();
     if (rawPhone.length !== 10) {
-      if (Platform.OS === 'web') {
-        window.alert('Please enter a valid 10-digit phone number');
-      } else {
-        Alert.alert('Error', 'Please enter a valid 10-digit phone number');
-      }
+      showToast('Error', 'Please enter a valid 10-digit phone number', 'error');
       return;
     }
     const formattedPhone = `+91${rawPhone}`;
@@ -159,9 +217,7 @@ export default function OwnerDashboard() {
           .eq('id', existingProfile.id);
 
         if (error) throw error;
-        const msg = `Rider access granted to existing user: ${existingProfile.full_name || rawPhone}`;
-        if (Platform.OS === 'web') window.alert(msg);
-        else Alert.alert('Success', msg);
+        showToast('Success', `Rider access granted to existing user: ${existingProfile.full_name || rawPhone}`, 'success');
       } else {
         const tempId = `temp_rider_${Date.now()}`;
         const { error } = await supabase
@@ -169,22 +225,17 @@ export default function OwnerDashboard() {
           .insert({
             id: tempId,
             phone_number: formattedPhone,
-            full_name: newRiderName.trim() || 'Pending Rider',
+            full_name: 'Pending Rider',
             role: 'rider'
           });
 
         if (error) throw error;
-        const msg = `Rider access provisioned for phone: ${formattedPhone}`;
-        if (Platform.OS === 'web') window.alert(msg);
-        else Alert.alert('Success', msg);
+        showToast('Success', `Rider access provisioned for phone: ${formattedPhone}`, 'success');
       }
       setNewRiderPhone('');
-      setNewRiderName('');
       fetchRiders();
     } catch (err: any) {
-      const msg = err.message || 'Failed to assign rider role';
-      if (Platform.OS === 'web') window.alert(msg);
-      else Alert.alert('Error', msg);
+      showToast('Error', err.message || 'Failed to assign rider role', 'error');
     } finally {
       setLoadingRiders(false);
     }
@@ -1706,6 +1757,21 @@ export default function OwnerDashboard() {
         onRequestClose={() => setRidersModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
+          {toastVisible && (
+            <View style={styles.alertOverlay}>
+              <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={[styles.alertGlassCard, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
+                <View style={styles.alertContent}>
+                  {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
+                  {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
+                  {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
+                  <View style={styles.alertTextWrapper}>
+                    <Text style={[styles.alertTitleText, { color: colors.textMain }]}>{toastTitle}</Text>
+                    <Text style={[styles.alertMsgText, { color: colors.textSub }]}>{toastMessage}</Text>
+                  </View>
+                </View>
+              </BlurView>
+            </View>
+          )}
           <BlurView
             intensity={95}
             tint={isDark ? 'dark' : 'light'}
@@ -1735,7 +1801,7 @@ export default function OwnerDashboard() {
                     <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, marginBottom: 6 }}>
                       PHONE NUMBER
                     </Text>
-                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', width: '100%' }}>
                       <View style={{
                         backgroundColor: colors.cardBg,
                         borderColor: colors.cardBorder,
@@ -1748,10 +1814,10 @@ export default function OwnerDashboard() {
                         <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>IN +91</Text>
                       </View>
                       <TextInput 
-                        style={[styles.menuFormInput, { flex: 1, backgroundColor: colors.cardBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0, height: 44 }]}
+                        style={[styles.menuFormInput, { flex: 1, minWidth: 0, backgroundColor: colors.cardBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0, height: 44 }]}
                         value={newRiderPhone}
                         onChangeText={(val) => setNewRiderPhone(val.replace(/\D/g, ''))}
-                        placeholder="e.g. 8390279723..."
+                        placeholder="e.g. 9876543210..."
                         placeholderTextColor="#8E8E93"
                         keyboardType="number-pad"
                         maxLength={10}
@@ -1759,19 +1825,7 @@ export default function OwnerDashboard() {
                     </View>
                   </View>
 
-                  <View>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, marginBottom: 6 }}>
-                      RIDER FULL NAME (OPTIONAL)
-                    </Text>
-                    <TextInput 
-                      style={[styles.menuFormInput, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0, height: 44 }]}
-                      value={newRiderName}
-                      onChangeText={setNewRiderName}
-                      placeholder="e.g. Rahul Sharma..."
-                      placeholderTextColor="#8E8E93"
-                    />
-                  </View>
-
+                  {/* Rider Name input removed */}
                   <TouchableOpacity 
                     onPress={handleAddRider}
                     disabled={loadingRiders}
@@ -1937,20 +1991,10 @@ export default function OwnerDashboard() {
                       .eq('id', targetId);
 
                     if (error) throw error;
-                    
-                    if (Platform.OS === 'web') {
-                      window.alert('Rider privileges revoked.');
-                    } else {
-                      Alert.alert('Success', 'Rider privileges revoked.');
-                    }
+                    showToast('Success', 'Rider privileges revoked.', 'success');
                     fetchRiders();
                   } catch (e: any) {
-                    const msg = e.message || 'Failed to revoke rider role';
-                    if (Platform.OS === 'web') {
-                      window.alert(msg);
-                    } else {
-                      Alert.alert('Error', msg);
-                    }
+                    showToast('Error', e.message || 'Failed to revoke rider role', 'error');
                   }
                 }}
                 activeOpacity={0.8}
@@ -1961,6 +2005,9 @@ export default function OwnerDashboard() {
           </BlurView>
         </View>
       </Modal>
+
+      {/* Customer Profile Info Modal */}
+
 
       {/* Detailed Order Modal for Owner */}
       <Modal
@@ -2275,9 +2322,21 @@ export default function OwnerDashboard() {
                       </TouchableOpacity>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ flex: 1, fontSize: 13, fontWeight: '800', color: colors.textMain }} numberOfLines={1}>
-                        Chat with: {chat.profiles?.full_name || 'Guest Customer'}
-                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (chat.customer_id) {
+                            setCustomerInfoProfileId(chat.customer_id);
+                          } else {
+                            showToast('Error', 'Customer profile ID not found.', 'error');
+                          }
+                        }}
+                        style={{ flex: 1 }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.accentGold, textDecorationLine: 'underline' }} numberOfLines={1}>
+                          Chat with: {chat.profiles?.full_name || 'Guest Customer'}
+                        </Text>
+                      </TouchableOpacity>
                       {chat.status === 'cancelled' && (
                         <TouchableOpacity 
                           onPress={async () => {
@@ -2393,6 +2452,168 @@ export default function OwnerDashboard() {
                 </View>
               );
             })()}
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Customer Profile Info Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={customerInfoProfileId !== null}
+        onRequestClose={() => setCustomerInfoProfileId(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                maxHeight: '90%',
+                width: '95%',
+                maxWidth: 480,
+              }
+            ]}
+          >
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.cardBorder, paddingBottom: 12 }]}>
+              <Text style={[styles.modalTitleText, { color: colors.accentGold }]}>
+                CUSTOMER PROFILE
+              </Text>
+              <TouchableOpacity onPress={() => setCustomerInfoProfileId(null)} style={{ padding: 4 }}>
+                <X size={20} color={colors.textSub} />
+              </TouchableOpacity>
+            </View>
+
+            {loadingCustomerInfo ? (
+              <View style={{ flex: 1, height: 200, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator color={colors.accentGold} size="large" />
+                <Text style={{ color: colors.textSub, fontSize: 12, marginTop: 12 }}>Loading customer profile...</Text>
+              </View>
+            ) : customerInfoData ? (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+                {/* Profile Details Card */}
+                <View style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, padding: 16, marginBottom: 16 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(212, 175, 55, 0.1)', justifyContent: 'center', alignItems: 'center' }}>
+                      <User size={22} color={colors.accentGold} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textMain }}>
+                        {customerInfoData.profile?.full_name || 'Guest Customer'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textSub, marginTop: 2 }}>
+                        {customerInfoData.profile?.phone_number || 'No Phone Number'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Registered Addresses Section */}
+                  <View style={{ borderTopWidth: 0.5, borderTopColor: colors.cardBorder, paddingTop: 10 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.accentGold, letterSpacing: 1, marginBottom: 6 }}>
+                      DELIVERY ADDRESSES
+                    </Text>
+                    {Array.from(new Set(customerInfoData.orders.map(o => o.delivery_address).filter(a => a && a !== 'SUPPORT_TICKET'))).length === 0 ? (
+                      <Text style={{ fontSize: 11, color: colors.textSub, fontStyle: 'italic' }}>No registered delivery addresses found.</Text>
+                    ) : (
+                      Array.from(new Set(customerInfoData.orders.map(o => o.delivery_address).filter(a => a && a !== 'SUPPORT_TICKET'))).map((addr: any, idx) => (
+                        <View key={idx} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start', marginTop: 4 }}>
+                          <Text style={{ color: colors.accentGold, fontSize: 12 }}>•</Text>
+                          <Text style={{ fontSize: 11, color: colors.textSub, flex: 1, lineHeight: 15 }}>{addr}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+
+                {/* History Section Header */}
+                <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textMain, marginBottom: 8, letterSpacing: 0.5 }}>
+                  ORDER HISTORY ({customerInfoData.orders.length})
+                </Text>
+
+                {customerInfoData.orders.length === 0 ? (
+                  <View style={{ padding: 24, alignItems: 'center' }}>
+                    <Text style={{ color: colors.textSub, fontSize: 12, fontStyle: 'italic' }}>No orders placed yet.</Text>
+                  </View>
+                ) : (
+                  customerInfoData.orders.map((order: any) => {
+                    const riderName = order.deliveries?.[0]?.profiles?.full_name || 'Not Dispatched';
+                    const formattedDate = new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    
+                    return (
+                      <View 
+                        key={order.id} 
+                        style={[
+                          styles.menuCard, 
+                          { 
+                            backgroundColor: colors.inputBg, 
+                            borderColor: colors.cardBorder, 
+                            padding: 12, 
+                            marginBottom: 10 
+                          }
+                        ]}
+                      >
+                        {/* Order ID & Status */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </Text>
+                          <View style={{ 
+                            paddingHorizontal: 8, 
+                            paddingVertical: 2, 
+                            borderRadius: 6, 
+                            backgroundColor: order.status === 'completed' ? 'rgba(16, 185, 129, 0.15)' : order.status === 'cancelled' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)' 
+                          }}>
+                            <Text style={{ fontSize: 9, fontWeight: '800', color: order.status === 'completed' ? '#10B981' : order.status === 'cancelled' ? '#EF4444' : '#EAB308', textTransform: 'uppercase' }}>
+                              {order.status}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={{ fontSize: 10, color: colors.textSub, marginBottom: 8 }}>
+                          Placed on {formattedDate}
+                        </Text>
+
+                        {/* Order Items */}
+                        <View style={{ backgroundColor: colors.cardBg, borderRadius: 8, padding: 8, gap: 4, marginBottom: 8 }}>
+                          {(order.order_items || []).map((item: any, idx: number) => (
+                            <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text style={{ fontSize: 11, color: colors.textMain, fontWeight: '600' }}>
+                                {item.menu_items?.name || 'Menu Item'}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: colors.textSub }}>
+                                x{item.quantity}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+
+                        {/* Financials & Rider Details */}
+                        <View style={{ borderTopWidth: 0.5, borderTopColor: colors.cardBorder, paddingTop: 8, gap: 4 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                            <Text style={{ fontSize: 10, color: colors.textSub }}>Delivery Partner:</Text>
+                            <Text style={{ fontSize: 10, color: colors.textMain, fontWeight: '700' }}>{riderName}</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+                            <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>Total Amount:</Text>
+                            <Text style={{ fontSize: 11, color: colors.accentGold, fontWeight: '900' }}>
+                              ₹{order.total_amount} {order.tip_amount ? `(+ ₹${order.tip_amount} Tip)` : ''}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            ) : (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <Text style={{ color: colors.textSub, fontSize: 12, fontStyle: 'italic' }}>No customer details available.</Text>
+              </View>
+            )}
           </BlurView>
         </View>
       </Modal>

@@ -521,6 +521,7 @@ export default function RiderDashboard() {
     setOtpError(null);
     const cleanText = text.replace(/[^0-9]/g, '');
     const newDigits = [...otpDigits];
+    let digitsToSubmit = '';
 
     if (cleanText.length > 1) {
       const chars = cleanText.split('');
@@ -531,6 +532,7 @@ export default function RiderDashboard() {
       const nextFocus = Math.min(index + chars.length, 7);
       setFocusedIndex(nextFocus);
       otpRefs.current[nextFocus]?.focus();
+      digitsToSubmit = newDigits.join('').trim();
     } else {
       newDigits[index] = cleanText;
       setOtpDigits(newDigits);
@@ -538,6 +540,12 @@ export default function RiderDashboard() {
         setFocusedIndex(index + 1);
         otpRefs.current[index + 1]?.focus();
       }
+      digitsToSubmit = newDigits.join('').trim();
+    }
+
+    const cleanCorrect = otpCorrectValue.trim();
+    if (cleanCorrect !== 'LEGACY_BYPASS' && digitsToSubmit.length === cleanCorrect.length) {
+      handleVerifyAndComplete(newDigits);
     }
   };
 
@@ -553,9 +561,10 @@ export default function RiderDashboard() {
     }
   };
 
-  const handleVerifyAndComplete = async () => {
+  const handleVerifyAndComplete = async (digitsOverride?: string[]) => {
+    const activeDigits = digitsOverride || otpDigits;
     const isLegacy = otpCorrectValue === 'LEGACY_BYPASS';
-    const otpInputCombined = otpDigits.join('');
+    const otpInputCombined = activeDigits.join('');
     const cleanInput = otpInputCombined.trim();
     const cleanCorrect = otpCorrectValue.trim();
 
@@ -1137,7 +1146,7 @@ export default function RiderDashboard() {
               
               <TouchableOpacity 
                 style={[styles.modalBtn, { backgroundColor: colors.accentGold, borderColor: colors.accentGold }]} 
-                onPress={handleVerifyAndComplete}
+                onPress={() => handleVerifyAndComplete()}
               >
                 <Text style={{ color: '#000000', fontWeight: '900', fontSize: 13 }}>Verify & Deliver</Text>
               </TouchableOpacity>

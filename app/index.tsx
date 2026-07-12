@@ -12,7 +12,7 @@ const { width } = Dimensions.get('window');
 import envBypass from '../src/config/env_bypass.json';
 
 const isSpecialOwnerNumber = (phoneStr: string) => {
-  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS || '8390279723,9999999999';
+  const envVal = envBypass.EXPO_PUBLIC_OWNER_NUMBERS;
   const numbers = envVal.split(',').map(n => n.trim().replace(/\D/g, ''));
   const cleanPhone = phoneStr.replace(/\D/g, '');
   return numbers.some(n => cleanPhone.endsWith(n) && n.length >= 5);
