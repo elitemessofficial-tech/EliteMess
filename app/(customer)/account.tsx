@@ -21,10 +21,7 @@ import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
-import { useSession } from '@descope/react-native-sdk';
-
 export default function AccountScreen() {
-  const { session, clearSession } = useSession();
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
 
@@ -93,12 +90,10 @@ export default function AccountScreen() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      let currentUserId = session?.user?.userId;
+      let currentUserId = null;
       
-      if (!currentUserId) {
-        const { data: sbSessionData } = await supabase.auth.getSession();
-        currentUserId = sbSessionData?.session?.user?.id;
-      }
+      const { data: sbSessionData } = await supabase.auth.getSession();
+      currentUserId = sbSessionData?.session?.user?.id;
 
       if (!currentUserId) {
         try {
@@ -124,7 +119,7 @@ export default function AccountScreen() {
 
         if (error || !profile) {
           // If profile does not exist in DB yet, seed a placeholder
-          const placeholderPhone = session?.user?.phone || '+15550192834';
+          const placeholderPhone = '+15550192834';
           const placeholderName = 'Guest Customer';
           
           const { data: newProfile } = await supabase
@@ -186,7 +181,7 @@ export default function AccountScreen() {
 
   const loadSavedAddresses = async () => {
     try {
-      const descopeUid = session?.user?.userId || 'guest';
+      const descopeUid = userId || 'guest';
       const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
       const saved = await AsyncStorage.getItem(storageKey);
       if (saved) {
@@ -225,7 +220,7 @@ export default function AccountScreen() {
     }
 
     setAddresses(updated);
-    const descopeUid = session?.user?.userId || 'guest';
+    const descopeUid = userId || 'guest';
     const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
     await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
 
@@ -247,7 +242,7 @@ export default function AccountScreen() {
   const handleDeleteAddress = async (id: string) => {
     const updated = addresses.filter(item => item.id !== id);
     setAddresses(updated);
-    const descopeUid = session?.user?.userId || 'guest';
+    const descopeUid = userId || 'guest';
     const storageKey = `hotelbet_saved_addresses_${descopeUid}`;
     await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
     showToast('Address Deleted', 'Address removed successfully.', 'success');
@@ -258,7 +253,6 @@ export default function AccountScreen() {
       await AsyncStorage.removeItem('demo_role');
       await AsyncStorage.removeItem('user_selected_role');
       await AsyncStorage.removeItem('vip_session_active');
-      await clearSession();
       await supabase.auth.signOut();
       router.replace('/(auth)/login');
     } catch (e) {

@@ -45,7 +45,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "node -e \"const fs = require('fs'); if (fs.existsSync('node_modules/@descope/react-native-sdk')) { if (!fs.existsSync('node_modules/@descope/react-native-sdk/lib')) { fs.mkdirSync('node_modules/@descope/react-native-sdk/lib'); } fs.copyFileSync('node_modules/@descope/react-native-sdk/package.json', 'node_modules/@descope/react-native-sdk/lib/package.json'); console.log('Successfully patched Descope SDK package.json import!'); }\""
   },
   "private": true
 }
