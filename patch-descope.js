@@ -47,4 +47,65 @@ if (fs.existsSync(commonjsPath)) {
   }
 }
 
+// 4. Patch descopeModule.js in lib/module to fallback to web storage on web platforms
+const esModulePath = path.join(sdkDir, 'lib', 'module', 'internal', 'modules', 'descopeModule.js');
+if (fs.existsSync(esModulePath)) {
+  let content = fs.readFileSync(esModulePath, 'utf8');
+  if (!content.includes('localStorage')) {
+    const replacement = `import { NativeModules } from 'react-native';
+const { DescopeReactNative } = NativeModules;
+const fallback = {
+  loadItem: async (projectId) => {
+    try { return localStorage.getItem(\`descope_\${projectId}\`) || ''; } catch (e) { return ''; }
+  },
+  saveItem: async (projectId, value) => {
+    try { localStorage.setItem(\`descope_\${projectId}\`, value); } catch (e) {}
+  },
+  removeItem: async (projectId) => {
+    try { localStorage.removeItem(\`descope_\${projectId}\`); } catch (e) {}
+  },
+  prepFlow: async () => ({}),
+  startFlow: async () => '',
+  resumeFlow: async () => {}
+};
+export default DescopeReactNative || fallback;`;
+    fs.writeFileSync(esModulePath, replacement, 'utf8');
+    console.log('4. Successfully patched descopeModule.js in lib/module');
+  } else {
+    console.log('4. descopeModule.js in lib/module already patched');
+  }
+}
+
+// 5. Patch descopeModule.js in lib/commonjs to fallback to web storage on web platforms
+const cjsModulePath = path.join(sdkDir, 'lib', 'commonjs', 'internal', 'modules', 'descopeModule.js');
+if (fs.existsSync(cjsModulePath)) {
+  let content = fs.readFileSync(cjsModulePath, 'utf8');
+  if (!content.includes('localStorage')) {
+    const replacement = `"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = void 0;
+var _reactNative = require("react-native");
+const { DescopeReactNative } = _reactNative.NativeModules;
+const fallback = {
+  loadItem: async (projectId) => {
+    try { return localStorage.getItem(\`descope_\${projectId}\`) || ''; } catch (e) { return ''; }
+  },
+  saveItem: async (projectId, value) => {
+    try { localStorage.setItem(\`descope_\${projectId}\`, value); } catch (e) {}
+  },
+  removeItem: async (projectId) => {
+    try { localStorage.removeItem(\`descope_\${projectId}\`); } catch (e) {}
+  },
+  prepFlow: async () => ({}),
+  startFlow: async () => '',
+  resumeFlow: async () => {}
+};
+var _default = exports.default = DescopeReactNative || fallback;`;
+    fs.writeFileSync(cjsModulePath, replacement, 'utf8');
+    console.log('5. Successfully patched descopeModule.js in lib/commonjs');
+  } else {
+    console.log('5. descopeModule.js in lib/commonjs already patched');
+  }
+}
+
 console.log('--- Descope React Native SDK Patch Completed ---');
