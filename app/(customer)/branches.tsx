@@ -16,7 +16,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map, X, Plus, CheckCircle, MessageSquare } from 'lucide-react-native';
+import { MapPin, ChevronRight, LogOut, Sun, Moon, Home, ShoppingBag, User, Star, Briefcase, Map, X, Plus, CheckCircle, MessageSquare, Building2, Wallet } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { calculateHaversineDistance, formatDistance } from '../../src/utils/distance';
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
@@ -111,10 +111,13 @@ export default function BranchesScreen() {
         night: require('../../assets/images/Hotel_warje_night.png')
       };
     }
-    return {
-      day: require('../../assets/images/Hotel_narhe_day.png'),
-      night: require('../../assets/images/Hotel_narhe_night.png')
-    };
+    if (branchId === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d') {
+      return {
+        day: require('../../assets/images/Hotel_narhe_day.png'),
+        night: require('../../assets/images/Hotel_narhe_night.png')
+      };
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -153,21 +156,14 @@ export default function BranchesScreen() {
         
         if (error) throw error;
         
-        const listToUse = data && data.length > 0 ? data : [
-          { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', latitude: 12.9715987, longitude: 77.5945627 },
-          { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', latitude: 12.998492, longitude: 77.6120384 }
-        ];
+        const listToUse = data || [];
 
         setRawBranches(listToUse);
         setBranches(sortAndFormatBranches(listToUse, userCoords));
       } catch (e) {
         console.error('Failed to load branches from Supabase:', e);
-        const fallbacks = [
-          { id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', name: 'Hotel Bet — Main Lobby', address: 'Signature dining • Ground floor', latitude: 12.9715987, longitude: 77.5945627 },
-          { id: 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c', name: 'Hotel Bet — East Wing', address: 'Private lounge • 12th floor', latitude: 12.998492, longitude: 77.6120384 }
-        ];
-        setRawBranches(fallbacks);
-        setBranches(sortAndFormatBranches(fallbacks, userCoords));
+        setRawBranches([]);
+        setBranches([]);
       } finally {
         setLoading(false);
       }
@@ -254,7 +250,8 @@ export default function BranchesScreen() {
     title: string, 
     subtitle: string, 
     distance: string,
-    index?: number
+    index?: number,
+    imageUrl?: string | null
   ) => {
     const imgs = getBranchImages(branchId);
     return (
@@ -263,18 +260,34 @@ export default function BranchesScreen() {
         delay={(index || 0) * 100}
       >
         <View style={[styles.branchCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-          {/* Top Half: Photo with smooth cross-fade */}
+          {/* Top Half: Photo with default fallback or theme responsive illustrations */}
           <View style={styles.photoBox}>
-            <Image 
-              source={imgs.day}
-              style={styles.branchImage}
-              resizeMode="cover"
-            />
-            <Animated.Image 
-              source={imgs.night}
-              style={[styles.branchImage, { opacity: themeAnim }]}
-              resizeMode="cover"
-            />
+            {imageUrl ? (
+              <Image 
+                source={{ uri: imageUrl }}
+                style={styles.branchImage}
+                resizeMode="cover"
+              />
+            ) : imgs ? (
+              <>
+                <Image 
+                  source={imgs.day}
+                  style={styles.branchImage}
+                  resizeMode="cover"
+                />
+                <Animated.Image 
+                  source={imgs.night}
+                  style={[styles.branchImage, { opacity: themeAnim }]}
+                  resizeMode="cover"
+                />
+              </>
+            ) : (
+              <Image 
+                source={require('../../assets/images/hotelbet.png')}
+                style={styles.branchImage}
+                resizeMode="cover"
+              />
+            )}
           </View>
 
           {/* Bottom Half: Details */}
@@ -329,8 +342,23 @@ export default function BranchesScreen() {
                 <Moon size={15} color={colors.accentGold} />
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={[styles.headerButton, styles.logoutButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
-              <LogOut size={15} color="#EF4444" />
+            <TouchableOpacity 
+              onPress={() => router.push('/(customer)/wallet')} 
+              style={[
+                styles.headerButton, 
+                { 
+                  borderColor: colors.cardBorder, 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 6, 
+                  paddingHorizontal: 10,
+                  backgroundColor: 'rgba(212, 175, 55, 0.08)'
+                }
+              ]} 
+              activeOpacity={0.7}
+            >
+              <Wallet size={13} color={colors.accentGold} />
+              <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>₹ 0</Text>
             </TouchableOpacity>
           </>
         )}
@@ -386,6 +414,16 @@ export default function BranchesScreen() {
               {renderSkeletonCard(1)}
               {renderSkeletonCard(2)}
             </>
+          ) : branches.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 60, paddingHorizontal: 20 }}>
+              <Building2 size={48} color={colors.textSub} style={{ opacity: 0.3, marginBottom: 16 }} />
+              <Text style={{ color: colors.textMain, fontWeight: '900', fontSize: 16, textAlign: 'center' }}>
+                All Kitchens Are Closed
+              </Text>
+              <Text style={{ color: colors.textSub, fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                No active branches are available right now. We'll be back online soon!
+              </Text>
+            </View>
           ) : (
             branches.map((branch, index) => (
               renderBranchCard(
@@ -393,7 +431,8 @@ export default function BranchesScreen() {
                 branch.name, 
                 branch.address, 
                 branch.distance || (branch.id === 'downtown' || branch.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d' ? '0.3 km' : '1.1 km'),
-                index
+                index,
+                branch.image_url
               )
             ))
           )}

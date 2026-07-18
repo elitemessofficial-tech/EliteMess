@@ -41,9 +41,10 @@ interface LocationPickerModalProps {
   visible: boolean;
   onClose: () => void;
   onAddressSaved: (address: AddressDetails) => void;
+  isBranchMode?: boolean;
 }
 
-export default function LocationPickerModal({ visible, onClose, onAddressSaved }: LocationPickerModalProps) {
+export default function LocationPickerModal({ visible, onClose, onAddressSaved, isBranchMode = false }: LocationPickerModalProps) {
   const { isDark } = useAppTheme();
   const { session } = useSession();
   const webViewRef = useRef<WebView>(null);
@@ -292,7 +293,7 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
 
   // Handle address submit
   const handleSaveAddress = async () => {
-    if (!flatNo.trim()) {
+    if (!isBranchMode && !flatNo.trim()) {
       setErrorToastMessage('Please enter your flat, house number, or suite details.');
       setShowErrorToast(true);
       return;
@@ -300,6 +301,22 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
 
     try {
       setSaving(true);
+      
+      if (isBranchMode) {
+        const addressDetails: AddressDetails = {
+          id: Date.now().toString(),
+          label: 'Branch',
+          flatNo: flatNo.trim(),
+          landmark: landmark.trim(),
+          address: reverseGeocoded,
+          latitude: region.latitude,
+          longitude: region.longitude
+        };
+        onAddressSaved(addressDetails);
+        setFlatNo('');
+        setLandmark('');
+        return;
+      }
       
       const fullAddressText = `${flatNo.trim()}, ${reverseGeocoded} (Landmark: ${landmark.trim()}) [${label}]`;
 
@@ -420,14 +437,16 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
           
           <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
             {/* Address Location display banner */}
-            <Text style={[styles.headerTitle, { color: colors.textMain }]}>SELECT DELIVERY LOCATION</Text>
+            <Text style={[styles.headerTitle, { color: colors.textMain }]}>
+              {isBranchMode ? 'SELECT RESTAURANT LOCATION' : 'SELECT DELIVERY LOCATION'}
+            </Text>
             
             <View style={[styles.addressTextCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
               <View style={styles.addressLeftIcon}>
                 <MapPin size={18} color={colors.accentGold} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.addressTitle, { color: colors.textMain }]}>Panned Location</Text>
+                <Text style={[styles.addressTitle, { color: colors.textMain }]}>Pinned Location</Text>
                 {geocoding ? (
                   <ActivityIndicator size="small" color={colors.accentGold} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
                 ) : (
@@ -437,7 +456,9 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
             </View>
 
             {/* Flat details input */}
-            <Text style={[styles.inputLabel, { color: colors.accentGold }]}>HOUSE / FLAT / SUITE NUMBER *</Text>
+            <Text style={[styles.inputLabel, { color: colors.accentGold }]}>
+              {isBranchMode ? 'FLOOR / SUITE / DETAILS (OPTIONAL)' : 'HOUSE / FLAT / SUITE NUMBER *'}
+            </Text>
             <TextInput
               style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
               placeholder="e.g. Flat 101, TSSM Boys Hostel"
@@ -456,86 +477,90 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
               onChangeText={setLandmark}
             />
 
-            {/* Recipient Phone Choice */}
-            <Text style={[styles.inputLabel, { color: colors.accentGold }]}>ORDERING FOR SOMEONE ELSE?</Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  height: 40,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: !isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
-                  backgroundColor: !isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
-                  justifyContent: 'center',
-                  alignItems: 'center'
-                }}
-                onPress={() => setIsOrderingForSomeoneElse(false)}
-              >
-                <Text style={{ color: !isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>No (Use My Number)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  height: 40,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
-                  backgroundColor: isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
-                  justifyContent: 'center',
-                  alignItems: 'center'
-                }}
-                onPress={() => setIsOrderingForSomeoneElse(true)}
-              >
-                <Text style={{ color: isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>Yes (Enter Recipient's)</Text>
-              </TouchableOpacity>
-            </View>
-
-            {isOrderingForSomeoneElse && (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={[styles.inputLabel, { color: colors.accentGold }]}>RECIPIENT'S PHONE NUMBER</Text>
-                <TextInput
-                  style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                  placeholder="e.g. +91 99999 99999"
-                  placeholderTextColor={colors.textSub}
-                  value={recipientPhone}
-                  onChangeText={setRecipientPhone}
-                  keyboardType="phone-pad"
-                />
-              </View>
-            )}
-
-            {/* Label Pills row */}
-            <Text style={[styles.inputLabel, { color: colors.accentGold }]}>SAVE ADDRESS AS</Text>
-            <View style={styles.labelRow}>
-              {[
-                { name: 'Home', icon: Home },
-                { name: 'Work', icon: Briefcase },
-                { name: 'Other', icon: Map }
-              ].map((item) => {
-                const isSelected = label === item.name;
-                const IconComp = item.icon;
-                return (
+            {!isBranchMode && (
+              <>
+                {/* Recipient Phone Choice */}
+                <Text style={[styles.inputLabel, { color: colors.accentGold }]}>ORDERING FOR SOMEONE ELSE?</Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
                   <TouchableOpacity
-                    key={item.name}
-                    style={[
-                      styles.labelPill,
-                      {
-                        backgroundColor: isSelected ? colors.accentGold : colors.inputBg,
-                        borderColor: isSelected ? colors.accentGold : colors.cardBorder
-                      }
-                    ]}
-                    onPress={() => setLabel(item.name)}
-                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      height: 40,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: !isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                      backgroundColor: !isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                    onPress={() => setIsOrderingForSomeoneElse(false)}
                   >
-                    <IconComp size={13} color={isSelected ? '#000000' : colors.textMain} style={{ marginRight: 6 }} />
-                    <Text style={[styles.labelPillText, { color: isSelected ? '#000000' : colors.textMain }]}>
-                      {item.name}
-                    </Text>
+                    <Text style={{ color: !isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>No (Use My Number)</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      height: 40,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: isOrderingForSomeoneElse ? colors.accentGold : colors.cardBorder,
+                      backgroundColor: isOrderingForSomeoneElse ? 'rgba(212, 175, 55, 0.1)' : colors.inputBg,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                    onPress={() => setIsOrderingForSomeoneElse(true)}
+                  >
+                    <Text style={{ color: isOrderingForSomeoneElse ? colors.accentGold : colors.textMain, fontWeight: '700', fontSize: 13 }}>Yes (Enter Recipient's)</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {isOrderingForSomeoneElse && (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={[styles.inputLabel, { color: colors.accentGold }]}>RECIPIENT'S PHONE NUMBER</Text>
+                    <TextInput
+                      style={[styles.formInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
+                      placeholder="e.g. +91 99999 99999"
+                      placeholderTextColor={colors.textSub}
+                      value={recipientPhone}
+                      onChangeText={setRecipientPhone}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                )}
+
+                {/* Label Pills row */}
+                <Text style={[styles.inputLabel, { color: colors.accentGold }]}>SAVE ADDRESS AS</Text>
+                <View style={styles.labelRow}>
+                  {[
+                    { name: 'Home', icon: Home },
+                    { name: 'Work', icon: Briefcase },
+                    { name: 'Other', icon: Map }
+                  ].map((item) => {
+                    const isSelected = label === item.name;
+                    const IconComp = item.icon;
+                    return (
+                      <TouchableOpacity
+                        key={item.name}
+                        style={[
+                          styles.labelPill,
+                          {
+                            backgroundColor: isSelected ? colors.accentGold : colors.inputBg,
+                            borderColor: isSelected ? colors.accentGold : colors.cardBorder
+                          }
+                        ]}
+                        onPress={() => setLabel(item.name)}
+                        activeOpacity={0.8}
+                      >
+                        <IconComp size={13} color={isSelected ? '#000000' : colors.textMain} style={{ marginRight: 6 }} />
+                        <Text style={[styles.labelPillText, { color: isSelected ? '#000000' : colors.textMain }]}>
+                          {item.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             {/* Save Address Button */}
             <TouchableOpacity
@@ -548,7 +573,9 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved }
                 <ActivityIndicator size="small" color="#000000" />
               ) : (
                 <>
-                  <Text style={styles.saveBtnText}>Save Delivery Address</Text>
+                  <Text style={styles.saveBtnText}>
+                    {isBranchMode ? 'Confirm Hotel Location' : 'Save Delivery Address'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>

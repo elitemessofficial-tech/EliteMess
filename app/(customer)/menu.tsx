@@ -8,7 +8,8 @@ import {
   useColorScheme,
   Platform,
   ScrollView,
-  Image
+  Image,
+  TextInput
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
@@ -69,6 +70,7 @@ export default function MenuScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [branchName, setBranchName] = useState('Hotel Bet — Menu');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const initBranchMenu = async () => {
@@ -131,9 +133,13 @@ export default function MenuScreen() {
     ? menuItems.filter(item => item.branch_id === selectedBranchId)
     : menuItems;
 
-  const filteredMenu = selectedCategory === 'All'
+  const filteredMenu = (selectedCategory === 'All'
     ? branchItems
-    : branchItems.filter(item => item.category === selectedCategory);
+    : branchItems.filter(item => item.category === selectedCategory)
+  ).filter(item => 
+    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   const renderItem = ({ item, index }: { item: MenuItem; index: number }) => {
     const qty = cart[item.id] || 0;
@@ -275,6 +281,26 @@ export default function MenuScreen() {
         )}
       />
 
+      {/* Menu Search Bar */}
+      <View style={{ paddingTop: 100, paddingHorizontal: 16, marginBottom: -8 }}>
+        <TextInput
+          style={{
+            height: 40,
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)',
+            borderColor: colors.cardBorder,
+            borderWidth: 0.8,
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            color: colors.textMain,
+            fontSize: 13,
+          }}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search menu items..."
+          placeholderTextColor="#8E8E93"
+        />
+      </View>
+
       {/* Categories Horizontal Pill scroller */}
       <View style={styles.categoryWrapper}>
         <ScrollView
@@ -370,7 +396,7 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   categoryWrapper: {
-    paddingTop: 100,
+    paddingTop: 16,
     paddingBottom: 8,
   },
   categoryContainer: {

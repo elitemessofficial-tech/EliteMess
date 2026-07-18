@@ -128,36 +128,9 @@ export default function EntrypointIndex() {
             if (demoRole === 'rider') return '/(rider)/rider_dashboard';
           }
 
-          const { data: { session: supabaseSession } } = await supabase.auth.getSession();
-
-          if (!supabaseSession) {
-            return '/(auth)/login';
-          }
-
-          // Fetch user profile to determine role-based redirection
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', supabaseSession.user.id)
-            .single();
-
-          if (error || !profile) {
-            await supabase.auth.signOut();
-            return '/(auth)/login';
-          }
-
-          // Role-based route redirection
-          switch (profile.role) {
-            case 'customer':
-              return '/(customer)/branches';
-            case 'owner':
-              return '/(owner)/owner_dashboard';
-            case 'rider':
-              return '/(rider)/rider_dashboard';
-            default:
-              await supabase.auth.signOut();
-              return '/(auth)/login';
-          }
+          // Clear any leftover/anonymous Supabase session to prevent security bypass
+          await supabase.auth.signOut();
+          return '/(auth)/login';
         };
 
         const [targetRoute] = await Promise.all([determineRoute(), minDelay]);

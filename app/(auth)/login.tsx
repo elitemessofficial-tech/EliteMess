@@ -62,6 +62,40 @@ export default function PhoneLoginScreen() {
   // Selected demo role in segmented control
   const [selectedDemoRole, setSelectedDemoRole] = useState<'customer' | 'owner' | 'rider'>('customer');
 
+  const resetToLogin = async () => {
+    setLoading(true);
+    try {
+      await AsyncStorage.removeItem('vip_session_active');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('demo_role');
+
+      try {
+        await sdk.logout();
+      } catch (err) {}
+      try {
+        await manageSession(undefined);
+      } catch (err) {}
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {}
+
+      setShowVipSelection(false);
+      setShowOwnerSelection(false);
+      setShowRoleSelection(false);
+      setShowNameForm(false);
+      setConfirmResult(null);
+      setPhoneNumber('');
+      setConfirmCode('');
+      setDescopeUserData(null);
+      setFullName('');
+      setErrorMsg('');
+    } catch (e) {
+      console.error('Error resetting login:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const checkVipSession = async () => {
       const isVipActive = await AsyncStorage.getItem('vip_session_active');
@@ -119,13 +153,9 @@ export default function PhoneLoginScreen() {
           }
 
           if (profile && profile.role === 'rider') {
-            const storedRole = await AsyncStorage.getItem('user_selected_role');
-            if (storedRole) {
-              router.replace(storedRole === 'rider' ? '/(rider)/rider_dashboard' : '/');
-            } else {
-              setShowRoleSelection(true);
-              setDescopeUserData({ uid, phone });
-            }
+            await AsyncStorage.setItem('user_selected_role', 'rider');
+            router.replace('/(rider)/rider_dashboard');
+            return;
           } else if (profile && profile.role === 'owner') {
             router.replace('/(owner)/owner_dashboard');
           } else {
@@ -277,8 +307,8 @@ export default function PhoneLoginScreen() {
           setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
           setShowOwnerSelection(true);
         } else if (profile.role === 'rider') {
-          setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
-          setShowRoleSelection(true);
+          await AsyncStorage.setItem('user_selected_role', 'rider');
+          router.replace('/(rider)/rider_dashboard');
         } else {
           router.replace('/');
         }
@@ -339,7 +369,8 @@ export default function PhoneLoginScreen() {
       if (isOwnerNum) {
         setShowOwnerSelection(true);
       } else if (finalRole === 'rider') {
-        setShowRoleSelection(true);
+        await AsyncStorage.setItem('user_selected_role', 'rider');
+        router.replace('/(rider)/rider_dashboard');
       } else {
         // Activate success animation view!
         setShowSuccessOnboarding(true);
@@ -482,6 +513,12 @@ export default function PhoneLoginScreen() {
                 Enter Customer View
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
+              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+                Use Different Number
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : showOwnerSelection ? (
           <View style={styles.formContainer}>
@@ -520,6 +557,12 @@ export default function PhoneLoginScreen() {
             >
               <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
                 Login as Customer
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
+              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+                Use Different Number
               </Text>
             </TouchableOpacity>
           </View>
@@ -562,6 +605,12 @@ export default function PhoneLoginScreen() {
                 Login as Customer
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
+              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+                Use Different Number
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : showNameForm ? (
           <View style={styles.formContainer}>
@@ -601,6 +650,12 @@ export default function PhoneLoginScreen() {
                   <Text style={styles.buttonText}>Complete Signup</Text>
                 )}
               </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
+              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+                Use Different Number
+              </Text>
             </TouchableOpacity>
           </View>
         ) : !confirmResult ? (
@@ -658,6 +713,17 @@ export default function PhoneLoginScreen() {
           </View>
         ) : (
           <View style={styles.formContainer}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, gap: 8 }}>
+              <Text style={{ color: colors.textSub, fontSize: 13, fontWeight: '600' }}>
+                OTP Sent to {confirmResult.phone}
+              </Text>
+              <TouchableOpacity onPress={() => setConfirmResult(null)}>
+                <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '800', textDecorationLine: 'underline' }}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
               activeOpacity={0.95}
               onPress={() => codeInputRef.current?.focus()}

@@ -436,13 +436,16 @@ export default function SupportScreen() {
             <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DIRECT SUPPORT HOTLINES</Text>
 
             <View style={[styles.contactCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-              <View style={styles.contactRow}>
-                <Clock size={18} color={colors.accentGold} />
-                <View>
-                  <Text style={[styles.contactLabel, { color: colors.textMain }]}>Operating Hours</Text>
-                  <Text style={[styles.contactValue, { color: colors.textSub }]}>24/7 Live Support Assistance</Text>
+              <TouchableOpacity style={styles.contactActionRow} onPress={() => setActiveTab('chat')}>
+                <View style={styles.contactRowLeft}>
+                  <Clock size={18} color={colors.accentGold} />
+                  <View>
+                    <Text style={[styles.contactLabel, { color: colors.textMain }]}>Operating Hours</Text>
+                    <Text style={[styles.contactValue, { color: colors.textSub }]}>24/7 Live Support Assistance</Text>
+                  </View>
                 </View>
-              </View>
+                <Text style={{ color: colors.accentGold, fontWeight: '800', fontSize: 11 }}>CHAT NOW</Text>
+              </TouchableOpacity>
 
               <View style={[styles.faqDivider, { backgroundColor: colors.cardBorder, marginVertical: 14 }]} />
 
@@ -451,7 +454,7 @@ export default function SupportScreen() {
                   <Phone size={18} color={colors.accentGold} />
                   <View>
                     <Text style={[styles.contactLabel, { color: colors.textMain }]}>Phone Hotline</Text>
-                    <Text style={[styles.contactValue, { color: colors.textSub }]}>+91 98765 43210</Text>
+                    <Text style={[styles.contactValue, { color: colors.textSub }]}>+91 9730820316</Text>
                   </View>
                 </View>
                 <Text style={{ color: colors.accentGold, fontWeight: '800', fontSize: 11 }}>CALL NOW</Text>

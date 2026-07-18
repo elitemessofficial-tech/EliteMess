@@ -12,6 +12,7 @@ import {
   Switch,
   Image,
   Modal,
+  FlatList,
   Linking
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
@@ -19,13 +20,14 @@ import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera, Building2, Edit3, Trash2, Plus, MapPin, Phone } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
+import LocationPickerModal from '../../src/components/LocationPickerModal';
 
 
 interface OrderItem {
@@ -91,6 +93,20 @@ export default function OwnerDashboard() {
   const [customerReviews, setCustomerReviews] = useState<any[]>([]);
   const [salesFilter, setSalesFilter] = useState<'today' | 'yesterday' | 'last7days' | 'thisMonth' | 'lastMonth' | 'thisYear' | 'lifetime'>('lifetime');
   const [salesDropdownOpen, setSalesDropdownOpen] = useState(false);
+
+  // Branch Management States
+  const [branches, setBranches] = useState<any[]>([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [editingBranch, setEditingBranch] = useState<any | null>(null);
+  const [branchModalVisible, setBranchModalVisible] = useState(false);
+  const [manageBranchesModalVisible, setManageBranchesModalVisible] = useState(false);
+  const [showBranchLocationPicker, setShowBranchLocationPicker] = useState(false);
+  const [branchName, setBranchName] = useState('');
+  const [branchAddress, setBranchAddress] = useState('');
+  const [branchPhone, setBranchPhone] = useState('');
+  const [branchLat, setBranchLat] = useState('');
+  const [branchLng, setBranchLng] = useState('');
+  const [branchImage, setBranchImage] = useState('');
 
   // Rider Management States
   const [riders, setRiders] = useState<any[]>([]);
@@ -269,6 +285,8 @@ export default function OwnerDashboard() {
   const [newItemCategory, setNewItemCategory] = useState<string>('Veg Starter');
   const [addingItem, setAddingItem] = useState(false);
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>('All');
+  const [selectedMenuAvailability, setSelectedMenuAvailability] = useState<'All' | 'Available' | 'Unavailable'>('All');
+  const [menuSearchQuery, setMenuSearchQuery] = useState('');
 
   // States for Inline Edits
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
@@ -350,6 +368,22 @@ export default function OwnerDashboard() {
           return true;
       }
     });
+  };
+
+  const fetchBranches = async () => {
+    try {
+      setLoadingBranches(true);
+      const { data, error } = await supabase
+        .from('branches')
+        .select('*')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      setBranches(data || []);
+    } catch (e: any) {
+      showToast('Error', 'Failed to load branches: ' + e.message, 'error');
+    } finally {
+      setLoadingBranches(false);
+    }
   };
 
   const fetchOrdersAndReviews = async () => {
@@ -631,6 +665,8 @@ export default function OwnerDashboard() {
         
         if (target === 'new') {
           setNewItemImage(dataUri);
+        } else if (target === 'branch') {
+          setBranchImage(dataUri);
         } else {
           setEditImages(prev => ({ ...prev, [target]: dataUri }));
         }
@@ -788,6 +824,17 @@ export default function OwnerDashboard() {
         titleAlign="left"
         rightContent={(
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity 
+              onPress={() => {
+                fetchBranches();
+                setManageBranchesModalVisible(true);
+              }} 
+              style={[styles.headerButton, { borderColor: colors.cardBorder }]} 
+              activeOpacity={0.7}
+            >
+              <Building2 size={15} color={colors.accentGold} />
+            </TouchableOpacity>
+
             <TouchableOpacity onPress={toggleTheme} style={[styles.headerButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
               {isDark ? (
                 <Sun size={15} color={colors.accentGold} />
@@ -1348,6 +1395,17 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
+            {/* Menu Search Bar */}
+            <View style={{ marginBottom: 12 }}>
+              <TextInput 
+                style={[styles.menuFormInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0 }]}
+                value={menuSearchQuery}
+                onChangeText={setMenuSearchQuery}
+                placeholder="Search menu items..."
+                placeholderTextColor="#8E8E93"
+              />
+            </View>
+
             {/* Category Filter for browsing */}
             <View style={{ marginBottom: 12 }}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
@@ -1368,12 +1426,47 @@ export default function OwnerDashboard() {
               </ScrollView>
             </View>
 
+            {/* Availability Filter pills */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {(['All', 'Available', 'Unavailable'] as const).map((status) => {
+                const isActive = selectedMenuAvailability === status;
+                return (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.catPill,
+                      isActive && { backgroundColor: colors.accentGold }
+                    ]}
+                    onPress={() => setSelectedMenuAvailability(status)}
+                  >
+                    <Text style={[styles.catPillText, { color: isActive ? '#000000' : colors.textMain, fontSize: 10 }]}>
+                      {status.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             {/* Existing Menu Items list */}
             <View style={{ gap: 16, marginTop: 12 }}>
               {menuItems.length === 0 ? (
                 <Loader />
               ) : (
-                (selectedMenuCategory === 'All' ? menuItems : menuItems.filter(item => item.category === selectedMenuCategory)).map((item, index) => {
+                menuItems
+                  .filter(item => {
+                    const matchesCategory = selectedMenuCategory === 'All' || item.category === selectedMenuCategory;
+                    
+                    const isAvail = editAvail[item.id] !== undefined ? editAvail[item.id] : (item.is_available !== false);
+                    const matchesAvailability = selectedMenuAvailability === 'All' ||
+                      (selectedMenuAvailability === 'Available' && isAvail) ||
+                      (selectedMenuAvailability === 'Unavailable' && !isAvail);
+                      
+                    const matchesSearch = item.name.toLowerCase().includes(menuSearchQuery.toLowerCase()) || 
+                      (item.description && item.description.toLowerCase().includes(menuSearchQuery.toLowerCase()));
+                      
+                    return matchesCategory && matchesAvailability && matchesSearch;
+                  })
+                  .map((item, index) => {
                   const currentPrice = editPrices[item.id] || '';
                   const currentDesc = editDescs[item.id] || '';
                   const currentAvail = editAvail[item.id] !== undefined ? editAvail[item.id] : true;
@@ -1484,7 +1577,7 @@ export default function OwnerDashboard() {
               )}
             </View>
           </>
-        ) : (
+        ) : activeSegment === 'sales' ? (
           // ================= SALES & EARNINGS TAB =================
           <>
             <View style={styles.listHeaderRow}>
@@ -1652,7 +1745,7 @@ export default function OwnerDashboard() {
               )}
             </View>
           </>
-        )}
+        ) : null}
       </ScrollView>
 
       {/* Bottom Tab Navigation Bar */}
@@ -1748,6 +1841,522 @@ export default function OwnerDashboard() {
           <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
         </TouchableOpacity>
       </BlurView>
+
+      {/* Manage Branches Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={manageBranchesModalVisible}
+        onRequestClose={() => setManageBranchesModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                width: '95%',
+                height: '85%',
+                maxHeight: 700,
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                padding: 20,
+                borderRadius: 24,
+                borderWidth: 1,
+              }
+            ]}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Building2 size={22} color={colors.accentGold} />
+                <Text style={{ color: colors.accentGold, fontSize: 18, fontWeight: '800' }}>
+                  MANAGE BRANCHES
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setManageBranchesModalVisible(false)}>
+                <X size={22} color={colors.textMain} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Premium Add Branch button */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setEditingBranch(null);
+                setBranchName('');
+                setBranchAddress('');
+                setBranchPhone('');
+                setBranchLat('');
+                setBranchLng('');
+                setBranchImage('');
+                setBranchModalVisible(true);
+              }}
+              style={{
+                marginBottom: 16,
+              }}
+            >
+              <LinearGradient
+                colors={colors.goldGrad}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <Plus size={16} color="#000000" strokeWidth={3} />
+                <Text style={{ color: '#000000', fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }}>
+                  ADD NEW BRANCH
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {loadingBranches ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator color={colors.accentGold} size="large" />
+              </View>
+            ) : branches.length === 0 ? (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Building2 size={48} color={colors.textSub} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 14 }}>No Branches Found</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={branches}
+                keyExtractor={(item: any) => item.id}
+                contentContainerStyle={{ gap: 14, paddingBottom: 20 }}
+                renderItem={({ item: branch }: { item: any }) => (
+                  <View
+                    style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, marginBottom: 0, padding: 16 }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textMain }}>
+                        {branch.name}
+                      </Text>
+                      
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8 }}>
+                        <MapPin size={13} color={colors.accentGold} style={{ marginTop: 2 }} />
+                        <Text style={{ fontSize: 12, color: colors.textSub, flex: 1, lineHeight: 16 }}>
+                          {branch.address}
+                        </Text>
+                      </View>
+
+                      {branch.phone_number ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                          <Phone size={13} color={colors.accentGold} />
+                          <Text style={{ fontSize: 12, color: colors.textSub }}>
+                            {branch.phone_number}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                        <Navigation size={10} color={isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)'} />
+                        <Text style={{ fontSize: 10, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>
+                          GPS: {branch.latitude}, {branch.longitude}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Premium Action Row */}
+                    <View style={{ 
+                      flexDirection: 'row', 
+                      gap: 10, 
+                      marginTop: 14, 
+                      borderTopWidth: 0.8, 
+                      borderTopColor: colors.cardBorder, 
+                      paddingTop: 12, 
+                      justifyContent: 'flex-end', 
+                      alignItems: 'center' 
+                    }}>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={async () => {
+                          try {
+                            const nextActive = !branch.is_active;
+                            const { error } = await supabase
+                              .from('branches')
+                              .update({ is_active: nextActive })
+                              .eq('id', branch.id);
+                            if (error) throw error;
+                            showToast('Success', `${branch.name} status updated!`, 'success');
+                            fetchBranches();
+                          } catch (e: any) {
+                            showToast('Error', 'Failed to toggle branch status: ' + e.message, 'error');
+                          }
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: branch.is_active ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                          borderWidth: 0.8,
+                          borderColor: branch.is_active ? '#10B981' : '#EF4444',
+                        }}
+                      >
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: branch.is_active ? '#10B981' : '#EF4444' }} />
+                        <Text style={{ color: branch.is_active ? '#10B981' : '#EF4444', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
+                          {branch.is_active ? 'ACTIVE' : 'INACTIVE'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          setEditingBranch(branch);
+                          setBranchName(branch.name);
+                          setBranchAddress(branch.address);
+                          setBranchPhone(branch.phone_number || '');
+                          setBranchLat(String(branch.latitude));
+                          setBranchLng(String(branch.longitude));
+                          setBranchImage(branch.image_url || '');
+                          setBranchModalVisible(true);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: 'rgba(212, 175, 55, 0.06)',
+                          borderWidth: 0.8,
+                          borderColor: 'rgba(212, 175, 55, 0.4)',
+                        }}
+                      >
+                        <Edit3 size={11} color={colors.accentGold} />
+                        <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
+                          EDIT
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          Alert.alert(
+                            'Delete Branch',
+                            `Are you sure you want to delete ${branch.name}? This will permanently remove it from the system.`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Delete',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  try {
+                                    const { error } = await supabase
+                                      .from('branches')
+                                      .delete()
+                                      .eq('id', branch.id);
+                                    if (error) throw error;
+                                    showToast('Deleted', `${branch.name} deleted successfully!`, 'success');
+                                    fetchBranches();
+                                  } catch (e: any) {
+                                    showToast('Error', 'Failed to delete branch: ' + e.message, 'error');
+                                  }
+                                }
+                              }
+                            ]
+                          );
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                          borderWidth: 0.8,
+                          borderColor: 'rgba(239, 68, 68, 0.4)',
+                        }}
+                      >
+                        <Trash2 size={11} color="#EF4444" />
+                        <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
+                          DELETE
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              />
+            )}
+          </BlurView>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={branchModalVisible}
+        onRequestClose={() => setBranchModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                width: '90%',
+                maxWidth: 400,
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+                padding: 24,
+                borderRadius: 24,
+                borderWidth: 1,
+              }
+            ]}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ color: colors.accentGold, fontSize: 18, fontWeight: '800' }}>
+                {editingBranch ? 'EDIT BRANCH DETAILS' : 'ADD NEW BRANCH'}
+              </Text>
+              <TouchableOpacity onPress={() => setBranchModalVisible(false)}>
+                <X size={20} color={colors.textMain} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ gap: 14 }}>
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700', marginBottom: 6 }}>BRANCH NAME</Text>
+                <TextInput
+                  value={branchName}
+                  onChangeText={setBranchName}
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 0.8,
+                    borderColor: colors.cardBorder,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    height: 44,
+                    color: colors.textMain,
+                    fontSize: 13,
+                  }}
+                />
+              </View>
+
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700', marginBottom: 6 }}>ADDRESS</Text>
+                <TextInput
+                  value={branchAddress}
+                  onChangeText={setBranchAddress}
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 0.8,
+                    borderColor: colors.cardBorder,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    height: 44,
+                    color: colors.textMain,
+                    fontSize: 13,
+                  }}
+                />
+              </View>
+
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700', marginBottom: 6 }}>PHONE NUMBER</Text>
+                <TextInput
+                  value={branchPhone}
+                  onChangeText={setBranchPhone}
+                  keyboardType="phone-pad"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 0.8,
+                    borderColor: colors.cardBorder,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    height: 44,
+                    color: colors.textMain,
+                    fontSize: 13,
+                  }}
+                />
+              </View>
+
+              {/* Photo Upload Section */}
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700', marginBottom: 6 }}>BRANCH PHOTO</Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => pickImage('branch')}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 0.8,
+                    borderColor: colors.cardBorder,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    height: 48,
+                    marginBottom: 6
+                  }}
+                >
+                  <Text style={{ color: branchImage ? colors.textMain : '#8E8E93', fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                    {branchImage ? 'Photo Selected ✓' : 'Upload Photo from Device'}
+                  </Text>
+                  {branchImage ? (
+                    <Image source={{ uri: branchImage }} style={{ width: 32, height: 32, borderRadius: 6 }} resizeMode="cover" />
+                  ) : (
+                    <Camera size={18} color={colors.accentGold} />
+                  )}
+                </TouchableOpacity>
+                {branchImage ? (
+                  <TouchableOpacity
+                    onPress={() => setBranchImage('')}
+                    style={{ alignSelf: 'flex-end', marginTop: 2 }}
+                  >
+                    <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800' }}>REMOVE PHOTO</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <View>
+                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700', marginBottom: 6 }}>LOCATION (GPS COORDINATES)</Text>
+                {branchLat && branchLng ? (
+                  <View style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between', 
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 0.8,
+                    borderColor: colors.cardBorder,
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    height: 48
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <MapPin size={16} color={colors.accentGold} />
+                      <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '600' }}>
+                        {parseFloat(branchLat).toFixed(4)}, {parseFloat(branchLng).toFixed(4)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setShowBranchLocationPicker(true)}
+                      activeOpacity={0.8}
+                      style={{
+                        backgroundColor: 'rgba(212, 175, 55, 0.15)',
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 6,
+                      }}
+                    >
+                      <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>CHANGE PIN</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setShowBranchLocationPicker(true)}
+                    activeOpacity={0.8}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                      borderWidth: 0.8,
+                      borderColor: colors.accentGold,
+                      borderRadius: 10,
+                      height: 48
+                    }}
+                  >
+                    <MapPin size={16} color={colors.accentGold} />
+                    <Text style={{ color: colors.accentGold, fontSize: 13, fontWeight: '800' }}>
+                      PIN LOCATION ON MAP
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!branchName.trim() || !branchAddress.trim() || !branchLat.trim() || !branchLng.trim()) {
+                    showToast('Error', 'Please fill all fields', 'error');
+                    return;
+                  }
+                  try {
+                    if (editingBranch) {
+                      const { error } = await supabase
+                        .from('branches')
+                        .update({
+                          name: branchName.trim(),
+                          address: branchAddress.trim(),
+                          phone_number: branchPhone.trim() || null,
+                          latitude: parseFloat(branchLat),
+                          longitude: parseFloat(branchLng),
+                          image_url: branchImage.trim() || null,
+                        })
+                        .eq('id', editingBranch.id);
+
+                      if (error) throw error;
+                      showToast('Success', 'Branch updated successfully!', 'success');
+                    } else {
+                      const { error } = await supabase
+                        .from('branches')
+                        .insert({
+                          name: branchName.trim(),
+                          address: branchAddress.trim(),
+                          phone_number: branchPhone.trim() || null,
+                          latitude: parseFloat(branchLat),
+                          longitude: parseFloat(branchLng),
+                          image_url: branchImage.trim() || null,
+                          is_active: true,
+                        });
+
+                      if (error) throw error;
+                      showToast('Success', 'Branch created successfully!', 'success');
+                    }
+                    setBranchModalVisible(false);
+                    fetchBranches();
+                  } catch (e: any) {
+                    showToast('Error', 'Failed to save branch: ' + e.message, 'error');
+                  }
+                }}
+                activeOpacity={0.85}
+                style={{ marginTop: 10 }}
+              >
+                <LinearGradient
+                  colors={colors.goldGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#000000', fontWeight: '800', fontSize: 14 }}>
+                    {editingBranch ? 'SAVE CHANGES' : 'CREATE BRANCH'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Location Picker Modal for Owners to pin branches */}
+      <LocationPickerModal
+        visible={showBranchLocationPicker}
+        onClose={() => setShowBranchLocationPicker(false)}
+        isBranchMode={true}
+        onAddressSaved={(addressDetails) => {
+          setBranchAddress(addressDetails.address);
+          setBranchLat(String(addressDetails.latitude));
+          setBranchLng(String(addressDetails.longitude));
+          setShowBranchLocationPicker(false);
+        }}
+      />
 
       {/* Rider privileges directory modal */}
       <Modal

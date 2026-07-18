@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit, HelpCircle, ChevronRight } from 'lucide-react-native';
+import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit, HelpCircle, ChevronRight, Wallet, DollarSign } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
@@ -305,6 +305,43 @@ export default function AccountScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* Wallet Section */}
+            <Text style={[styles.sectionTitle, { color: colors.accentGold, marginTop: 24 }]}>MY WALLET</Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/(customer)/wallet')}
+              style={[styles.settingsRow, { 
+                backgroundColor: colors.cardBg, 
+                borderColor: colors.cardBorder, 
+                flexDirection: 'row', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: 16,
+                borderRadius: 12,
+                borderWidth: 1
+              }]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: 'rgba(212, 175, 55, 0.12)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 0.8,
+                  borderColor: colors.accentGold
+                }}>
+                  <Wallet size={16} color={colors.accentGold} />
+                </View>
+                <View>
+                  <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>Wallet Balance</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Current Balance: ₹ 0.00</Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={colors.textSub} />
+            </TouchableOpacity>
 
             {/* Profile Inputs */}
             <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>EDIT PERSONAL DETAILS</Text>
