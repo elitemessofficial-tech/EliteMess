@@ -15,7 +15,7 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, CheckCircle, AlertCircle, ArrowRight, ShieldCheck, User, Info } from 'lucide-react-native';
+import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, CheckCircle, AlertCircle, ArrowRight, ShieldCheck, User, Info, Gift, Wallet, Sparkles, Lock } from 'lucide-react-native';
 import { useAppTheme } from '../../../src/context/ThemeContext';
 import { supabase } from '../../../src/services/supabase';
 import Loader from '../../../components/Loader';
@@ -470,6 +470,74 @@ export default function OrderDetailsScreen() {
             <Text style={[styles.otpCodeText, { color: colors.accentGold }]}>
               {order.delivery_otp}
             </Text>
+          </View>
+        )}
+
+        {/* Scratch Card Reward Shortcut Banner */}
+        {order.notes && (order.notes.toLowerCase().includes('scratch card') || order.notes.toLowerCase().includes('cashback')) && (
+          <View style={[
+            styles.card,
+            {
+              backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : 'rgba(212, 175, 55, 0.08)',
+              borderColor: colors.accentGold,
+              borderWidth: 1.2,
+              gap: 12,
+            }
+          ]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: colors.accentGold,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Gift size={20} color="#000000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '900', letterSpacing: 0.3 }}>
+                  Complementary Scratch Card Reward
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                  {order.status === 'delivered' ? (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#10B981' }}>
+                        Delivered · Ready to Scratch in Wallet
+                      </Text>
+                    </>
+                  ) : (
+                    <> 
+                      <Lock size={13} color={colors.accentGold} />
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accentGold }}>
+                        Locked · Unlocks upon doorstep delivery
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => router.push('/(customer)/wallet')}
+              style={{
+                backgroundColor: colors.accentGold,
+                borderRadius: 12,
+                paddingVertical: 11,
+                paddingHorizontal: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <Wallet size={16} color="#000000" />
+              <Text style={{ color: '#000000', fontSize: 12, fontWeight: '900', letterSpacing: 0.8 }}>
+                {order.status === 'delivered' ? 'OPEN WALLET & CLAIM CASHBACK' : 'VIEW IN MY WALLET'}
+              </Text>
+              <ArrowRight size={14} color="#000000" />
+            </TouchableOpacity>
           </View>
         )}
 

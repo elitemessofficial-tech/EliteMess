@@ -15,7 +15,8 @@ import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin, X } from 'lucide-react-native';
+import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin, X, Gift, Info, Tag, Wallet, Check, Sparkles } from 'lucide-react-native';
+import { validateAndApplyPromoCode, markPromoCodeAsUsed } from '../../src/config/promoCodes';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
@@ -66,9 +67,22 @@ export default function CartScreen() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [showPlatformFeeInfo, setShowPlatformFeeInfo] = useState(false);
+  const [showDeliveryFeeInfo, setShowDeliveryFeeInfo] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [selectedLatitude, setSelectedLatitude] = useState<number | null>(null);
   const [selectedLongitude, setSelectedLongitude] = useState<number | null>(null);
+  const [branchCoords, setBranchCoords] = useState<{ lat: number; lng: number }>({ lat: 18.4575, lng: 73.8088 });
+
+  // Promo Code States
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(null);
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
+  // Wallet Pay States
+  const [walletBalance, setWalletBalance] = useState(0.00);
+  const [useWallet, setUseWallet] = useState(false);
 
   // Saved Addresses state
   const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string; latitude?: number; longitude?: number }[]>([]);
@@ -129,6 +143,35 @@ export default function CartScreen() {
   useEffect(() => {
     if (activeSegment === 'checkout') {
       loadSavedAddressesInCart();
+      const loadWalletBalanceInCart = async () => {
+        try {
+          const balStr = await AsyncStorage.getItem('hotelbet_wallet_balance');
+          if (balStr) {
+            setWalletBalance(parseFloat(balStr));
+          } else {
+            setWalletBalance(0.00);
+          }
+        } catch (e) {
+          console.error('Failed to load wallet balance in cart:', e);
+        }
+      };
+      loadWalletBalanceInCart();
+      const fetchBranchCoords = async () => {
+        try {
+          const activeBranchId = await AsyncStorage.getItem('selected_branch_id') || 'f6e5d4c3-b2a1-8f7e-6d5c-4b3a2f1e0d9c';
+          const { data } = await supabase
+            .from('branches')
+            .select('latitude, longitude')
+            .eq('id', activeBranchId)
+            .single();
+          if (data && data.latitude && data.longitude) {
+            setBranchCoords({ lat: data.latitude, lng: data.longitude });
+          }
+        } catch (e) {
+          console.warn('Failed to fetch branch coords in cart:', e);
+        }
+      };
+      fetchBranchCoords();
     }
   }, [activeSegment]);
 
@@ -145,14 +188,66 @@ export default function CartScreen() {
   const [orderText, setOrderText] = useState('');
   const [deliveryRating, setDeliveryRating] = useState(5);
   const [deliveryText, setDeliveryText] = useState('');
+  const [selectedGift, setSelectedGift] = useState<string | null>(null);
+
+  const subtotal = cartTotalPrice;
+
+  // All items from unlocked tiers are selectable (only 1 choice total)
+  useEffect(() => {
+    if (subtotal < 500) {
+      setSelectedGift(null);
+    } else {
+      const allowed: string[] = [];
+      if (subtotal >= 500)  allowed.push('1L Water Bottle', 'Sweet', 'Cold Drink', 'Scratch Card (Min ₹25 - Up to ₹500)');
+      if (subtotal >= 1000) allowed.push('Gobi Manchurian', 'Dry Lollipop', 'Scratch Card (Min ₹50 - Up to ₹1000)');
+      if (subtotal >= 2000) allowed.push('Veg Biryani', 'Non-Veg Biryani', 'Scratch Card (Min ₹80 - Up to ₹2000)');
+      if (selectedGift && !allowed.includes(selectedGift)) {
+        setSelectedGift(null);
+      }
+    }
+  }, [subtotal, selectedGift]);
+
+  // Remove promo code if subtotal drops below ₹500
+  useEffect(() => {
+    if (subtotal < 500 && appliedPromoCode) {
+      setAppliedPromoCode(null);
+      setPromoDiscount(0);
+      showToast('Promo Code Removed', 'Promo codes are valid only on orders above ₹500.', 'info');
+    }
+  }, [subtotal, appliedPromoCode]);
 
   // Dynamically determine selected tab (default to history if cart is empty)
   const selectedTab = cartTotalItems === 0 ? 'history' : activeSegment;
+  // Calculate distance from active branch & delivery fee logic
+  const latToUse = selectedLatitude || 18.4575;
+  const lngToUse = selectedLongitude || 73.8088;
+  const hasSelectedCoords = selectedLatitude !== null && selectedLongitude !== null;
+  const deliveryDistance = calculateHaversineDistance(
+    latToUse,
+    lngToUse,
+    branchCoords.lat,
+    branchCoords.lng
+  );
 
-  const subtotal = cartTotalPrice;
-  const gst = Math.round(subtotal * 0.05); // 5% GST
-  const delivery = subtotal > 0 ? 150 : 0;
-  const total = subtotal + gst + delivery;
+  const isNotDeliverable = hasSelectedCoords && deliveryDistance > 5.0;
+  const isSmallOrder = subtotal < 200;
+  const isFarDistance = deliveryDistance > 3.0;
+
+  const deliveryFee = (subtotal > 0 && !isNotDeliverable) 
+    ? ((isSmallOrder || isFarDistance) ? 40 : 0) 
+    : 0;
+
+  const platformFee = subtotal > 0 ? 15 : 0;
+  const totalBeforePromo = subtotal + platformFee + deliveryFee;
+  const totalBeforeWallet = Math.max(0, totalBeforePromo - promoDiscount);
+
+  // Max 50% of the bill can be paid using wallet
+  const maxWalletAllowed = Math.floor(totalBeforeWallet * 0.5);
+  const walletDeduction = (useWallet && walletBalance > 0) 
+    ? Math.min(walletBalance, maxWalletAllowed) 
+    : 0;
+
+  const total = Math.max(0, totalBeforeWallet - walletDeduction);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -350,6 +445,39 @@ export default function CartScreen() {
     }
   };
 
+  const handleApplyPromoCode = async () => {
+    if (!promoCodeInput.trim()) {
+      showToast('Error', 'Please enter a promo code', 'error');
+      return;
+    }
+    if (appliedPromoCode) {
+      showToast('Limit Reached', 'Only 1 promo code can be applied per order.', 'error');
+      return;
+    }
+    setApplyingPromo(true);
+    try {
+      const res = await validateAndApplyPromoCode(promoCodeInput, subtotal);
+      if (res.success) {
+        setAppliedPromoCode(promoCodeInput.trim().toUpperCase());
+        setPromoDiscount(res.discountAmount);
+        showToast('Success', res.message, 'success');
+        setPromoCodeInput('');
+      } else {
+        showToast('Invalid Promo Code', res.message, 'error');
+      }
+    } catch (e: any) {
+      showToast('Error', e.message || 'Failed to apply promo code', 'error');
+    } finally {
+      setApplyingPromo(false);
+    }
+  };
+
+  const handleRemovePromoCode = () => {
+    setAppliedPromoCode(null);
+    setPromoDiscount(0);
+    showToast('Removed', 'Promo code removed from your order.', 'info');
+  };
+
   const handlePlaceOrder = async () => {
     if (!address) {
       showToast('Error', 'Please enter a room number or suite name', 'error');
@@ -384,17 +512,10 @@ export default function CartScreen() {
       const latToUse = selectedLatitude || 18.4575;
       const lngToUse = selectedLongitude || 73.8088;
       
-      const distanceToBranch = calculateHaversineDistance(
-        latToUse,
-        lngToUse,
-        branchLat,
-        branchLng
-      );
-
-      if (distanceToBranch > 5) {
+      if (isNotDeliverable || deliveryDistance > 5.0) {
         showToast(
           'Delivery Not Available', 
-          "We don't deliver here yet, we are coming soon!", 
+          `We don't deliver to locations beyond 5 km radius (Selected address is ${deliveryDistance.toFixed(1)} km away).`, 
           'error'
         );
         setPlacingOrder(false);
@@ -435,6 +556,29 @@ export default function CartScreen() {
 
 
 
+      if (subtotal >= 500 && !selectedGift) {
+        showToast('Selection Required', 'Please choose your free gift or cashback reward.', 'error');
+        setPlacingOrder(false);
+        return;
+      }
+
+      let finalNotes = notes;
+      let cashbackAmount = 0;
+
+      if (selectedGift) {
+        if (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback')) {
+          const match = selectedGift.match(/Min ₹(\d+)/i) || selectedGift.match(/(\d+)/);
+          cashbackAmount = match ? parseInt(match[1], 10) : 25;
+          finalNotes = `[REWARD: ${selectedGift}] ${notes}`;
+        } else {
+          finalNotes = `[FREE Complementary Gift: ${selectedGift}] ${notes}`;
+        }
+      }
+
+      if (appliedPromoCode) {
+        finalNotes = `[PROMO CODE: ${appliedPromoCode} (-₹${promoDiscount})] ${finalNotes}`;
+      }
+
       // Write order directly into public.orders table
       const { data: newOrder, error: orderError } = await supabase
         .from('orders')
@@ -447,7 +591,7 @@ export default function CartScreen() {
           delivery_latitude: selectedLatitude || 18.4575,
           delivery_longitude: selectedLongitude || 73.8088,
           delivery_phone: '+15550192834',
-          notes: notes,
+          notes: finalNotes,
           delivery_otp: otpCode
         })
         .select()
@@ -482,9 +626,84 @@ export default function CartScreen() {
         total_amount: total,
         created_at: newOrder.created_at || new Date().toISOString(),
         delivery_address: newOrder.delivery_address || address,
-        notes: notes,
+        notes: finalNotes,
         status: 'pending'
       });
+
+      // Save Scratch Card if reward was selected
+      if (selectedGift && (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback'))) {
+        try {
+          let minPrize = 25;
+          let maxPrize = 35;
+          let tierName = 'Order ₹500+ Tier';
+
+          if (subtotal >= 2000) {
+            minPrize = 80;
+            maxPrize = 100;
+            tierName = 'Order ₹2000+ Tier';
+          } else if (subtotal >= 1000) {
+            minPrize = 50;
+            maxPrize = 65;
+            tierName = 'Order ₹1000+ Tier';
+          }
+
+          const wonAmount = Math.floor(Math.random() * (maxPrize - minPrize + 1)) + minPrize;
+
+          const cardObj = {
+            id: `card_${Date.now()}`,
+            orderId: newOrder.id,
+            tierName,
+            minPrize,
+            maxPrize,
+            wonAmount,
+            isScratched: false,
+            createdAt: new Date().toISOString()
+          };
+
+          const cardsKey = 'hotelbet_scratch_cards';
+          const existingCardsStr = await AsyncStorage.getItem(cardsKey);
+          const cardsList = existingCardsStr ? JSON.parse(existingCardsStr) : [];
+          cardsList.push(cardObj);
+          await AsyncStorage.setItem(cardsKey, JSON.stringify(cardsList));
+
+          console.log(`Saved Scratch Card (${tierName}, prize ₹${wonAmount}) for order ${newOrder.id}`);
+        } catch (walletErr) {
+          console.warn('Failed to save scratch card:', walletErr);
+        }
+      }
+
+      // Deduct used wallet credit if applied
+      if (walletDeduction > 0) {
+        try {
+          const newBal = Math.max(0, walletBalance - walletDeduction);
+          await AsyncStorage.setItem('hotelbet_wallet_balance', String(newBal));
+          setWalletBalance(newBal);
+
+          const txnKey = 'hotelbet_wallet_transactions';
+          const existingTxnsStr = await AsyncStorage.getItem(txnKey);
+          const txns = existingTxnsStr ? JSON.parse(existingTxnsStr) : [];
+          txns.push({
+            id: `txn_${Date.now()}`,
+            orderId: newOrder.id,
+            amount: walletDeduction,
+            status: 'debited',
+            description: `Used ₹${walletDeduction} credit on Order #${newOrder.id.substring(0, 8)}`,
+            createdAt: new Date().toISOString()
+          });
+          await AsyncStorage.setItem(txnKey, JSON.stringify(txns));
+        } catch (wErr) {
+          console.warn('Failed to update wallet balance on checkout:', wErr);
+        }
+      }
+
+      // Mark promo code as used globally
+      if (appliedPromoCode) {
+        await markPromoCodeAsUsed(appliedPromoCode, userId);
+        setAppliedPromoCode(null);
+        setPromoDiscount(0);
+      }
+
+      setSelectedGift(null);
       setShowSuccessModal(true);
 
       showToast('Success', 'Your order has been placed on the live database!', 'success');
@@ -775,17 +994,477 @@ export default function CartScreen() {
                 <Text style={[styles.receiptVal, { color: colors.textMain }]}>₹{subtotal.toLocaleString()}</Text>
               </View>
               <View style={styles.receiptRow}>
-                <Text style={[styles.receiptLabel, { color: colors.textSub }]}>GST (5%)</Text>
-                <Text style={[styles.receiptVal, { color: colors.textMain }]}>₹{gst.toLocaleString()}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.receiptLabel, { color: colors.textSub }]}>Platform Fee</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowPlatformFeeInfo(!showPlatformFeeInfo)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Info size={13} color={colors.textSub} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.receiptVal, { color: colors.textMain }]}>₹{platformFee}</Text>
               </View>
+              {showPlatformFeeInfo && (
+                <View style={{
+                  backgroundColor: isDark ? 'rgba(212, 175, 55, 0.08)' : 'rgba(212, 175, 55, 0.06)',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(212, 175, 55, 0.2)',
+                  marginBottom: 4,
+                }}>
+                  <Text style={{ color: colors.textSub, fontSize: 10, lineHeight: 15, fontWeight: '600' }}>
+                    A nominal ₹15 platform fee helps us maintain app infrastructure, secure payments, and 24/7 customer support. No delivery or hidden charges.
+                  </Text>
+                </View>
+              )}
+
+              {promoDiscount > 0 && (
+                <View style={styles.receiptRow}>
+                  <Text style={[styles.receiptLabel, { color: '#10B981', fontWeight: '700' }]}>
+                    Promo Discount ({appliedPromoCode})
+                  </Text>
+                  <Text style={[styles.receiptVal, { color: '#10B981', fontWeight: '900' }]}>
+                    -₹{promoDiscount}
+                  </Text>
+                </View>
+              )}
+
+              {walletDeduction > 0 && (
+                <View style={styles.receiptRow}>
+                  <Text style={[styles.receiptLabel, { color: colors.accentGold, fontWeight: '700' }]}>
+                    Wallet Credit Used
+                  </Text>
+                  <Text style={[styles.receiptVal, { color: colors.accentGold, fontWeight: '900' }]}>
+                    -₹{walletDeduction}
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.receiptRow}>
-                <Text style={[styles.receiptLabel, { color: colors.textSub }]}>Delivery Fee</Text>
-                <Text style={[styles.receiptVal, { color: colors.textMain }]}>₹{delivery.toLocaleString()}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.receiptLabel, { color: colors.textSub }]}>Delivery Fee</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowDeliveryFeeInfo(!showDeliveryFeeInfo)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Info size={13} color={colors.textSub} />
+                  </TouchableOpacity>
+                </View>
+                {isNotDeliverable ? (
+                  <Text style={[styles.receiptVal, { color: '#EF4444', fontWeight: '900', fontSize: 11 }]}>
+                    Not Deliverable
+                  </Text>
+                ) : deliveryFee === 0 ? (
+                  <Text style={[styles.receiptVal, { color: '#10B981', fontWeight: '900' }]}>
+                    FREE
+                  </Text>
+                ) : (
+                  <Text style={[styles.receiptVal, { color: colors.accentGold, fontWeight: '900' }]}>
+                    ₹40
+                  </Text>
+                )}
               </View>
+
+              {!isNotDeliverable && deliveryDistance <= 3.0 && isSmallOrder && subtotal > 0 && (
+                <View style={{
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(245, 158, 11, 0.25)',
+                  marginTop: 2,
+                  marginBottom: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  <Sparkles size={13} color="#F59E0B" />
+                  <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>
+                    Add items worth ₹{200 - subtotal} more for FREE delivery!
+                  </Text>
+                </View>
+              )}
+
+              {!isNotDeliverable && deliveryDistance > 3.0 && subtotal > 0 && (
+                <View style={{
+                  backgroundColor: 'rgba(212, 175, 55, 0.08)',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(212, 175, 55, 0.25)',
+                  marginTop: 2,
+                  marginBottom: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  <MapPin size={13} color={colors.accentGold} />
+                  <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '800' }}>
+                    ₹40 delivery fee applied (distance {deliveryDistance.toFixed(1)} km)
+                  </Text>
+                </View>
+              )}
+              {showDeliveryFeeInfo && (
+                <View style={{
+                  backgroundColor: isDark ? 'rgba(212, 175, 55, 0.08)' : 'rgba(212, 175, 55, 0.06)',
+                  borderRadius: 8,
+                  padding: 10,
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(212, 175, 55, 0.2)',
+                  marginBottom: 4,
+                  gap: 4,
+                }}>
+                  <Text style={{ color: colors.textMain, fontSize: 10, fontWeight: '800', marginBottom: 2 }}>
+                    Delivery Policy:
+                  </Text>
+                  <Text style={{ color: colors.textSub, fontSize: 10, lineHeight: 15, fontWeight: '600' }}>
+                    • FREE delivery on orders ₹200 & above within 3 km.{'\n'}
+                    • ₹40 delivery fee for orders under ₹200 or between 3 km – 5 km.{'\n'}
+                    • Delivery unavailable beyond 5 km radius.
+                  </Text>
+                </View>
+              )}
+
+              {isNotDeliverable && (
+                <View style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  borderRadius: 10,
+                  padding: 10,
+                  borderWidth: 1,
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  marginBottom: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <AlertCircle size={16} color="#EF4444" />
+                  <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800', flex: 1 }}>
+                    Location beyond 5 km ({deliveryDistance.toFixed(1)} km away). Delivery is not available.
+                  </Text>
+                </View>
+              )}
 
               <View style={[styles.receiptRow, { marginTop: 12, marginBottom: 0 }]}>
                 <Text style={[styles.totalLabel, { color: colors.textMain }]}>Total</Text>
                 <Text style={[styles.totalVal, { color: colors.accentGold }]}>₹{total.toLocaleString()}</Text>
+              </View>
+            </View>
+
+            {/* Promo Code Input & Display Card */}
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>PROMO CODE</Text>
+              <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 14, marginTop: 8, gap: 10 }]}>
+                {/* Offline Dine-In Hint Banner */}
+                <View style={{
+                  backgroundColor: isDark ? 'rgba(212, 175, 55, 0.08)' : 'rgba(212, 175, 55, 0.06)',
+                  borderRadius: 10,
+                  padding: 10,
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(212, 175, 55, 0.2)',
+                  marginBottom: 2,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <Gift size={16} color={colors.accentGold} />
+                  <Text style={{ color: colors.textMain, fontSize: 10, lineHeight: 15, fontWeight: '700', flex: 1 }}>
+                    <Text style={{ color: colors.accentGold, fontWeight: '900' }}>Dine-In Offer:</Text> Visit Hotel Bet offline, dine in, and receive a scratch card at the billing counter to claim your ₹50 promo code from the owner!
+                  </Text>
+                </View>
+
+                {!appliedPromoCode ? (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <View style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: colors.inputBg,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: colors.cardBorder,
+                      paddingHorizontal: 12,
+                      height: 44,
+                    }}>
+                      <Tag size={15} color={colors.accentGold} style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={{ flex: 1, color: colors.textMain, fontSize: 12, fontWeight: '700' }}
+                        value={promoCodeInput}
+                        onChangeText={(txt) => setPromoCodeInput(txt.toUpperCase())}
+                        placeholder="Enter Promo Code (e.g. 1IBZEWSI)"
+                        placeholderTextColor="#8E8E93"
+                        autoCapitalize="characters"
+                        maxLength={10}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleApplyPromoCode}
+                      disabled={applyingPromo}
+                      activeOpacity={0.8}
+                      style={{
+                        backgroundColor: colors.accentGold,
+                        paddingHorizontal: 16,
+                        height: 44,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {applyingPromo ? (
+                        <ActivityIndicator size="small" color="#000000" />
+                      ) : (
+                        <Text style={{ color: '#000000', fontWeight: '900', fontSize: 12 }}>APPLY</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderWidth: 1,
+                    borderColor: 'rgba(16, 185, 129, 0.3)',
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <CheckCircle size={16} color="#10B981" />
+                      <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900' }}>
+                        {appliedPromoCode} APPLIED (-₹{promoDiscount})
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={handleRemovePromoCode} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <X size={16} color="#10B981" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Wallet Pay Option */}
+            {walletBalance > 0 && subtotal > 0 && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>HOTEL BET WALLET</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setUseWallet(!useWallet)}
+                  style={[
+                    styles.orderCard,
+                    {
+                      backgroundColor: useWallet ? 'rgba(212, 175, 55, 0.12)' : colors.cardBg,
+                      borderColor: useWallet ? colors.accentGold : colors.cardBorder,
+                      padding: 14,
+                      marginTop: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <View style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      backgroundColor: useWallet ? colors.accentGold : 'rgba(212, 175, 55, 0.15)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Wallet size={16} color={useWallet ? '#000000' : colors.accentGold} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>
+                        Pay with Wallet Balance (Available: ₹{walletBalance.toFixed(2)})
+                      </Text>
+                      <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2, fontWeight: '600' }}>
+                        Max 50% of bill (₹{maxWalletAllowed}) can be paid using wallet
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 1.5,
+                    borderColor: useWallet ? colors.accentGold : colors.textSub,
+                    backgroundColor: useWallet ? colors.accentGold : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    {useWallet && <Check size={12} color="#000000" strokeWidth={3} />}
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Complementary Rewards Section — always visible */}
+            <View style={{ marginTop: 20 }}>
+              <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>COMPLEMENTARY REWARDS</Text>
+              <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 16, marginTop: 8, gap: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Gift size={18} color={colors.accentGold} />
+                  <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800', flex: 1 }}>
+                    {subtotal >= 500 ? 'You qualify for a Complementary Gift!' : 'Unlock rewards by ordering more!'}
+                  </Text>
+                </View>
+
+                {/* ——— Tier 1: ₹500+ ——— */}
+                {(() => {
+                  const unlocked = subtotal >= 500;
+                  const remaining = Math.max(0, 500 - subtotal);
+                  const items = ['1L Water Bottle', 'Sweet', 'Cold Drink', 'Scratch Card (Min ₹25 - Up to ₹500)'];
+                  const isCurrent = subtotal >= 500;
+                  return (
+                    <View style={{ opacity: unlocked ? 1 : 0.55, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: unlocked ? colors.accentGold : colors.textSub, fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                          🎁  ORDER ₹500+
+                        </Text>
+                        {!unlocked && (
+                          <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>
+                            Add ₹{remaining} more
+                          </Text>
+                        )}
+                        {unlocked && <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '800' }}>UNLOCKED ✓</Text>}
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {items.map((gift) => {
+                          const isSelected = selectedGift === gift;
+                          return (
+                            <TouchableOpacity
+                              key={gift}
+                              activeOpacity={isCurrent ? 0.8 : 1}
+                              onPress={() => isCurrent && setSelectedGift(gift)}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: isSelected ? colors.accentGold : colors.cardBorder,
+                                backgroundColor: isSelected ? 'rgba(212, 175, 55, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                              }}
+                            >
+                              <Text style={{ color: isSelected ? colors.accentGold : (unlocked ? colors.textMain : colors.textSub), fontSize: 11, fontWeight: '700' }}>
+                                {gift} {isSelected ? '✓' : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <View style={{ height: 1, backgroundColor: colors.cardBorder }} />
+
+                {/* ——— Tier 2: ₹1000+ ——— */}
+                {(() => {
+                  const unlocked = subtotal >= 1000;
+                  const remaining = Math.max(0, 1000 - subtotal);
+                  const items = ['Gobi Manchurian', 'Dry Lollipop', 'Scratch Card (Min ₹50 - Up to ₹1000)'];
+                  const isCurrent = subtotal >= 1000;
+                  return (
+                    <View style={{ opacity: unlocked ? 1 : 0.55, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: unlocked ? colors.accentGold : colors.textSub, fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                          🍽️  ORDER ₹1000+
+                        </Text>
+                        {!unlocked && (
+                          <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>
+                            Add ₹{remaining} more
+                          </Text>
+                        )}
+                        {unlocked && <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '800' }}>UNLOCKED ✓</Text>}
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {items.map((gift) => {
+                          const isSelected = selectedGift === gift;
+                          return (
+                            <TouchableOpacity
+                              key={gift}
+                              activeOpacity={isCurrent ? 0.8 : 1}
+                              onPress={() => isCurrent && setSelectedGift(gift)}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: isSelected ? colors.accentGold : colors.cardBorder,
+                                backgroundColor: isSelected ? 'rgba(212, 175, 55, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                              }}
+                            >
+                              <Text style={{ color: isSelected ? colors.accentGold : (unlocked ? colors.textMain : colors.textSub), fontSize: 11, fontWeight: '700' }}>
+                                {gift} {isSelected ? '✓' : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                <View style={{ height: 1, backgroundColor: colors.cardBorder }} />
+
+                {/* ——— Tier 3: ₹2000+ ——— */}
+                {(() => {
+                  const unlocked = subtotal >= 2000;
+                  const remaining = Math.max(0, 2000 - subtotal);
+                  const items = ['Veg Biryani', 'Non-Veg Biryani', 'Scratch Card (Min ₹80 - Up to ₹2000)'];
+                  const isCurrent = subtotal >= 2000;
+                  return (
+                    <View style={{ opacity: unlocked ? 1 : 0.55, gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: unlocked ? colors.accentGold : colors.textSub, fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                          👑  ORDER ₹2000+
+                        </Text>
+                        {!unlocked && (
+                          <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>
+                            Add ₹{remaining} more
+                          </Text>
+                        )}
+                        {unlocked && <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '800' }}>UNLOCKED ✓</Text>}
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {items.map((gift) => {
+                          const isSelected = selectedGift === gift;
+                          return (
+                            <TouchableOpacity
+                              key={gift}
+                              activeOpacity={isCurrent ? 0.8 : 1}
+                              onPress={() => isCurrent && setSelectedGift(gift)}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: isSelected ? colors.accentGold : colors.cardBorder,
+                                backgroundColor: isSelected ? 'rgba(212, 175, 55, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                              }}
+                            >
+                              <Text style={{ color: isSelected ? colors.accentGold : (unlocked ? colors.textMain : colors.textSub), fontSize: 11, fontWeight: '700' }}>
+                                {gift} {isSelected ? '✓' : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                {selectedGift && (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback')) && (
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800', marginTop: 4 }}>
+                    🎟️ {selectedGift} will be credited to your account after order delivery.
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -1255,6 +1934,8 @@ export default function CartScreen() {
           const cleanAddr = `${addressDetails.flatNo}, ${addressDetails.address}${addressDetails.landmark ? ` (Landmark: ${addressDetails.landmark})` : ''}`;
           setAddress(cleanAddr);
           setSelectedAddressId(addressDetails.id);
+          setSelectedLatitude(addressDetails.latitude || null);
+          setSelectedLongitude(addressDetails.longitude || null);
           setShowPicker(false);
         }}
       />

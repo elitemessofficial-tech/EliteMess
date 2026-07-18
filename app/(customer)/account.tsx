@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -11,7 +11,7 @@ import {
   Platform,
   Switch
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,6 +61,25 @@ export default function AccountScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [newRecipientPhone, setNewRecipientPhone] = useState('');
   const [isOrderingForSomeoneElse, setIsOrderingForSomeoneElse] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0.00);
+ 
+  useFocusEffect(
+    useCallback(() => {
+      const loadWalletBalance = async () => {
+        try {
+          const balStr = await AsyncStorage.getItem('hotelbet_wallet_balance');
+          if (balStr) {
+            setWalletBalance(parseFloat(balStr));
+          } else {
+            setWalletBalance(0.00);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      loadWalletBalance();
+    }, [])
+  );
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -337,7 +356,7 @@ export default function AccountScreen() {
                 </View>
                 <View>
                   <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>Wallet Balance</Text>
-                  <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Current Balance: ₹ 0.00</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Current Balance: ₹ {walletBalance.toFixed(2)}</Text>
                 </View>
               </View>
               <ChevronRight size={16} color={colors.textSub} />

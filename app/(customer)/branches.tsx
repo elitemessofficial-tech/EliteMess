@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -10,7 +10,7 @@ import {
   Animated,
   Modal
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -39,6 +39,25 @@ export default function BranchesScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [showSavedAddressesModal, setShowSavedAddressesModal] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [walletBalance, setWalletBalance] = useState(0.00);
+ 
+  useFocusEffect(
+    useCallback(() => {
+      const loadWalletBalance = async () => {
+        try {
+          const balStr = await AsyncStorage.getItem('hotelbet_wallet_balance');
+          if (balStr) {
+            setWalletBalance(parseFloat(balStr));
+          } else {
+            setWalletBalance(0.00);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      loadWalletBalance();
+    }, [])
+  );
 
   const pulseAnim = React.useRef(new Animated.Value(0.4)).current;
   const themeAnim = React.useRef(new Animated.Value(isDark ? 1 : 0)).current;
@@ -358,7 +377,7 @@ export default function BranchesScreen() {
               activeOpacity={0.7}
             >
               <Wallet size={13} color={colors.accentGold} />
-              <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>₹ 0</Text>
+              <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>₹ {walletBalance.toFixed(0)}</Text>
             </TouchableOpacity>
           </>
         )}

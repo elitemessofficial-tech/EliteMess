@@ -13,14 +13,16 @@ import {
   Image,
   Modal,
   FlatList,
-  Linking
+  Linking,
+  Clipboard
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera, Building2, Edit3, Trash2, Plus, MapPin, Phone } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera, Building2, Edit3, Trash2, Plus, MapPin, Phone, Tag, Copy, ShieldAlert } from 'lucide-react-native';
+import { getOwnerPromoCodesList, updatePromoCodeStatus, PromoCodeItem, PromoStatus } from '../../src/config/promoCodes';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
@@ -287,6 +289,25 @@ export default function OwnerDashboard() {
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>('All');
   const [selectedMenuAvailability, setSelectedMenuAvailability] = useState<'All' | 'Available' | 'Unavailable'>('All');
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
+
+  // Promo Code States
+  const [promoList, setPromoList] = useState<PromoCodeItem[]>([]);
+  const [promoFilterStatus, setPromoFilterStatus] = useState<PromoStatus | 'ALL'>('ALL');
+  const [promoSearchQuery, setPromoSearchQuery] = useState('');
+  const [loadingPromos, setLoadingPromos] = useState(false);
+  const [promoModalVisible, setPromoModalVisible] = useState(false);
+
+  const fetchPromoCodes = async () => {
+    setLoadingPromos(true);
+    try {
+      const list = await getOwnerPromoCodesList();
+      setPromoList(list);
+    } catch (e) {
+      console.error('Error fetching promo codes:', e);
+    } finally {
+      setLoadingPromos(false);
+    }
+  };
 
   // States for Inline Edits
   const [editPrices, setEditPrices] = useState<Record<string, string>>({});
@@ -795,23 +816,43 @@ export default function OwnerDashboard() {
   const totalCompleted = filteredCompletedOrders.length;
   const avgOrderValue = totalCompleted > 0 ? (totalSales / totalCompleted) : 0;
 
+  const renderToastBanner = () => {
+    if (!toastVisible) return null;
+    return (
+      <View style={styles.alertOverlay}>
+        <BlurView 
+          intensity={95} 
+          tint={isDark ? 'dark' : 'light'} 
+          style={[
+            styles.alertGlassCard, 
+            { 
+              borderColor: colors.cardBorder, 
+              backgroundColor: isDark ? 'rgba(20, 20, 15, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+              shadowColor: '#000000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.5,
+              shadowRadius: 16,
+              elevation: 12,
+            }
+          ]}
+        >
+          <View style={styles.alertContent}>
+            {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
+            {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
+            {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
+            <View style={styles.alertTextWrapper}>
+              <Text style={[styles.alertTitleText, { color: colors.textMain }]}>{toastTitle}</Text>
+              <Text style={[styles.alertMsgText, { color: colors.textSub }]}>{toastMessage}</Text>
+            </View>
+          </View>
+        </BlurView>
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {toastVisible && (
-        <View style={styles.alertOverlay}>
-          <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={[styles.alertGlassCard, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
-            <View style={styles.alertContent}>
-              {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
-              {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
-              {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
-              <View style={styles.alertTextWrapper}>
-                <Text style={[styles.alertTitleText, { color: colors.textMain }]}>{toastTitle}</Text>
-                <Text style={[styles.alertMsgText, { color: colors.textSub }]}>{toastMessage}</Text>
-              </View>
-            </View>
-          </BlurView>
-        </View>
-      )}
+      {renderToastBanner()}
       <FloatingHeader 
         title="Operations Hub"
         subtitle={
@@ -833,6 +874,17 @@ export default function OwnerDashboard() {
               activeOpacity={0.7}
             >
               <Building2 size={15} color={colors.accentGold} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => {
+                fetchPromoCodes();
+                setPromoModalVisible(true);
+              }} 
+              style={[styles.headerButton, { borderColor: colors.cardBorder }]} 
+              activeOpacity={0.7}
+            >
+              <Tag size={15} color={colors.accentGold} />
             </TouchableOpacity>
 
             <TouchableOpacity onPress={toggleTheme} style={[styles.headerButton, { borderColor: colors.cardBorder }]} activeOpacity={0.7}>
@@ -874,44 +926,81 @@ export default function OwnerDashboard() {
           </View>
         )}
 
-        {/* Shortcut to Manage Rider Staff - Home screen only */}
+        {/* Shortcuts for Rider Staff & Offline Promo Codes - Home screen only */}
         {(activeSegment === 'orders' || activeSegment === 'reviews') && (
-          <TouchableOpacity 
-            onPress={() => {
-              setRidersModalVisible(true);
-              fetchRiders();
-            }}
-            activeOpacity={0.85}
-            style={{
-              marginBottom: 16,
-              borderRadius: 20,
-              borderWidth: 0.8,
-              borderColor: colors.cardBorder,
-              backgroundColor: colors.cardBg,
-              padding: 16,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{
-                width: 36,
-                height: 36,
+          <View style={{ gap: 10, marginBottom: 16 }}>
+            <TouchableOpacity 
+              onPress={() => {
+                setRidersModalVisible(true);
+                fetchRiders();
+              }}
+              activeOpacity={0.85}
+              style={{
                 borderRadius: 18,
-                backgroundColor: 'rgba(212, 175, 55, 0.1)',
-                justifyContent: 'center',
+                borderWidth: 0.8,
+                borderColor: colors.cardBorder,
+                backgroundColor: colors.cardBg,
+                padding: 14,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-              }}>
-                <User size={18} color={colors.accentGold} />
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}>
+                  <User size={16} color={colors.accentGold} />
+                </View>
+                <View>
+                  <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>Rider Staff Registry</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 1 }}>Assign roles & revoke rider privileges</Text>
+                </View>
               </View>
-              <View>
-                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>Manage Rider Registry</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Assign roles & revoke rider privileges</Text>
+              <ChevronDown size={14} color={colors.accentGold} style={{ transform: [{ rotate: '-90deg' }] }} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => {
+                fetchPromoCodes();
+                setPromoModalVisible(true);
+              }}
+              activeOpacity={0.85}
+              style={{
+                borderRadius: 18,
+                borderWidth: 0.8,
+                borderColor: colors.cardBorder,
+                backgroundColor: colors.cardBg,
+                padding: 14,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  backgroundColor: 'rgba(212, 175, 55, 0.1)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}>
+                  <Tag size={16} color={colors.accentGold} />
+                </View>
+                <View>
+                  <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>Offline Promo Codes (100 Codes)</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 1 }}>Issue ₹50 offline coupons & manage claims</Text>
+                </View>
               </View>
-            </View>
-            <ChevronDown size={16} color={colors.accentGold} style={{ transform: [{ rotate: '-90deg' }] }} />
-          </TouchableOpacity>
+              <ChevronDown size={14} color={colors.accentGold} style={{ transform: [{ rotate: '-90deg' }] }} />
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Tab Segments (Rounded Row matching full width) - only on Home/Reviews tabs */}
@@ -1841,6 +1930,378 @@ export default function OwnerDashboard() {
           <Text style={[styles.tabText, { color: activeSegment === 'sales' ? colors.accentGold : colors.textSub }]}>Earnings</Text>
         </TouchableOpacity>
       </BlurView>
+
+      {/* Offline Promo Codes Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={promoModalVisible}
+        onRequestClose={() => setPromoModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.modalContent,
+              {
+                width: '95%',
+                height: '85%',
+                maxHeight: 720,
+                borderColor: colors.cardBorder,
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                padding: 18,
+                borderRadius: 24,
+                borderWidth: 1,
+              }
+            ]}
+          >
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Tag size={20} color={colors.accentGold} />
+                <Text style={{ color: colors.accentGold, fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }}>
+                  OFFLINE PROMO CODES
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setPromoModalVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X size={20} color={colors.textMain} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Interactive Stats Filter Chips */}
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setPromoFilterStatus('available')}
+                style={{
+                  flex: 1,
+                  backgroundColor: promoFilterStatus === 'available' ? 'rgba(212, 175, 55, 0.25)' : 'rgba(212, 175, 55, 0.08)',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: promoFilterStatus === 'available' ? colors.accentGold : 'rgba(212, 175, 55, 0.2)',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '900', color: colors.accentGold }}>
+                  AVAIL: {promoList.filter(p => p.status === 'available').length}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setPromoFilterStatus('given')}
+                style={{
+                  flex: 1,
+                  backgroundColor: promoFilterStatus === 'given' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.08)',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: promoFilterStatus === 'given' ? '#3B82F6' : 'rgba(59, 130, 246, 0.2)',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '900', color: '#3B82F6' }}>
+                  GIVEN: {promoList.filter(p => p.status === 'given').length}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setPromoFilterStatus('used')}
+                style={{
+                  flex: 1,
+                  backgroundColor: promoFilterStatus === 'used' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(16, 185, 129, 0.08)',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: promoFilterStatus === 'used' ? '#10B981' : 'rgba(16, 185, 129, 0.2)',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '900', color: '#10B981' }}>
+                  USED: {promoList.filter(p => p.status === 'used').length}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setPromoFilterStatus('invalid')}
+                style={{
+                  flex: 1,
+                  backgroundColor: promoFilterStatus === 'invalid' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.08)',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: promoFilterStatus === 'invalid' ? '#EF4444' : 'rgba(239, 68, 68, 0.2)',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 9, fontWeight: '900', color: '#EF4444' }}>
+                  REVOKED: {promoList.filter(p => p.status === 'invalid').length}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Input */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.inputBg,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: colors.cardBorder,
+              paddingHorizontal: 10,
+              marginBottom: 10,
+              height: 38,
+            }}>
+              <Tag size={14} color={colors.accentGold} style={{ marginRight: 6 }} />
+              <TextInput
+                style={{ flex: 1, color: colors.textMain, fontSize: 12, fontWeight: '700' }}
+                value={promoSearchQuery}
+                onChangeText={setPromoSearchQuery}
+                placeholder="Search promo code (e.g. 1IBZEWSI)..."
+                placeholderTextColor="#8E8E93"
+                autoCapitalize="characters"
+              />
+              {promoSearchQuery ? (
+                <TouchableOpacity onPress={() => setPromoSearchQuery('')}>
+                  <X size={14} color={colors.textSub} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Filter Pills Horizontal Row (Fixed Height & Non-Collapsible) */}
+            <View style={{ height: 36, marginBottom: 10, flexShrink: 0 }}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 6, alignItems: 'center' }}
+              >
+                {(['ALL', 'available', 'given', 'used', 'invalid'] as const).map((st) => {
+                  const isSel = promoFilterStatus === st;
+                  const label = st === 'ALL' ? 'ALL CODES' : st === 'available' ? 'AVAILABLE' : st === 'given' ? 'GIVEN / SOLD' : st === 'used' ? 'REDEEMED' : 'REVOKED';
+                  return (
+                    <TouchableOpacity
+                      key={st}
+                      activeOpacity={0.8}
+                      onPress={() => setPromoFilterStatus(st)}
+                      style={{
+                        paddingHorizontal: 12,
+                        height: 30,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: isSel ? colors.accentGold : colors.cardBorder,
+                        backgroundColor: isSel ? 'rgba(212, 175, 55, 0.2)' : colors.cardBg,
+                      }}
+                    >
+                      <Text style={{ color: isSel ? colors.accentGold : colors.textSub, fontSize: 10, fontWeight: '800' }}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Minimalist Promo List */}
+            {loadingPromos ? (
+              <ActivityIndicator size="small" color={colors.accentGold} style={{ marginVertical: 40 }} />
+            ) : (
+              <FlatList
+                data={promoList.filter(p => {
+                  const matchesSearch = !promoSearchQuery || p.code.toLowerCase().includes(promoSearchQuery.toLowerCase());
+                  const matchesFilter = promoFilterStatus === 'ALL' || p.status === promoFilterStatus;
+                  return matchesSearch && matchesFilter;
+                })}
+                keyExtractor={(item) => item.code}
+                contentContainerStyle={{ gap: 8, paddingBottom: 20 }}
+                renderItem={({ item }) => {
+                  const isAvail = item.status === 'available';
+                  const isGiven = item.status === 'given';
+                  const isUsed = item.status === 'used';
+                  const isInvalid = item.status === 'invalid';
+
+                  const statusColor = isAvail ? colors.accentGold : isGiven ? '#3B82F6' : isUsed ? '#10B981' : '#EF4444';
+                  const statusLabel = isAvail ? 'AVAILABLE' : isGiven ? 'GIVEN' : isUsed ? 'REDEEMED' : 'REVOKED';
+
+                  return (
+                    <View
+                      style={{
+                        backgroundColor: colors.cardBg,
+                        borderRadius: 14,
+                        borderWidth: 1,
+                        borderColor: colors.cardBorder,
+                        padding: 12,
+                        gap: 10,
+                      }}
+                    >
+                      {/* Top Row: Code Header & Status Badge */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Tag size={15} color={colors.accentGold} />
+                          <Text style={{
+                            fontSize: 15,
+                            fontWeight: '900',
+                            color: colors.textMain,
+                            letterSpacing: 1.2,
+                            fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                          }}>
+                            {item.code}
+                          </Text>
+                          <View style={{
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 4,
+                            borderWidth: 0.5,
+                            borderColor: '#10B981',
+                          }}>
+                            <Text style={{ fontSize: 9, fontWeight: '900', color: '#10B981' }}>-₹50</Text>
+                          </View>
+                        </View>
+
+                        {/* Status Pill */}
+                        <View style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          borderRadius: 6,
+                          backgroundColor: `${statusColor}18`,
+                          borderWidth: 0.8,
+                          borderColor: statusColor,
+                        }}>
+                          <Text style={{ fontSize: 9, fontWeight: '900', color: statusColor, letterSpacing: 0.5 }}>
+                            {statusLabel}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Divider Line */}
+                      <View style={{ height: 0.8, backgroundColor: colors.cardBorder, opacity: 0.5 }} />
+
+                      {/* Bottom Row: Action Controls */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                        {/* Copy Button */}
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={async () => {
+                            try {
+                              if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                                await navigator.clipboard.writeText(item.code);
+                              } else {
+                                Clipboard.setString(item.code);
+                              }
+                            } catch (err) {
+                              Clipboard.setString(item.code);
+                            }
+                            showToast('Copied!', `Promo code ${item.code} copied to clipboard!`, 'success');
+                          }}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 5,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 8,
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            borderWidth: 0.8,
+                            borderColor: colors.cardBorder,
+                          }}
+                        >
+                          <Copy size={12} color={colors.textMain} />
+                          <Text style={{ color: colors.textMain, fontSize: 10, fontWeight: '800' }}>COPY</Text>
+                        </TouchableOpacity>
+
+                        {/* Give to Offline Customer */}
+                        {isAvail && (
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={async () => {
+                              await updatePromoCodeStatus(item.code, 'given');
+                              showToast('Given', `Code ${item.code} handed to customer!`, 'success');
+                              fetchPromoCodes();
+                            }}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 5,
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                              borderWidth: 0.8,
+                              borderColor: '#3B82F6',
+                            }}
+                          >
+                            <CheckCircle size={12} color="#3B82F6" />
+                            <Text style={{ color: '#3B82F6', fontSize: 10, fontWeight: '900' }}>GIVE</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Invalidate / Revoke */}
+                        {!isInvalid && !isUsed && (
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={async () => {
+                              await updatePromoCodeStatus(item.code, 'invalid');
+                              showToast('Revoked', `Code ${item.code} revoked!`, 'error');
+                              fetchPromoCodes();
+                            }}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 5,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                              borderWidth: 0.8,
+                              borderColor: '#EF4444',
+                            }}
+                          >
+                            <ShieldAlert size={12} color="#EF4444" />
+                            <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '900' }}>REVOKE</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Restore */}
+                        {isInvalid && (
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={async () => {
+                              await updatePromoCodeStatus(item.code, 'available');
+                              showToast('Restored', `Code ${item.code} restored!`, 'success');
+                              fetchPromoCodes();
+                            }}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 5,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                              borderWidth: 0.8,
+                              borderColor: '#10B981',
+                            }}
+                          >
+                            <CheckCircle size={12} color="#10B981" />
+                            <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>RESTORE</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+            )}
+          </BlurView>
+          {renderToastBanner()}
+        </View>
+      </Modal>
 
       {/* Manage Branches Modal */}
       <Modal
