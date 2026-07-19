@@ -21,7 +21,7 @@ import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera, Building2, Edit3, Trash2, Plus, MapPin, Phone, Tag, Copy, ShieldAlert } from 'lucide-react-native';
+import { User, Home, ShoppingBag, ShieldCheck, Star, Sun, Moon, LogOut, ClipboardList, CheckSquare, CheckCircle, AlertCircle, DollarSign, ChevronDown, X, MessageSquare, Navigation, Camera, Building2, Edit3, Trash2, Plus, MapPin, Phone, Tag, Copy, ShieldAlert, Gift } from 'lucide-react-native';
 import { getOwnerPromoCodesList, updatePromoCodeStatus, PromoCodeItem, PromoStatus } from '../../src/config/promoCodes';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
@@ -30,6 +30,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
+import { getZomatoPriceForItem } from '../../src/utils/zomatoPrices';
 
 
 interface OrderItem {
@@ -283,12 +284,19 @@ export default function OwnerDashboard() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemZomatoPrice, setNewItemZomatoPrice] = useState('');
   const [newItemImage, setNewItemImage] = useState('');
   const [newItemCategory, setNewItemCategory] = useState<string>('Veg Starter');
   const [addingItem, setAddingItem] = useState(false);
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>('All');
   const [selectedMenuAvailability, setSelectedMenuAvailability] = useState<'All' | 'Available' | 'Unavailable'>('All');
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
+
+  const [editPrices, setEditPrices] = useState<Record<string, string>>({});
+  const [editZomatoPrices, setEditZomatoPrices] = useState<Record<string, string>>({});
+  const [editDescs, setEditDescs] = useState<Record<string, string>>({});
+  const [editAvail, setEditAvail] = useState<Record<string, boolean>>({});
+  const [editImages, setEditImages] = useState<Record<string, string>>({});
 
   // Promo Code States
   const [promoList, setPromoList] = useState<PromoCodeItem[]>([]);
@@ -309,11 +317,208 @@ export default function OwnerDashboard() {
     }
   };
 
-  // States for Inline Edits
-  const [editPrices, setEditPrices] = useState<Record<string, string>>({});
-  const [editDescs, setEditDescs] = useState<Record<string, string>>({});
-  const [editAvail, setEditAvail] = useState<Record<string, boolean>>({});
-  const [editImages, setEditImages] = useState<Record<string, string>>({});
+  // Owner Refund Modal State
+  const [ownerRefundModalOrder, setOwnerRefundModalOrder] = useState<any | null>(null);
+  const [ownerTxnRefId, setOwnerTxnRefId] = useState<string>('');
+
+  const isOwnerSameDay = (createdAtIso: string) => {
+    if (!createdAtIso) return true;
+    const ordDate = new Date(createdAtIso);
+    const today = new Date();
+    return (
+      ordDate.getFullYear() === today.getFullYear() &&
+      ordDate.getMonth() === today.getMonth() &&
+      ordDate.getDate() === today.getDate()
+    );
+  };
+
+  // States for Inline Edits (declared above)
+
+  const getCleanCustomerNotes = (notes?: string) => {
+    if (!notes) return '';
+    return notes
+      .replace(/\[BANK_REFUND:[^\]]+\]/g, '')
+      .replace(/\[WALLET_REFUND:[^\]]+\]/g, '')
+      .replace(/\[PAYMENT:[^\]]+\]/g, '')
+      .replace(/\[PROMO_CODE:[^\]]+\]/g, '')
+      .replace(/\[BILL_BREAKDOWN:[^\]]+\]/g, '')
+      .replace(/\[FREE Complementary Gift:[^\]]+\]/g, '')
+      .replace(/\[REWARD:[^\]]+\]/g, '')
+      .replace(/\[TIP_PAYMENT:[^\]]+\]/g, '')
+      .trim();
+  };
+
+  const parseComplementaryReward = (notes?: string) => {
+    if (!notes) return null;
+    const giftMatch = notes.match(/\[FREE Complementary Gift:\s*([^\]]+)\]/i);
+    if (giftMatch) {
+      return { type: 'gift', item: giftMatch[1].trim() };
+    }
+    const rewardMatch = notes.match(/\[REWARD:\s*([^\]]+)\]/i);
+    if (rewardMatch) {
+      return { type: 'reward', item: rewardMatch[1].trim() };
+    }
+    return null;
+  };
+
+  const parseTipPaymentDetails = (notes?: string, tipAmount?: number) => {
+    if (!notes && (!tipAmount || tipAmount <= 0)) return null;
+    const tipMatch = notes ? notes.match(/\[TIP_PAYMENT:\s*₹?(\d+)\s*via\s*Razorpay ID:\s*([^\]\s]+)\]/i) : null;
+    if (tipMatch) {
+      return {
+        amount: parseInt(tipMatch[1], 10),
+        razorpayId: tipMatch[2].trim(),
+        paymentMode: 'ONLINE (Razorpay)'
+      };
+    }
+    if (tipAmount && tipAmount > 0) {
+      return {
+        amount: tipAmount,
+        razorpayId: null,
+        paymentMode: 'ONLINE (Razorpay)'
+      };
+    }
+    return null;
+  };
+
+  const parsePaymentAndRefundDetails = (notes?: string, createdAt?: string) => {
+    if (!notes) {
+      return {
+        isRefunded: false,
+        isWalletRefund: false,
+        paymentMode: 'Cash on Delivery (COD)',
+        razorpayId: null,
+        refundAmount: 0,
+        refundPercent: 0,
+        txnId: null,
+        refundMethod: null as string | null,
+        refundDate: createdAt ? new Date(createdAt).toLocaleString('en-IN') : 'N/A'
+      };
+    }
+
+    // Strip TIP_PAYMENT tag first so tip payment info doesn't pollute bill payment details
+    const orderNotesOnly = notes.replace(/\[TIP_PAYMENT:[^\]]+\]/g, '').trim();
+
+    let paymentMode = 'Cash on Delivery (COD)';
+    let razorpayId = null;
+    if (notes.includes('[PAYMENT: ONLINE')) {
+      paymentMode = 'ONLINE (Razorpay)';
+      const rzpMatch = notes.match(/Razorpay ID:\s*([^\s|\]]+)/i);
+      if (rzpMatch && !rzpMatch[1].startsWith('pay_native_tip_')) {
+        razorpayId = rzpMatch[1];
+      }
+    }
+
+    // Check for WALLET_REFUND (instant wallet refund by customer preference)
+    const isWalletRefund = notes.includes('[WALLET_REFUND:');
+    const isBankRefundCredited = notes.includes('status=CREDITED') || notes.includes('[BANK_REFUND: status=CREDITED');
+    const isRefunded = isWalletRefund || isBankRefundCredited;
+    
+    let refundPercent = 100;
+    let refundAmount = 0;
+    let txnId: string | null = null;
+    let refundMethod: string | null = null;
+
+    if (isWalletRefund) {
+      refundMethod = 'WALLET';
+      const walletMatches = [...notes.matchAll(/\[WALLET_REFUND:\s*status=CREDITED\s*\|\s*percent=(\d+)%\s*\|\s*amount=₹?(\d+)\s*\|\s*method=([^\]\s|]+)\]/gi)];
+      if (walletMatches.length > 0) {
+        const lastMatch = walletMatches[walletMatches.length - 1];
+        refundPercent = parseInt(lastMatch[1]);
+        refundAmount = parseInt(lastMatch[2]);
+        txnId = 'INSTANT_WALLET';
+      } else {
+        const amtMatch = notes.match(/amount=₹?(\d+)/i);
+        refundAmount = amtMatch ? parseInt(amtMatch[1]) : 0;
+        const pctMatch = notes.match(/percent=(\d+)%/i);
+        refundPercent = pctMatch ? parseInt(pctMatch[1]) : 100;
+        txnId = 'INSTANT_WALLET';
+      }
+    } else {
+      refundMethod = isBankRefundCredited ? 'BANK' : null;
+      const refundMatches = [...notes.matchAll(/\[BANK_REFUND:\s*status=CREDITED\s*\|\s*percent=(\d+)%\s*\|\s*amount=₹?(\d+)\s*\|\s*txn_id=([^\]\s|]+)\]/gi)];
+      if (refundMatches.length > 0) {
+        const lastMatch = refundMatches[refundMatches.length - 1];
+        refundPercent = parseInt(lastMatch[1]);
+        refundAmount = parseInt(lastMatch[2]);
+        txnId = lastMatch[3];
+      } else {
+        const amtMatch = notes.match(/amount=₹?(\d+)/i);
+        refundAmount = amtMatch ? parseInt(amtMatch[1]) : 0;
+        const pctMatch = notes.match(/percent=(\d+)%/i);
+        refundPercent = pctMatch ? parseInt(pctMatch[1]) : 100;
+        const txnIdMatch = notes.match(/txn_id=([^\s|\]]+)/i);
+        txnId = txnIdMatch ? txnIdMatch[1] : null;
+      }
+    }
+
+    return {
+      isRefunded,
+      isWalletRefund,
+      paymentMode,
+      razorpayId,
+      refundAmount,
+      refundPercent,
+      txnId,
+      refundMethod,
+      refundDate: createdAt ? new Date(createdAt).toLocaleString('en-IN') : 'N/A'
+    };
+  };
+
+  const isAlreadyRefunded = (notes?: string) => {
+    if (!notes) return false;
+    return notes.includes('status=CREDITED') || notes.includes('[BANK_REFUND: status=CREDITED') || notes.includes('[WALLET_REFUND:');
+  };
+
+  const handleOwnerIssueRefund = async (orderToRefund: any, refundPercent: number) => {
+    if (isAlreadyRefunded(orderToRefund.notes)) {
+      const isWallet = orderToRefund.notes?.includes('[WALLET_REFUND:');
+      showToast(
+        'Already Refunded', 
+        isWallet 
+          ? 'This order was already refunded instantly to the customer\'s Hotel Bet Money wallet.' 
+          : 'This order has already been refunded to customer bank account.',
+        'info'
+      );
+      setOwnerRefundModalOrder(null);
+      return;
+    }
+
+    if (!isOwnerSameDay(orderToRefund.created_at)) {
+      showToast('Refund Window Expired', 'Same-day limit: Refunds can only be issued on the date of purchase.', 'error');
+      return;
+    }
+
+    const trimmedTxnId = ownerTxnRefId.trim();
+    if (!trimmedTxnId) {
+      showToast('Transaction ID Required', 'Please enter the Bank / UTR Transaction Reference ID before issuing refund.', 'error');
+      return;
+    }
+
+    try {
+      const refundAmount = Math.round((orderToRefund.total_amount || 0) * (refundPercent / 100));
+      const refId = trimmedTxnId;
+      const refundTag = `[BANK_REFUND: status=CREDITED | percent=${refundPercent}% | amount=₹${refundAmount} | txn_id=${refId}]`;
+      const updatedNotes = orderToRefund.notes ? `${refundTag} ${orderToRefund.notes}` : refundTag;
+
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          notes: updatedNotes
+        })
+        .eq('id', orderToRefund.id);
+
+      if (error) throw error;
+
+      showToast('Bank Refund Logged', `₹${refundAmount} (${refundPercent}%) Bank Refund saved with Txn ID: ${refId}`, 'success');
+      setOwnerRefundModalOrder(null);
+      setOwnerTxnRefId('');
+      fetchOrdersAndReviews();
+    } catch (err: any) {
+      showToast('Refund Failed', err.message || 'Failed to issue refund', 'error');
+    }
+  };
 
   // Custom Toast/Alert State
   const [toastVisible, setToastVisible] = useState(false);
@@ -464,15 +669,32 @@ export default function OwnerDashboard() {
       const normalOrders = formatted.filter((o: any) => o.delivery_address !== 'SUPPORT_TICKET');
       setOrders(normalOrders);
 
-      // Load Reviews from AsyncStorage
+      // Load Reviews from AsyncStorage & filter out test reviews for deleted orders
       const savedReviews = await AsyncStorage.getItem('hotelbet_reviews');
       if (savedReviews) {
         const parsed = JSON.parse(savedReviews);
-        const reviewList = Object.keys(parsed).map(key => ({
-          orderId: key,
-          ...parsed[key]
-        }));
+        const existingOrderIds = new Set((normalOrders || []).map((o: any) => o.id));
+
+        const validReviewMap: Record<string, any> = {};
+        const reviewList: any[] = [];
+
+        Object.keys(parsed).forEach(key => {
+          if (existingOrderIds.has(key)) {
+            validReviewMap[key] = parsed[key];
+            reviewList.push({
+              orderId: key,
+              ...parsed[key]
+            });
+          }
+        });
+
+        if (Object.keys(validReviewMap).length !== Object.keys(parsed).length) {
+          await AsyncStorage.setItem('hotelbet_reviews', JSON.stringify(validReviewMap));
+        }
+
         setCustomerReviews(reviewList);
+      } else {
+        setCustomerReviews([]);
       }
       
       fetchSupportChats();
@@ -547,18 +769,22 @@ export default function OwnerDashboard() {
       
       // Initialize edit states
       const prices: Record<string, string> = {};
+      const zomatoPrices: Record<string, string> = {};
       const descs: Record<string, string> = {};
       const avail: Record<string, boolean> = {};
       const images: Record<string, string> = {};
       
       loaded.forEach((item: any) => {
         prices[item.id] = parseFloat(item.price).toString();
+        const zPrice = getZomatoPriceForItem(item.name, parseFloat(item.price), item.zomato_price);
+        zomatoPrices[item.id] = zPrice.toString();
         descs[item.id] = item.description || '';
         avail[item.id] = item.is_available;
         images[item.id] = item.image_url || '';
       });
       
       setEditPrices(prices);
+      setEditZomatoPrices(zomatoPrices);
       setEditDescs(descs);
       setEditAvail(avail);
       setEditImages(images);
@@ -567,7 +793,7 @@ export default function OwnerDashboard() {
     }
   };
 
-  const handleUpdateMenuItem = async (id: string, updatedFields: { price: number; description: string; is_available: boolean; image_url?: string | null }) => {
+  const handleUpdateMenuItem = async (id: string, updatedFields: { price: number; zomato_price?: number; description: string; is_available: boolean; image_url?: string | null }) => {
     const localItem = menuItems.find(item => item.id === id);
     if (!localItem) return;
 
@@ -578,11 +804,16 @@ export default function OwnerDashboard() {
         .update(updatedFields)
         .eq('name', localItem.name);
 
-      if (error) throw error;
-      Alert.alert('Success', 'Menu item updated successfully across all branches.');
+      if (error) {
+        // Fallback update without zomato_price if column is missing on DB
+        const { zomato_price, ...fallbackFields } = updatedFields as any;
+        await supabase.from('menu_items').update(fallbackFields).eq('name', localItem.name);
+      }
+
+      showToast('Menu Item Updated', `${localItem.name} updated successfully.`, 'success');
       fetchMenuItems();
     } catch (err: any) {
-      Alert.alert('Update Failed', err.message);
+      showToast('Update Failed', err.message, 'error');
     }
   };
 
@@ -1095,6 +1326,33 @@ export default function OwnerDashboard() {
                               ))}
                             </View>
                           )}
+
+                          {/* Complementary Reward Badge */}
+                          {(() => {
+                            const reward = parseComplementaryReward(order.notes);
+                            if (!reward) return null;
+                            return (
+                              <View style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                backgroundColor: 'rgba(212, 175, 55, 0.12)',
+                                borderWidth: 1,
+                                borderColor: colors.accentGold,
+                                borderRadius: 10,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                marginTop: 6,
+                                marginBottom: 4,
+                                alignSelf: 'flex-start'
+                              }}>
+                                <Gift size={13} color={colors.accentGold} />
+                                <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '900' }}>
+                                  FREE Gift: <Text style={{ color: colors.textMain, fontWeight: '800' }}>{reward.item}</Text>
+                                </Text>
+                              </View>
+                            );
+                          })()}
                           
                           <Text style={[styles.kitchenText, { color: colors.textMain }]}>
                             Deliver to: <Text style={{ fontWeight: '500', color: colors.textSub }}>{order.delivery_address}</Text>
@@ -1126,9 +1384,9 @@ export default function OwnerDashboard() {
                             </TouchableOpacity>
                           ) : null}
 
-                          {order.notes ? (
+                          {getCleanCustomerNotes(order.notes) ? (
                             <Text style={[styles.notesText, { color: colors.textSub }]}>
-                              Notes: "{order.notes}"
+                              Customer Instructions: "{getCleanCustomerNotes(order.notes)}"
                             </Text>
                           ) : null}
 
@@ -1196,6 +1454,65 @@ export default function OwnerDashboard() {
                               <Text style={[styles.btnText, { color: colors.textMain }]}>Assign Rider</Text>
                             </TouchableOpacity>
                           )}
+
+                          {/* Owner Refund Option or Detailed Refund Completed Card */}
+                          {(() => {
+                            const refDetails = parsePaymentAndRefundDetails(order.notes, order.created_at);
+                            if (refDetails.isRefunded) {
+                              const isWallet = refDetails.isWalletRefund;
+                              return (
+                                <View style={{
+                                  backgroundColor: isWallet ? 'rgba(212, 175, 55, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                                  borderColor: isWallet ? colors.accentGold : '#10B981',
+                                  borderWidth: 1,
+                                  borderRadius: 12,
+                                  padding: 12,
+                                  gap: 6,
+                                  width: '100%',
+                                  marginTop: 4
+                                }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                      <CheckCircle size={14} color={isWallet ? colors.accentGold : '#10B981'} />
+                                      <Text style={{ color: isWallet ? colors.accentGold : '#10B981', fontSize: 12, fontWeight: '900' }}>
+                                        {isWallet ? 'WALLET REFUND' : 'BANK REFUND'} ({refDetails.refundPercent}%)
+                                      </Text>
+                                    </View>
+                                    <Text style={{ color: isWallet ? colors.accentGold : '#10B981', fontSize: 14, fontWeight: '900' }}>
+                                      +₹{refDetails.refundAmount || order.total_amount}
+                                    </Text>
+                                  </View>
+
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                                    {isWallet ? (
+                                      <Text style={{ color: colors.textSub, fontSize: 10 }}>
+                                        Method: <Text style={{ color: colors.accentGold, fontWeight: '800' }}>⚡ Instant Hotel Bet Money</Text>
+                                      </Text>
+                                    ) : (
+                                      <Text style={{ color: colors.textSub, fontSize: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                                        UTR / Txn ID: <Text style={{ color: colors.textMain, fontWeight: '800' }}>{refDetails.txnId || 'N/A'}</Text>
+                                      </Text>
+                                    )}
+                                    <Text style={{ color: colors.textSub, fontSize: 10 }}>
+                                      {isWallet ? 'No bank action needed' : <>Mode: <Text style={{ color: colors.accentGold, fontWeight: '800' }}>{refDetails.paymentMode}</Text></>}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            } else {
+                              return (
+                                <TouchableOpacity 
+                                  style={[styles.actionBtn, { borderColor: '#EF4444' }]}
+                                  onPress={() => setOwnerRefundModalOrder(order)}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={[styles.btnText, { color: '#EF4444' }]}>
+                                    {order.status === 'cancelled' ? 'Issue Bank Refund' : 'Cancel & Refund'}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            }
+                          })()}
                         </View>
                       </View>
                     </AnimatedEntrance>
@@ -1425,18 +1742,37 @@ export default function OwnerDashboard() {
                 placeholderTextColor="#8E8E93"
               />
 
-              <View style={styles.menuFormRow}>
-                <TextInput 
-                  style={[styles.menuFormInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain, marginBottom: 0 }]}
-                  value={newItemPrice}
-                  onChangeText={setNewItemPrice}
-                  placeholder="Price (₹)..."
-                  placeholderTextColor="#8E8E93"
-                  keyboardType="numeric"
-                />
+              {/* App Price & Zomato Price side-by-side row */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.accentGold, marginBottom: 4 }}>APP PRICE (₹)</Text>
+                  <TextInput 
+                    style={[styles.menuFormInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.accentGold, fontWeight: '800', marginBottom: 0 }]}
+                    value={newItemPrice}
+                    onChangeText={setNewItemPrice}
+                    placeholder="e.g. 249"
+                    placeholderTextColor="#8E8E93"
+                    keyboardType="numeric"
+                  />
+                </View>
 
-                {/* Category Selector Segment */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1.5 }} contentContainerStyle={{ gap: 4, alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#EF4444', marginBottom: 4 }}>ZOMATO PRICE (₹)</Text>
+                  <TextInput 
+                    style={[styles.menuFormInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: '#EF4444', fontWeight: '800', marginBottom: 0 }]}
+                    value={newItemZomatoPrice}
+                    onChangeText={setNewItemZomatoPrice}
+                    placeholder="e.g. 350"
+                    placeholderTextColor="#8E8E93"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              {/* Category Selector Row */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, marginBottom: 6 }}>Category:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>
                   {MENU_CATEGORIES.map((cat) => (
                     <TouchableOpacity
                       key={cat}
@@ -1586,16 +1922,28 @@ export default function OwnerDashboard() {
                           </Text>
                         </View>
 
-                        {/* Price, Description & Image edits */}
+                        {/* Price & Zomato Price Grid Row */}
                         <View style={{ marginTop: 10, gap: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSub, width: 70 }}>Price (₹):</Text>
-                            <TextInput 
-                              style={[styles.menuEditInput, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }]}
-                              value={currentPrice}
-                              onChangeText={(text) => setEditPrices(prev => ({ ...prev, [item.id]: text }))}
-                              keyboardType="numeric"
-                            />
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '800', color: colors.accentGold, marginBottom: 3, letterSpacing: 0.5 }}>APP PRICE (₹)</Text>
+                              <TextInput 
+                                style={[styles.menuEditInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.accentGold, fontWeight: '800' }]}
+                                value={currentPrice}
+                                onChangeText={(text) => setEditPrices(prev => ({ ...prev, [item.id]: text }))}
+                                keyboardType="numeric"
+                              />
+                            </View>
+
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '800', color: '#EF4444', marginBottom: 3, letterSpacing: 0.5 }}>ZOMATO PRICE (₹)</Text>
+                              <TextInput 
+                                style={[styles.menuEditInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: '#EF4444', fontWeight: '800' }]}
+                                value={editZomatoPrices[item.id] || ''}
+                                onChangeText={(text) => setEditZomatoPrices(prev => ({ ...prev, [item.id]: text }))}
+                                keyboardType="numeric"
+                              />
+                            </View>
                           </View>
 
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -2116,6 +2464,15 @@ export default function OwnerDashboard() {
                   const matchesSearch = !promoSearchQuery || p.code.toLowerCase().includes(promoSearchQuery.toLowerCase());
                   const matchesFilter = promoFilterStatus === 'ALL' || p.status === promoFilterStatus;
                   return matchesSearch && matchesFilter;
+                }).sort((a, b) => {
+                  if (a.status === 'used' && b.status === 'used') {
+                    const timeA = typeof a.usedAt === 'string' ? new Date(a.usedAt).getTime() : 0;
+                    const timeB = typeof b.usedAt === 'string' ? new Date(b.usedAt).getTime() : 0;
+                    return timeB - timeA;
+                  }
+                  if (a.status === 'used') return -1;
+                  if (b.status === 'used') return 1;
+                  return 0;
                 })}
                 keyExtractor={(item) => item.code}
                 contentContainerStyle={{ gap: 8, paddingBottom: 20 }}
@@ -2131,10 +2488,10 @@ export default function OwnerDashboard() {
                   return (
                     <View
                       style={{
-                        backgroundColor: colors.cardBg,
+                        backgroundColor: isUsed ? 'rgba(16, 185, 129, 0.05)' : colors.cardBg,
                         borderRadius: 14,
                         borderWidth: 1,
-                        borderColor: colors.cardBorder,
+                        borderColor: isUsed ? '#10B981' : colors.cardBorder,
                         padding: 12,
                         gap: 10,
                       }}
@@ -2178,6 +2535,25 @@ export default function OwnerDashboard() {
                           </Text>
                         </View>
                       </View>
+
+                      {/* Display Redemption Details if Used */}
+                      {isUsed && (
+                        <View style={{
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                          borderRadius: 8,
+                          padding: 8,
+                          gap: 2
+                        }}>
+                          <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>
+                            Redeemed By: <Text style={{ color: colors.textMain }}>{item.usedBy || 'Customer Order'}</Text>
+                          </Text>
+                          {item.usedAt && (
+                            <Text style={{ color: colors.textSub, fontSize: 10, fontStyle: 'italic' }}>
+                              Date: {new Date(item.usedAt).toLocaleString('en-IN')}
+                            </Text>
+                          )}
+                        </View>
+                      )}
 
                       {/* Divider Line */}
                       <View style={{ height: 0.8, backgroundColor: colors.cardBorder, opacity: 0.5 }} />
@@ -2984,6 +3360,163 @@ export default function OwnerDashboard() {
         </View>
       </Modal>
 
+      {/* Owner Refund Selection Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={!!ownerRefundModalOrder}
+        onRequestClose={() => setOwnerRefundModalOrder(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={[styles.modalContent, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.96)' : 'rgba(255, 255, 255, 0.98)', maxWidth: 360, padding: 20 }]}>
+            <Text style={{ color: colors.accentGold, fontSize: 13, fontWeight: '900', letterSpacing: 1, marginBottom: 4 }}>
+              ISSUE DIRECT BANK REFUND
+            </Text>
+            
+            {ownerRefundModalOrder && (
+              <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginBottom: 12, lineHeight: 16 }}>
+                Refunds are paid directly to customer's bank / original payment mode for Order <Text style={{ color: colors.accentGold, fontWeight: '800' }}>#{ownerRefundModalOrder.id.slice(0, 8).toUpperCase()}</Text> (Total: ₹{ownerRefundModalOrder.total_amount})
+              </Text>
+            )}
+
+            {/* Same-Day Restriction Alert */}
+            {ownerRefundModalOrder && !isOwnerSameDay(ownerRefundModalOrder.created_at) && (
+              <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: '#EF4444', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 12, width: '100%' }}>
+                <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800', textAlign: 'center' }}>
+                  🚫 SAME-DAY REFUND WINDOW EXPIRED
+                </Text>
+                <Text style={{ color: colors.textSub, fontSize: 10, textAlign: 'center', marginTop: 2 }}>
+                  Orders can only be refunded on the day of purchase. (Placed on: {new Date(ownerRefundModalOrder.created_at).toLocaleDateString()})
+                </Text>
+              </View>
+            )}
+
+            {/* Bank / Razorpay Transaction Reference Input */}
+            {ownerRefundModalOrder && isOwnerSameDay(ownerRefundModalOrder.created_at) && (
+              <View style={{ width: '100%', marginBottom: 14 }}>
+                <Text style={{ color: ownerTxnRefId.trim() ? colors.accentGold : '#EF4444', fontSize: 10, fontWeight: '900', marginBottom: 4 }}>
+                  BANK / UTR TRANSACTION REFERENCE ID * (REQUIRED)
+                </Text>
+                <TextInput
+                  style={{
+                    borderRadius: 10,
+                    borderWidth: 1.5,
+                    paddingHorizontal: 12,
+                    backgroundColor: colors.inputBg,
+                    borderColor: ownerTxnRefId.trim() ? colors.accentGold : '#EF4444',
+                    color: colors.textMain,
+                    height: 44,
+                    fontSize: 12,
+                    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                  }}
+                  placeholder="Enter UTR / Txn ID (e.g. UTR98432019)"
+                  placeholderTextColor={colors.textSub}
+                  value={ownerTxnRefId}
+                  onChangeText={setOwnerTxnRefId}
+                />
+                {!ownerTxnRefId.trim() && (
+                  <Text style={{ color: '#EF4444', fontSize: 9, fontWeight: '700', marginTop: 4 }}>
+                    ⚠️ Required: Type Bank UTR / Reference ID to enable refund buttons.
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {ownerRefundModalOrder && isOwnerSameDay(ownerRefundModalOrder.created_at) && (
+              <View style={{ width: '100%', gap: 10, marginBottom: 16 }}>
+                {/* 100% Full Refund Option */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={!ownerTxnRefId.trim()}
+                  onPress={() => handleOwnerIssueRefund(ownerRefundModalOrder, 100)}
+                  style={{
+                    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                    borderColor: '#10B981',
+                    borderWidth: 1.2,
+                    borderRadius: 14,
+                    padding: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    opacity: ownerTxnRefId.trim() ? 1 : 0.45,
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900' }}>100% Full Bank Refund</Text>
+                    <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2 }}>Order not accepted / Full customer payout</Text>
+                  </View>
+                  <Text style={{ color: '#10B981', fontSize: 15, fontWeight: '900' }}>
+                    ₹{ownerRefundModalOrder.total_amount}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 70% Kitchen Refund Option */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={!ownerTxnRefId.trim()}
+                  onPress={() => handleOwnerIssueRefund(ownerRefundModalOrder, 70)}
+                  style={{
+                    backgroundColor: 'rgba(212, 175, 55, 0.12)',
+                    borderColor: colors.accentGold,
+                    borderWidth: 1.2,
+                    borderRadius: 14,
+                    padding: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    opacity: ownerTxnRefId.trim() ? 1 : 0.45,
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ color: colors.accentGold, fontSize: 12, fontWeight: '900' }}>70% Kitchen Refund</Text>
+                    <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2 }}>Cooking started / Partial prep retained</Text>
+                  </View>
+                  <Text style={{ color: colors.accentGold, fontSize: 15, fontWeight: '900' }}>
+                    ₹{Math.round(ownerRefundModalOrder.total_amount * 0.70)}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 50% Dispatch Refund Option */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={!ownerTxnRefId.trim()}
+                  onPress={() => handleOwnerIssueRefund(ownerRefundModalOrder, 50)}
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    borderColor: '#EF4444',
+                    borderWidth: 1.2,
+                    borderRadius: 14,
+                    padding: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    opacity: ownerTxnRefId.trim() ? 1 : 0.45,
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '900' }}>50% Dispatch Refund</Text>
+                    <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2 }}>Out for delivery / Rider dispatch retained</Text>
+                  </View>
+                  <Text style={{ color: '#EF4444', fontSize: 15, fontWeight: '900' }}>
+                    ₹{Math.round(ownerRefundModalOrder.total_amount * 0.50)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={{ width: '100%', height: 42, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => {
+                setOwnerRefundModalOrder(null);
+                setOwnerTxnRefId('');
+              }}
+            >
+              <Text style={{ color: colors.textMain, fontWeight: '700', fontSize: 12 }}>Close</Text>
+            </TouchableOpacity>
+          </BlurView>
+        </View>
+      </Modal>
+
       {/* Rider Revoke Confirmation Card Modal */}
       <Modal
         animationType="fade"
@@ -3193,11 +3726,11 @@ export default function OwnerDashboard() {
                         </TouchableOpacity>
                       ) : null}
                     </View>
-                    {selectedDetailOrder.notes ? (
+                    {getCleanCustomerNotes(selectedDetailOrder.notes) ? (
                       <View style={{ marginTop: 8, borderTopWidth: 0.8, borderTopColor: colors.cardBorder, paddingTop: 8 }}>
-                        <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Instruction Notes:</Text>
+                        <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Customer Instruction Notes:</Text>
                         <Text style={{ fontSize: 12, color: colors.textMain, fontStyle: 'italic', marginTop: 2 }}>
-                          "{selectedDetailOrder.notes}"
+                          "{getCleanCustomerNotes(selectedDetailOrder.notes)}"
                         </Text>
                       </View>
                     ) : null}
@@ -3234,41 +3767,126 @@ export default function OwnerDashboard() {
                       );
                     })}
 
+                    {/* Complementary Gift Badge in Invoice */}
+                    {(() => {
+                      const reward = parseComplementaryReward(selectedDetailOrder.notes);
+                      if (!reward) return null;
+                      return (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 8,
+                          backgroundColor: 'rgba(212, 175, 55, 0.14)',
+                          borderWidth: 1.2,
+                          borderColor: colors.accentGold,
+                          borderRadius: 12,
+                          padding: 10,
+                          marginTop: 10,
+                        }}>
+                          <Gift size={16} color={colors.accentGold} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>
+                              COMPLEMENTARY REWARD
+                            </Text>
+                            <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800', marginTop: 2 }}>
+                              {reward.item}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })()}
+
                     <View style={[styles.invoiceDivider, { backgroundColor: colors.cardBorder }]} />
 
-                    {/* Subtotal, GST, Delivery Fee, Tips, Total */}
+                    {/* Subtotal, Platform Fee, COD Fee, Delivery Fee, Discounts, Total */}
                     {(() => {
-                      const subtotal = selectedDetailOrder.order_items?.reduce((sum, item) => sum + (item.quantity * item.price_at_order), 0) || 0;
-                      const gst = Math.round(subtotal * 0.05);
-                      const deliveryFee = 150;
+                      const notesStr = selectedDetailOrder.notes || '';
+                      const breakdownMatch = notesStr.match(/\[BILL_BREAKDOWN:\s*subtotal=(\d+)\s*\|\s*platformFee=(\d+)\s*\|\s*deliveryFee=(\d+)\s*\|\s*codFee=(\d+)\s*\|\s*promoDiscount=(\d+)\s*\|\s*walletDiscount=(\d+)\s*\|\s*total=(\d+)\]/i);
+
+                      let sub = 0;
+                      let plat = 15;
+                      let del = 40;
+                      let cod = (!notesStr.includes('ONLINE') && !notesStr.includes('Razorpay')) ? 12 : 0;
+                      let promo = 0;
+                      let wallet = 0;
+                      let grandTot = parseFloat(selectedDetailOrder.total_amount as any) || 0;
+
+                      if (breakdownMatch) {
+                        sub = parseInt(breakdownMatch[1]);
+                        plat = parseInt(breakdownMatch[2]);
+                        del = parseInt(breakdownMatch[3]);
+                        cod = parseInt(breakdownMatch[4]);
+                        promo = parseInt(breakdownMatch[5]);
+                        wallet = parseInt(breakdownMatch[6]);
+                        grandTot = parseInt(breakdownMatch[7]);
+                      } else {
+                        sub = selectedDetailOrder.order_items?.reduce((sum: number, i: any) => sum + (i.quantity * i.price_at_order), 0) || grandTot;
+                        const promoM = notesStr.match(/\[PROMO CODE:\s*[^\s\]]+\s*\(-₹(\d+)\)\]/i) || notesStr.match(/\[PROMO_CODE:\s*[^\s\]]+\s*\(-₹(\d+)\)\]/i);
+                        if (promoM) promo = parseInt(promoM[1]);
+                        
+                        const gross = sub + plat + del + cod - promo;
+                        if (gross > grandTot) {
+                          wallet = gross - grandTot;
+                        }
+                      }
+
                       const tip = selectedDetailOrder.tip_amount || 0;
-                      const calculatedTotal = subtotal + gst + deliveryFee + tip;
-                      
+
                       return (
                         <>
                           <View style={styles.modalInfoRow}>
                             <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Subtotal:</Text>
-                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{subtotal.toLocaleString()}</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{sub.toLocaleString()}</Text>
                           </View>
-                          <View style={styles.modalInfoRow}>
-                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>GST (5%):</Text>
-                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{gst.toLocaleString()}</Text>
-                          </View>
-                          <View style={styles.modalInfoRow}>
-                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Delivery Fee:</Text>
-                            <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{deliveryFee}</Text>
-                          </View>
-                          <View style={styles.modalInfoRow}>
-                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Doorstep Tip:</Text>
-                            <Text style={[styles.modalInfoValue, { color: colors.statusGreen }]}>+₹{tip.toLocaleString()}</Text>
-                          </View>
+
+                          {plat > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Platform Fee:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{plat}</Text>
+                            </View>
+                          )}
+
+                          {cod > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.accentGold }]}>COD Handling Fee:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.accentGold, fontWeight: '800' }]}>+₹{cod}</Text>
+                            </View>
+                          )}
+
+                          {del > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Delivery Fee:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.textMain }]}>₹{del}</Text>
+                            </View>
+                          )}
+
+                          {promo > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.statusGreen }]}>Promo Discount:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.statusGreen, fontWeight: '800' }]}>-₹{promo}</Text>
+                            </View>
+                          )}
+
+                          {wallet > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.accentGold }]}>Wallet Balance Applied:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.accentGold, fontWeight: '800' }]}>-₹{wallet}</Text>
+                            </View>
+                          )}
+
+                          {tip > 0 && (
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Doorstep Tip:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.statusGreen }]}>+₹{tip.toLocaleString()}</Text>
+                            </View>
+                          )}
 
                           <View style={[styles.invoiceDivider, { backgroundColor: colors.cardBorder }]} />
 
                           <View style={styles.modalInfoRow}>
                             <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textMain }}>Grand Total:</Text>
                             <Text style={{ fontSize: 16, fontWeight: '900', color: colors.accentGold }}>
-                              ₹{calculatedTotal.toLocaleString()}
+                              ₹{(grandTot + tip).toLocaleString()}
                             </Text>
                           </View>
                         </>
@@ -3276,6 +3894,86 @@ export default function OwnerDashboard() {
                     })()}
                   </View>
                 </View>
+
+                {(() => {
+                  const ref = parsePaymentAndRefundDetails(selectedDetailOrder.notes, selectedDetailOrder.created_at);
+                  const tipDetails = parseTipPaymentDetails(selectedDetailOrder.notes, selectedDetailOrder.tip_amount);
+                  return (
+                    <View style={styles.modalSection}>
+                      <Text style={[styles.modalSectionTitle, { color: colors.accentGold }]}>ORDER BILL PAYMENT DETAILS</Text>
+                      <View style={[styles.modalInvoiceCard, { backgroundColor: isDark ? 'rgba(212, 175, 55, 0.05)' : 'rgba(212, 175, 55, 0.08)', borderColor: colors.cardBorder }]}>
+                        <View style={styles.modalInfoRow}>
+                          <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Bill Payment Method:</Text>
+                          <Text style={[styles.modalInfoValue, { color: colors.textMain, fontWeight: '800' }]}>{ref.paymentMode}</Text>
+                        </View>
+                        {ref.razorpayId ? (
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Bill Razorpay ID:</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.accentGold, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }]}>
+                              {ref.razorpayId}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {ref.isRefunded ? (
+                          <>
+                            <View style={[styles.invoiceDivider, { backgroundColor: colors.cardBorder, marginVertical: 8 }]} />
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Bank Refund Status:</Text>
+                              <Text style={[styles.modalInfoValue, { color: '#10B981', fontWeight: '900' }]}>REFUND COMPLETED ✓</Text>
+                            </View>
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Refund Amount:</Text>
+                              <Text style={[styles.modalInfoValue, { color: '#10B981', fontWeight: '900' }]}>
+                                ₹{ref.refundAmount || selectedDetailOrder.total_amount} ({ref.refundPercent}% Refund)
+                              </Text>
+                            </View>
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Bank UTR Reference ID:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.textMain, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }]}>
+                                {ref.txnId || 'N/A'}
+                              </Text>
+                            </View>
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Refund Processed On:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.textSub }]}>{ref.refundDate}</Text>
+                            </View>
+                          </>
+                        ) : (
+                          <View style={styles.modalInfoRow}>
+                            <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Bank Refund Status:</Text>
+                            <Text style={[styles.modalInfoValue, { color: colors.textSub }]}>No Refund Initiated</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Separate Doorstep Tip Payment Details Box */}
+                      {tipDetails ? (
+                        <View style={{ marginTop: 12 }}>
+                          <Text style={[styles.modalSectionTitle, { color: colors.statusGreen }]}>DOORSTEP TIP PAYMENT DETAILS</Text>
+                          <View style={[styles.modalInvoiceCard, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.25)' }]}>
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Tip Amount Paid:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.statusGreen, fontWeight: '900' }]}>+₹{tipDetails.amount}</Text>
+                            </View>
+                            <View style={styles.modalInfoRow}>
+                              <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Tip Payment Method:</Text>
+                              <Text style={[styles.modalInfoValue, { color: colors.textMain, fontWeight: '800' }]}>{tipDetails.paymentMode}</Text>
+                            </View>
+                            {tipDetails.razorpayId ? (
+                              <View style={styles.modalInfoRow}>
+                                <Text style={[styles.modalInfoLabel, { color: colors.textSub }]}>Tip Razorpay ID:</Text>
+                                <Text style={[styles.modalInfoValue, { color: colors.accentGold, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }]}>
+                                  {tipDetails.razorpayId}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })()}
 
                 {/* Section: Rider Information */}
                 {selectedDetailOrder.deliveries ? (

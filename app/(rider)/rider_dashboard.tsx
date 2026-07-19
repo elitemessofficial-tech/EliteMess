@@ -17,7 +17,7 @@ import FloatingHeader from '../../components/FloatingHeader';
 import Loader from '../../components/Loader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Home, ShoppingBag, Navigation, MapPin, Sun, Moon, LogOut, PackageCheck, ClipboardCheck, DollarSign, CheckCircle, AlertCircle, ShieldCheck, ChevronDown } from 'lucide-react-native';
+import { User, Home, ShoppingBag, Navigation, MapPin, Sun, Moon, LogOut, PackageCheck, ClipboardCheck, DollarSign, CheckCircle, AlertCircle, ShieldCheck, ChevronDown, Gift } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
@@ -79,15 +79,29 @@ export default function RiderDashboard() {
     if (!lat || !lng) return;
     const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
     const latLng = `${lat},${lng}`;
-    const label = 'Delivery Location';
+    const label = 'Customer Delivery Location';
     const url = Platform.select({
       ios: `${scheme}${label}@${latLng}`,
       android: `${scheme}${latLng}(${label})`,
       web: `https://www.google.com/maps/search/?api=1&query=${latLng}`
     });
     if (url) {
-      Linking.openURL(url);
+      Linking.openURL(url).catch(err => console.error('Error opening maps:', err));
     }
+  };
+
+  const getCleanCustomerNotes = (notes?: string) => {
+    if (!notes) return '';
+    return notes
+      .replace(/\[BANK_REFUND:[^\]]+\]/g, '')
+      .replace(/\[WALLET_REFUND:[^\]]+\]/g, '')
+      .replace(/\[PAYMENT:[^\]]+\]/g, '')
+      .replace(/\[PROMO_CODE:[^\]]+\]/g, '')
+      .replace(/\[BILL_BREAKDOWN:[^\]]+\]/g, '')
+      .replace(/\[FREE Complementary Gift:[^\]]+\]/g, '')
+      .replace(/\[REWARD:[^\]]+\]/g, '')
+      .replace(/\[TIP_PAYMENT:[^\]]+\]/g, '')
+      .trim();
   };
 
   // Segment Tab & Earnings states
@@ -113,6 +127,8 @@ export default function RiderDashboard() {
   const [otpCorrectValue, setOtpCorrectValue] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const [codTargetDetails, setCodTargetDetails] = useState<{ isCod: boolean; totalAmount: number }>({ isCod: false, totalAmount: 0 });
+  const [codCashCollectedChecked, setCodCashCollectedChecked] = useState<boolean>(false);
   const otpRefs = React.useRef<Array<any>>([]);
 
   // Custom Toast/Alert State
@@ -504,13 +520,21 @@ export default function RiderDashboard() {
     }
   };
 
-  const handleCompleteDeliveryInitiate = (deliveryId: string, orderId: string, correctOtp: string) => {
+  const handleCompleteDeliveryInitiate = (deliveryId: string, orderId: string, correctOtp: string, notes?: string, totalAmount?: number) => {
     setOtpTargetDeliveryId(deliveryId);
     setOtpTargetOrderId(orderId);
     setOtpCorrectValue(correctOtp || 'LEGACY_BYPASS');
     setOtpDigits(Array(8).fill(''));
     setOtpError(null);
     setFocusedIndex(0);
+
+    const isCodOrder = !notes?.includes('ONLINE') && !notes?.includes('Razorpay');
+    setCodTargetDetails({
+      isCod: isCodOrder,
+      totalAmount: totalAmount || 0
+    });
+    setCodCashCollectedChecked(false);
+
     setOtpModalVisible(true);
     setTimeout(() => {
       otpRefs.current[0]?.focus();
@@ -567,6 +591,11 @@ export default function RiderDashboard() {
     const otpInputCombined = activeDigits.join('');
     const cleanInput = otpInputCombined.trim();
     const cleanCorrect = otpCorrectValue.trim();
+
+    if (codTargetDetails.isCod && !codCashCollectedChecked) {
+      setOtpError(`Cash Collection Verification Required: Please tick the box confirming you collected ₹${codTargetDetails.totalAmount.toLocaleString()} cash in hand from customer.`);
+      return;
+    }
 
     if (!isLegacy && cleanInput !== cleanCorrect) {
       setOtpError('The verification OTP is incorrect. Please check and try again.');
@@ -725,17 +754,75 @@ export default function RiderDashboard() {
                           </View>
                         </View>
     
-                        {activeTask.orders.notes ? (
+                        {getCleanCustomerNotes(activeTask.orders.notes) ? (
                           <>
                             <View style={[styles.divider, { backgroundColor: colors.cardBorder }]} />
-                            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
+                            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>DELIVERY INSTRUCTIONS</Text>
                             <Text style={[styles.deliveryNotesText, { color: colors.textSub }]}>
-                              "{activeTask.orders.notes}"
+                              "{getCleanCustomerNotes(activeTask.orders.notes)}"
                             </Text>
                           </>
                         ) : null}
                         </TouchableOpacity>
     
+                        {/* PAYMENT COLLECTION STEP BANNER */}
+                        {(() => {
+                          const notesStr = activeTask.orders.notes || '';
+                          const isCod = !notesStr.includes('ONLINE') && !notesStr.includes('Razorpay');
+                          const totAmt = parseFloat(activeTask.orders.total_amount as any);
+
+                          if (isCod) {
+                            return (
+                              <View style={{
+                                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.05)',
+                                borderColor: 'rgba(239, 68, 68, 0.3)',
+                                borderWidth: 1,
+                                borderRadius: 12,
+                                paddingHorizontal: 12,
+                                paddingVertical: 10,
+                                marginTop: 12,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                              }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <DollarSign size={14} color="#EF4444" />
+                                  <Text style={{ color: '#EF4444', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
+                                    COD · COLLECT CASH
+                                  </Text>
+                                </View>
+                                <Text style={{ color: '#EF4444', fontSize: 14, fontWeight: '900' }}>
+                                  ₹{totAmt.toLocaleString()}
+                                </Text>
+                              </View>
+                            );
+                          } else {
+                            return (
+                              <View style={{
+                                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                borderColor: '#10B981',
+                                borderWidth: 1,
+                                borderRadius: 12,
+                                padding: 10,
+                                marginTop: 14,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                              }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <CheckCircle size={14} color="#10B981" />
+                                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900' }}>
+                                    ONLINE PAID VIA RAZORPAY ✓
+                                  </Text>
+                                </View>
+                                <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '700' }}>
+                                  DO NOT COLLECT CASH
+                                </Text>
+                              </View>
+                            );
+                          }
+                        })()}
+
                         {/* Action Buttons */}
                         <View style={styles.riderActionsRow}>
                           {activeTask.status === 'assigned' && (
@@ -751,7 +838,7 @@ export default function RiderDashboard() {
                           {activeTask.status === 'picked_up' && (
                             <TouchableOpacity 
                               style={[styles.riderActionBtn, { backgroundColor: colors.statusGreen }]}
-                              onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '')}
+                              onPress={() => handleCompleteDeliveryInitiate(activeTask.id, activeTask.orders.id, activeTask.orders.delivery_otp || '', activeTask.orders.notes, parseFloat(activeTask.orders.total_amount as any))}
                               activeOpacity={0.8}
                             >
                               <Text style={[styles.riderActionBtnText, { color: '#FFFFFF' }]}>Complete Delivery</Text>
@@ -867,9 +954,14 @@ export default function RiderDashboard() {
                           </View>
                           <View style={{ alignItems: 'flex-end' }}>
                             <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                              +₹150
+                              +₹{40 + (delivery.orders?.tip_amount || 0)}
                             </Text>
                             <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800' }}>DELIVERED</Text>
+                            {delivery.orders?.tip_amount && delivery.orders.tip_amount > 0 ? (
+                              <Text style={{ fontSize: 9, color: '#10B981', fontWeight: '800', marginTop: 2 }}>
+                                +₹{delivery.orders.tip_amount} Tip
+                              </Text>
+                            ) : null}
                           </View>
                         </TouchableOpacity>
                       </AnimatedEntrance>
@@ -887,7 +979,7 @@ export default function RiderDashboard() {
                 <Text style={[styles.listHeaderTitle, { color: colors.accentGold }]}>MY EARNINGS</Text>
                 <View style={[styles.liveDot, { backgroundColor: colors.statusGreen }]} />
               </View>
-              <Text style={[styles.realtimeText, { color: colors.textSub }]}>Flat ₹150 / delivery</Text>
+              <Text style={[styles.realtimeText, { color: colors.textSub }]}>Flat ₹40 / delivery</Text>
             </View>
 
             {/* Earnings Sort / Filter Dropdown */}
@@ -980,7 +1072,7 @@ export default function RiderDashboard() {
 
             {/* Earnings Stats Cards */}
             {(() => {
-              const basePayout = filteredDeliveries.length * 150;
+              const basePayout = filteredDeliveries.length * 40;
               const totalTips = filteredDeliveries.reduce((sum, item) => sum + (item.orders?.tip_amount || 0), 0);
               const totalPayout = basePayout + totalTips;
 
@@ -1048,7 +1140,7 @@ export default function RiderDashboard() {
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: 14, fontWeight: '900', color: colors.accentGold }}>
-                            +₹{150 + (delivery.orders?.tip_amount || 0)}
+                            +₹{40 + (delivery.orders?.tip_amount || 0)}
                           </Text>
                           {delivery.orders?.tip_amount > 0 && (
                             <Text style={{ fontSize: 9, color: colors.statusGreen, fontWeight: '800', marginVertical: 2 }}>
@@ -1082,6 +1174,82 @@ export default function RiderDashboard() {
                 ? "This is a legacy order. Click verify to proceed."
                 : "Ask the customer for the 8-digit verification code displayed on their device."}
             </Text>
+            
+            {/* CASH COLLECTION VERIFICATION STEP */}
+            {codTargetDetails.isCod ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setCodCashCollectedChecked(!codCashCollectedChecked)}
+                style={{
+                  width: '100%',
+                  marginVertical: 12,
+                  padding: 12,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: codCashCollectedChecked ? '#10B981' : 'rgba(239, 68, 68, 0.4)',
+                  backgroundColor: codCashCollectedChecked 
+                    ? (isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.06)')
+                    : (isDark ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.05)'),
+                  gap: 8
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ 
+                    color: codCashCollectedChecked ? '#10B981' : '#EF4444', 
+                    fontSize: 10, 
+                    fontWeight: '800', 
+                    letterSpacing: 0.5 
+                  }}>
+                    {codCashCollectedChecked ? 'CASH COLLECTED ✓' : 'COD CASH COLLECTION'}
+                  </Text>
+                  <Text style={{ 
+                    color: codCashCollectedChecked ? '#10B981' : '#EF4444', 
+                    fontSize: 14, 
+                    fontWeight: '900' 
+                  }}>
+                    COLLECT ₹{codTargetDetails.totalAmount.toLocaleString()}
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: codCashCollectedChecked ? '#10B981' : '#8E8E93',
+                    backgroundColor: codCashCollectedChecked ? '#10B981' : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {codCashCollectedChecked && <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '900' }}>✓</Text>}
+                  </View>
+                  <Text style={{ color: colors.textMain, fontSize: 11, fontWeight: '700', flex: 1 }}>
+                    I have collected ₹{codTargetDetails.totalAmount.toLocaleString()} cash from customer.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={{
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                borderColor: '#10B981',
+                borderWidth: 1,
+                borderRadius: 12,
+                padding: 10,
+                marginVertical: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%'
+              }}>
+                <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900' }}>
+                  ✓ PAID ONLINE VIA RAZORPAY
+                </Text>
+                <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '700' }}>
+                  DO NOT COLLECT CASH
+                </Text>
+              </View>
+            )}
             
             {otpCorrectValue === 'LEGACY_BYPASS' ? (
               <View style={[styles.otpContainer, { justifyContent: 'center' }]}>
@@ -1234,7 +1402,7 @@ export default function RiderDashboard() {
                             Exact Location (Coordinates):
                           </Text>
                           <Text style={{ fontSize: 12, fontWeight: '800', color: colors.accentGold, marginTop: 2 }}>
-                            📍 {orderData.delivery_latitude.toFixed(6)}, {orderData.delivery_longitude.toFixed(6)}
+                           {orderData.delivery_latitude.toFixed(6)}, {orderData.delivery_longitude.toFixed(6)}
                           </Text>
                           
                           <TouchableOpacity 
@@ -1269,11 +1437,73 @@ export default function RiderDashboard() {
                       )}
                     </View>
 
-                    {orderData.notes ? (
+                    {/* Doorstep Tip Collected Card */}
+                    {(() => {
+                      const tipAmt = orderData.tip_amount;
+                      if (!tipAmt || tipAmt <= 0) return null;
+                      const tipMatch = orderData.notes ? orderData.notes.match(/\[TIP_PAYMENT:\s*₹?(\d+)\s*via\s*Razorpay ID:\s*([^\]\s]+)\]/i) : null;
+                      const razorpayId = tipMatch ? tipMatch[2].trim() : null;
+
+                      return (
+                        <View style={{
+                          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                          borderWidth: 1.2,
+                          borderColor: 'rgba(16, 185, 129, 0.3)',
+                          borderRadius: 14,
+                          padding: 12,
+                          marginTop: 10,
+                          gap: 6
+                        }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                              DOORSTEP TIP COLLECTED
+                            </Text>
+                            <Text style={{ color: '#10B981', fontSize: 15, fontWeight: '900' }}>
+                              +₹{tipAmt}
+                            </Text>
+                          </View>
+                          <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '700' }}>
+                            Payment Gateway: ONLINE (Razorpay)
+                          </Text>
+                          {razorpayId ? (
+                            <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                              Razorpay Payment ID: {razorpayId}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })()}
+                    {(() => {
+                      if (!orderData.notes) return null;
+                      const giftMatch = orderData.notes.match(/\[FREE Complementary Gift:\s*([^\]]+)\]/i) || orderData.notes.match(/\[REWARD:\s*([^\]]+)\]/i);
+                      if (!giftMatch) return null;
+                      return (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          backgroundColor: 'rgba(212, 175, 55, 0.12)',
+                          borderWidth: 1,
+                          borderColor: colors.accentGold,
+                          borderRadius: 10,
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          marginTop: 8,
+                          marginBottom: 4,
+                        }}>
+                          <Gift size={14} color={colors.accentGold} />
+                          <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '900' }}>
+                            FREE Gift: <Text style={{ color: colors.textMain, fontWeight: '800' }}>{giftMatch[1].trim()}</Text>
+                          </Text>
+                        </View>
+                      );
+                    })()}
+
+                    {getCleanCustomerNotes(orderData.notes) ? (
                       <View style={styles.detailBlock}>
-                        <Text style={[styles.detailLabel, { color: colors.accentGold }]}>DELIVERY NOTES</Text>
+                        <Text style={[styles.detailLabel, { color: colors.accentGold }]}>DELIVERY INSTRUCTIONS</Text>
                         <Text style={[styles.detailSubText, { color: colors.textSub, fontStyle: 'italic' }]}>
-                          "{orderData.notes}"
+                          "{getCleanCustomerNotes(orderData.notes)}"
                         </Text>
                       </View>
                     ) : null}

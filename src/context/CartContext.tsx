@@ -9,6 +9,7 @@ export interface MenuItem {
   category: string;
   is_available?: boolean;
   branch_id?: string;
+  image_url?: string | null;
 }
 
 interface CartContextType {

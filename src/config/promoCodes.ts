@@ -130,7 +130,50 @@ export async function getOwnerPromoCodesList(): Promise<PromoCodeItem[]> {
     const usedCodesStr = await AsyncStorage.getItem(USED_PROMO_CODES_KEY);
     const usedCodes: string[] = usedCodesStr ? JSON.parse(usedCodesStr) : [];
 
-    return INITIAL_PROMO_CODES.map(p => {
+    // Realtime sync from Supabase DB Orders
+    try {
+      const { data: dbOrders } = await supabase
+        .from('orders')
+        .select('id, notes, created_at, profiles ( full_name, phone_number )')
+        .order('created_at', { ascending: false });
+
+      if (dbOrders && dbOrders.length > 0) {
+        dbOrders.forEach((orderObj: any) => {
+          const notesStr = orderObj.notes || '';
+          INITIAL_PROMO_CODES.forEach(p => {
+            if (notesStr.includes(p.code) || notesStr.includes(`[PROMO_CODE: ${p.code}`)) {
+              const custName = Array.isArray(orderObj.profiles) ? orderObj.profiles[0]?.full_name : orderObj.profiles?.full_name;
+              const custPhone = Array.isArray(orderObj.profiles) ? orderObj.profiles[0]?.phone_number : orderObj.profiles?.phone_number;
+              const usedByLabel = `${custName || 'Guest'} (${custPhone || 'N/A'}) · Order #${orderObj.id.slice(0, 8).toUpperCase()}`;
+
+              statusMap[p.code] = {
+                status: 'used',
+                usedBy: usedByLabel,
+                usedAt: orderObj.created_at
+              };
+              if (!usedCodes.includes(p.code)) {
+                usedCodes.push(p.code);
+              }
+            }
+          });
+        });
+        await AsyncStorage.setItem(PROMO_STATUSES_KEY, JSON.stringify(statusMap));
+        await AsyncStorage.setItem(USED_PROMO_CODES_KEY, JSON.stringify(usedCodes));
+      } else {
+        // Reset test promo codes when test orders are wiped
+        Object.keys(statusMap).forEach(k => {
+          if (statusMap[k].status === 'used') {
+            delete statusMap[k];
+          }
+        });
+        await AsyncStorage.setItem(PROMO_STATUSES_KEY, JSON.stringify(statusMap));
+        await AsyncStorage.setItem(USED_PROMO_CODES_KEY, JSON.stringify([]));
+      }
+    } catch (dbErr) {
+      console.warn('Realtime promo codes DB sync warning:', dbErr);
+    }
+
+    const items: PromoCodeItem[] = INITIAL_PROMO_CODES.map(p => {
       const stored = statusMap[p.code];
       let status: PromoStatus = stored?.status || 'available';
       if (usedCodes.includes(p.code)) {
@@ -143,6 +186,18 @@ export async function getOwnerPromoCodesList(): Promise<PromoCodeItem[]> {
         usedBy: stored?.usedBy,
         usedAt: stored?.usedAt
       };
+    });
+
+    // Realtime sort: Most recently redeemed promo codes at the top!
+    return items.sort((a, b) => {
+      if (a.status === 'used' && b.status === 'used') {
+        const timeA = typeof a.usedAt === 'string' ? new Date(a.usedAt).getTime() : 0;
+        const timeB = typeof b.usedAt === 'string' ? new Date(b.usedAt).getTime() : 0;
+        return timeB - timeA;
+      }
+      if (a.status === 'used') return -1;
+      if (b.status === 'used') return 1;
+      return 0;
     });
   } catch (e) {
     console.error('Failed to get promo codes list:', e);

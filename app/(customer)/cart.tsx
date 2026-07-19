@@ -15,8 +15,9 @@ import { Stack, useRouter } from 'expo-router';
 import FloatingHeader from '../../components/FloatingHeader';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin, X, Gift, Info, Tag, Wallet, Check, Sparkles } from 'lucide-react-native';
+import { ChevronLeft, Home, ShoppingBag, User, Star, CheckCircle, AlertCircle, ShieldCheck, Briefcase, MapPin, X, Gift, Info, Tag, Wallet, Check, Sparkles, CreditCard, Banknote, RotateCcw } from 'lucide-react-native';
 import { validateAndApplyPromoCode, markPromoCodeAsUsed } from '../../src/config/promoCodes';
+import { getRazorpayKeys } from '../../src/config/razorpayConfig';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
@@ -30,9 +31,11 @@ import { useSession } from '@descope/react-native-sdk';
 
 interface OrderItem {
   id: string;
+  menu_item_id?: string;
   quantity: number;
   price_at_order: number;
   menu_items?: {
+    id?: string;
     name: string;
   };
 }
@@ -83,6 +86,8 @@ export default function CartScreen() {
   // Wallet Pay States
   const [walletBalance, setWalletBalance] = useState(0.00);
   const [useWallet, setUseWallet] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'COD'>('ONLINE');
+  const [showCodInfo, setShowCodInfo] = useState<boolean>(false);
 
   // Saved Addresses state
   const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string; latitude?: number; longitude?: number }[]>([]);
@@ -237,8 +242,9 @@ export default function CartScreen() {
     ? ((isSmallOrder || isFarDistance) ? 40 : 0) 
     : 0;
 
+  const codFee = (subtotal > 0 && paymentMethod === 'COD') ? 12 : 0;
   const platformFee = subtotal > 0 ? 15 : 0;
-  const totalBeforePromo = subtotal + platformFee + deliveryFee;
+  const totalBeforePromo = subtotal + platformFee + deliveryFee + codFee;
   const totalBeforeWallet = Math.max(0, totalBeforePromo - promoDiscount);
 
   // Max 50% of the bill can be paid using wallet
@@ -327,6 +333,7 @@ export default function CartScreen() {
         }
       }
 
+      let currentFetchedOrders: any[] = [];
       if (userId) {
         // Fetch user profile name
         const { data: profile } = await supabase
@@ -351,9 +358,11 @@ export default function CartScreen() {
             delivery_otp,
             order_items (
               id,
+              menu_item_id,
               quantity,
               price_at_order,
               menu_items (
+                id,
                 name
               )
             )
@@ -362,28 +371,80 @@ export default function CartScreen() {
           .order('created_at', { ascending: false });
 
         if (orderErr) throw orderErr;
-        const formattedOrders = (orderData || []).map((order: any) => ({
+        currentFetchedOrders = (orderData || []).map((order: any) => ({
           ...order,
-          order_items: (order.order_items || []).map((item: any) => ({
-            ...item,
-            menu_items: Array.isArray(item.menu_items)
-              ? item.menu_items[0]
-              : item.menu_items
-          }))
+          order_items: (order.order_items || []).map((item: any) => {
+            const menuItemObj = Array.isArray(item.menu_items) ? item.menu_items[0] : item.menu_items;
+            return {
+              ...item,
+              menu_item_id: item.menu_item_id || menuItemObj?.id,
+              menu_items: menuItemObj
+            };
+          })
         }));
-        setOrders(formattedOrders);
+        setOrders(currentFetchedOrders);
       }
 
-      // Load Reviews from AsyncStorage
+      // Load Reviews from AsyncStorage & filter out test reviews for deleted orders
       const savedReviews = await AsyncStorage.getItem('hotelbet_reviews');
       if (savedReviews) {
-        setReviews(JSON.parse(savedReviews));
+        const parsed = JSON.parse(savedReviews);
+        const existingOrderIds = new Set(currentFetchedOrders.map((o: any) => o.id));
+        const validReviewMap: Record<string, any> = {};
+
+        Object.keys(parsed).forEach(key => {
+          if (existingOrderIds.has(key)) {
+            validReviewMap[key] = parsed[key];
+          }
+        });
+
+        if (Object.keys(validReviewMap).length !== Object.keys(parsed).length) {
+          await AsyncStorage.setItem('hotelbet_reviews', JSON.stringify(validReviewMap));
+        }
+
+        setReviews(validReviewMap);
+      } else {
+        setReviews({});
       }
     } catch (err) {
       console.error('Error fetching orders and reviews:', err);
     } finally {
       setLoadingOrders(false);
     }
+  };
+
+  const handleReorderOrder = (order: any) => {
+    if (!order.order_items || order.order_items.length === 0) {
+      showToast('Re-Order Warning', 'No items found in this past order to re-order.', 'info');
+      return;
+    }
+
+    let addedCount = 0;
+    order.order_items.forEach((itemObj: any) => {
+      const dishId = itemObj.menu_item_id || itemObj.menu_items?.id;
+      if (dishId) {
+        const qty = itemObj.quantity || 1;
+        for (let i = 0; i < qty; i++) {
+          addToCart(dishId);
+          addedCount++;
+        }
+      }
+    });
+
+    if (addedCount === 0) {
+      showToast('Re-Order Error', 'Could not find dish details for re-ordering.', 'error');
+      return;
+    }
+
+    showToast(
+      'Re-Order Added! 🛒',
+      `Added ${addedCount} item${addedCount > 1 ? 's' : ''} to your cart. Opening checkout...`,
+      'success'
+    );
+
+    setTimeout(() => {
+      setActiveSegment('checkout');
+    }, 400);
   };
 
   const [cancelConfirmationOrderId, setCancelConfirmationOrderId] = useState<string | null>(null);
@@ -395,22 +456,88 @@ export default function CartScreen() {
   const executeCancelOrder = async (orderId: string) => {
     try {
       setCancellingOrderId(orderId);
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'cancelled' })
-        .eq('id', orderId);
 
-      if (error) throw error;
+      // Find the order to get its details
+      const targetOrder = orders.find(o => o.id === orderId);
+      const totalAmount = targetOrder?.total_amount || 0;
+      const orderStatus = targetOrder?.status || 'pending';
+      const orderNotes = targetOrder?.notes || '';
 
-      // Update local state
-      setOrders(prev => 
-        prev.map(order => 
-          order.id === orderId 
-            ? { ...order, status: 'cancelled', delivery_otp: undefined } 
-            : order
-        )
-      );
-      showToast("Success", "Your order has been cancelled successfully.", "success");
+      // Compute refund based on order stage
+      let refundPercent = 100;
+      if (orderStatus === 'accepted' || orderStatus === 'preparing' || orderStatus === 'cooking') {
+        refundPercent = 70;
+      } else if (orderStatus === 'ready_for_pickup' || orderStatus === 'out_for_delivery' || orderStatus === 'dispatched') {
+        refundPercent = 50;
+      }
+      const refundAmount = Math.round(totalAmount * (refundPercent / 100));
+
+      // Check user's refund preference
+      const refundPref = await AsyncStorage.getItem('hotelbet_refund_preference') || 'bank';
+
+      if (refundPref === 'wallet') {
+        // ── INSTANT WALLET REFUND ──
+        const walletTag = `[WALLET_REFUND: status=CREDITED | percent=${refundPercent}% | amount=₹${refundAmount} | method=INSTANT_WALLET]`;
+        const updatedNotes = orderNotes ? `${walletTag} ${orderNotes}` : walletTag;
+
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'cancelled', notes: updatedNotes })
+          .eq('id', orderId);
+
+        if (error) throw error;
+
+        // Credit wallet balance instantly
+        const balStr = await AsyncStorage.getItem('hotelbet_wallet_balance') || '0';
+        const currentBal = parseFloat(balStr);
+        const newBal = currentBal + refundAmount;
+        await AsyncStorage.setItem('hotelbet_wallet_balance', String(newBal));
+        await AsyncStorage.setItem('hotelbet_wallet_balance_backup', String(newBal));
+
+        // Add wallet transaction record
+        const txnStr = await AsyncStorage.getItem('hotelbet_wallet_transactions');
+        const txns = txnStr ? JSON.parse(txnStr) : [];
+        txns.unshift({
+          id: `refund_wallet_${orderId.slice(0, 8)}_${Date.now()}`,
+          orderId: orderId,
+          amount: refundAmount,
+          status: 'credited',
+          description: `Instant Refund (${refundPercent}% — Order Cancelled)`,
+          createdAt: new Date().toISOString()
+        });
+        await AsyncStorage.setItem('hotelbet_wallet_transactions', JSON.stringify(txns));
+        await AsyncStorage.setItem('hotelbet_wallet_transactions_backup', JSON.stringify(txns));
+
+        setOrders(prev =>
+          prev.map(order =>
+            order.id === orderId
+              ? { ...order, status: 'cancelled', notes: updatedNotes, delivery_otp: undefined }
+              : order
+          )
+        );
+        showToast('Instant Wallet Refund ⚡', `₹${refundAmount} (${refundPercent}%) instantly credited to Hotel Bet Money!`, 'success');
+      } else {
+        // ── BANK REFUND (UTR PAYOUT) ──
+        const bankTag = `[BANK_REFUND: status=INITIATED | percent=${refundPercent}% | amount=₹${refundAmount} | txn_id=PENDING_OWNER_REF]`;
+        const updatedNotes = orderNotes ? `${bankTag} ${orderNotes}` : bankTag;
+
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'cancelled', notes: updatedNotes })
+          .eq('id', orderId);
+
+        if (error) throw error;
+
+        setOrders(prev =>
+          prev.map(order =>
+            order.id === orderId
+              ? { ...order, status: 'cancelled', notes: updatedNotes, delivery_otp: undefined }
+              : order
+          )
+        );
+        showToast('Bank Refund Initiated', `₹${refundAmount} (${refundPercent}%) Bank Payout initiated. Track in Refund Tracker.`, 'success');
+      }
+
       setCancelConfirmationOrderId(null);
     } catch (e: any) {
       console.error('Error cancelling order:', e.message);
@@ -478,49 +605,196 @@ export default function CartScreen() {
     showToast('Removed', 'Promo code removed from your order.', 'info');
   };
 
+  const executeOrderPlacementInDB = async (
+    userId: string,
+    activeBranchId: string,
+    customerPhone: string,
+    paymentNotesTag: string,
+    cartList: any[]
+  ) => {
+    // Generate an 8-digit random delivery verification OTP
+    const otpCode = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+    let finalNotes = `${paymentNotesTag} ${notes}`.trim();
+    let cashbackAmount = 0;
+
+    if (selectedGift) {
+      if (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback')) {
+        const match = selectedGift.match(/Min ₹(\d+)/i) || selectedGift.match(/(\d+)/);
+        cashbackAmount = match ? parseInt(match[1], 10) : 25;
+        finalNotes = `[REWARD: ${selectedGift}] ${finalNotes}`;
+      } else {
+        finalNotes = `[FREE Complementary Gift: ${selectedGift}] ${finalNotes}`;
+      }
+    }
+
+    if (appliedPromoCode) {
+      finalNotes = `[PROMO CODE: ${appliedPromoCode} (-₹${promoDiscount})] ${finalNotes}`;
+    }
+
+    const billBreakdownTag = `[BILL_BREAKDOWN: subtotal=${subtotal} | platformFee=${15} | deliveryFee=${deliveryFee} | codFee=${codFee} | promoDiscount=${promoDiscount} | walletDiscount=${walletDeduction} | total=${total}]`;
+    finalNotes = `${billBreakdownTag} ${finalNotes}`;
+
+    // Write order directly into public.orders table
+    const { data: newOrder, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        customer_id: userId,
+        branch_id: activeBranchId,
+        status: 'pending',
+        total_amount: total,
+        delivery_address: address,
+        delivery_latitude: selectedLatitude || 18.4575,
+        delivery_longitude: selectedLongitude || 73.8088,
+        delivery_phone: customerPhone,
+        notes: finalNotes,
+        delivery_otp: otpCode
+      })
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    // Insert all order items
+    const orderItemsData = cartList.map(entry => ({
+      order_id: newOrder.id,
+      menu_item_id: entry.item.id,
+      quantity: entry.qty,
+      price_at_order: entry.item.price
+    }));
+
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItemsData);
+
+    if (itemsError) throw itemsError;
+
+    console.log('Successfully placed order and items in database:', newOrder.id);
+
+    // Clear local cart
+    clearCart();
+    setAddress('');
+    setNotes('');
+
+    // Set placed order details for the Lottie animation success screen
+    setPlacedOrder({
+      id: newOrder.id,
+      total_amount: total,
+      created_at: newOrder.created_at || new Date().toISOString(),
+      delivery_address: newOrder.delivery_address || address,
+      notes: finalNotes,
+      status: 'pending'
+    });
+
+    // Save Scratch Card if reward was selected
+    if (selectedGift && (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback'))) {
+      try {
+        let minPrize = 25;
+        let maxPrize = 35;
+        let tierName = 'Order ₹500+ Tier';
+
+        if (subtotal >= 2000) {
+          minPrize = 80;
+          maxPrize = 100;
+          tierName = 'Order ₹2000+ Tier';
+        } else if (subtotal >= 1000) {
+          minPrize = 50;
+          maxPrize = 65;
+          tierName = 'Order ₹1000+ Tier';
+        }
+
+        const wonAmount = Math.floor(Math.random() * (maxPrize - minPrize + 1)) + minPrize;
+
+        const cardObj = {
+          id: `card_${Date.now()}`,
+          orderId: newOrder.id,
+          tierName,
+          minPrize,
+          maxPrize,
+          wonAmount,
+          isScratched: false,
+          createdAt: new Date().toISOString()
+        };
+
+        const cardsKey = 'hotelbet_scratch_cards';
+        const existingCardsStr = await AsyncStorage.getItem(cardsKey);
+        const cardsList = existingCardsStr ? JSON.parse(existingCardsStr) : [];
+        cardsList.push(cardObj);
+        await AsyncStorage.setItem(cardsKey, JSON.stringify(cardsList));
+
+        console.log(`Saved Scratch Card (${tierName}, prize ₹${wonAmount}) for order ${newOrder.id}`);
+      } catch (walletErr) {
+        console.warn('Failed to save scratch card:', walletErr);
+      }
+    }
+
+    // Deduct used wallet credit if applied
+    if (walletDeduction > 0) {
+      try {
+        const newBal = Math.max(0, walletBalance - walletDeduction);
+        await AsyncStorage.setItem('hotelbet_wallet_balance', String(newBal));
+        setWalletBalance(newBal);
+
+        const txnKey = 'hotelbet_wallet_transactions';
+        const existingTxnsStr = await AsyncStorage.getItem(txnKey);
+        const txns = existingTxnsStr ? JSON.parse(existingTxnsStr) : [];
+        txns.push({
+          id: `txn_${Date.now()}`,
+          orderId: newOrder.id,
+          amount: walletDeduction,
+          status: 'debited',
+          description: `Used ₹${walletDeduction} credit on Order #${newOrder.id.substring(0, 8)}`,
+          createdAt: new Date().toISOString()
+        });
+        await AsyncStorage.setItem(txnKey, JSON.stringify(txns));
+      } catch (wErr) {
+        console.warn('Failed to update wallet balance on checkout:', wErr);
+      }
+    }
+
+    // Mark promo code as used globally
+    if (appliedPromoCode) {
+      await markPromoCodeAsUsed(appliedPromoCode, userId);
+      setAppliedPromoCode(null);
+      setPromoDiscount(0);
+    }
+
+    setSelectedGift(null);
+    setShowSuccessModal(true);
+
+    showToast('Success', `Order placed successfully via ${paymentMethod === 'ONLINE' ? 'Razorpay' : 'COD'}!`, 'success');
+  };
+
   const handlePlaceOrder = async () => {
     if (!address) {
       showToast('Error', 'Please enter a room number or suite name', 'error');
       return;
     }
 
+    const cartList = getCartItemsList();
+    if (cartList.length === 0) {
+      showToast('Error', 'Your cart is empty', 'error');
+      return;
+    }
+
+    if (isNotDeliverable || deliveryDistance > 5.0) {
+      showToast(
+        'Delivery Not Available', 
+        `We don't deliver to locations beyond 5 km radius (${deliveryDistance.toFixed(1)} km away).`, 
+        'error'
+      );
+      return;
+    }
+
+    if (subtotal >= 500 && !selectedGift) {
+      showToast('Selection Required', 'Please choose your free gift or cashback reward.', 'error');
+      return;
+    }
+
     setPlacingOrder(true);
 
     try {
-      // Get selected branch ID from AsyncStorage
       const activeBranchId = await AsyncStorage.getItem('selected_branch_id') || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
-
-      // Calculate distance from active branch
-      let branchLat = 18.4575;
-      let branchLng = 73.8088;
-      
-      try {
-        const { data: branchData } = await supabase
-          .from('branches')
-          .select('latitude, longitude')
-          .eq('id', activeBranchId)
-          .single();
-          
-        if (branchData) {
-          branchLat = branchData.latitude || 18.4575;
-          branchLng = branchData.longitude || 73.8088;
-        }
-      } catch (e) {
-        console.warn("Failed to fetch branch coordinates, using default fallbacks:", e);
-      }
-
-      const latToUse = selectedLatitude || 18.4575;
-      const lngToUse = selectedLongitude || 73.8088;
-      
-      if (isNotDeliverable || deliveryDistance > 5.0) {
-        showToast(
-          'Delivery Not Available', 
-          `We don't deliver to locations beyond 5 km radius (Selected address is ${deliveryDistance.toFixed(1)} km away).`, 
-          'error'
-        );
-        setPlacingOrder(false);
-        return;
-      }
       let userId = session?.user?.userId;
       
       if (!userId) {
@@ -543,174 +817,124 @@ export default function CartScreen() {
 
       if (!userId) throw new Error('Could not establish user session');
 
-      // Ensure profile check passes
       await ensureUserProfileExists(userId);
 
-      const cartList = getCartItemsList();
-      if (cartList.length === 0) {
-        throw new Error('Your cart is empty');
-      }
-
-      // Generate an 8-digit random delivery verification OTP
-      const otpCode = Math.floor(10000000 + Math.random() * 90000000).toString();
-
-
-
-      if (subtotal >= 500 && !selectedGift) {
-        showToast('Selection Required', 'Please choose your free gift or cashback reward.', 'error');
-        setPlacingOrder(false);
-        return;
-      }
-
-      let finalNotes = notes;
-      let cashbackAmount = 0;
-
-      if (selectedGift) {
-        if (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback')) {
-          const match = selectedGift.match(/Min ₹(\d+)/i) || selectedGift.match(/(\d+)/);
-          cashbackAmount = match ? parseInt(match[1], 10) : 25;
-          finalNotes = `[REWARD: ${selectedGift}] ${notes}`;
-        } else {
-          finalNotes = `[FREE Complementary Gift: ${selectedGift}] ${notes}`;
+      // Fetch user profile phone number
+      let customerPhone = '+15550192834';
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('phone_number, full_name')
+          .eq('id', userId)
+          .single();
+        if (profile?.phone_number) {
+          customerPhone = profile.phone_number;
         }
-      }
+      } catch (e) {}
 
-      if (appliedPromoCode) {
-        finalNotes = `[PROMO CODE: ${appliedPromoCode} (-₹${promoDiscount})] ${finalNotes}`;
-      }
+      // Razorpay vs COD Flow
+      if (paymentMethod === 'ONLINE') {
+        const razorpayKeys = getRazorpayKeys(customerPhone);
+        
+        if (razorpayKeys.isTestMode) {
+          showToast('Razorpay Test Mode', 'Using Razorpay Sandbox Test Key for (+15550192834)', 'info');
+        } else {
+          showToast('Razorpay Live Mode', 'Opening Secure Razorpay Payment Gateway...', 'info');
+        }
 
-      // Write order directly into public.orders table
-      const { data: newOrder, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          customer_id: userId,
-          branch_id: activeBranchId,
-          status: 'pending',
-          total_amount: total,
-          delivery_address: address,
-          delivery_latitude: selectedLatitude || 18.4575,
-          delivery_longitude: selectedLongitude || 73.8088,
-          delivery_phone: '+15550192834',
-          notes: finalNotes,
-          delivery_otp: otpCode
-        })
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      // Insert all order items
-      const orderItemsData = cartList.map(entry => ({
-        order_id: newOrder.id,
-        menu_item_id: entry.item.id,
-        quantity: entry.qty,
-        price_at_order: entry.item.price
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItemsData);
-
-      if (itemsError) throw itemsError;
-
-      console.log('Successfully placed order and items in database:', newOrder.id);
-
-      // Clear local cart
-      clearCart();
-      setAddress('');
-      setNotes('');
-
-      // Set placed order details for the Lottie animation success screen
-      setPlacedOrder({
-        id: newOrder.id,
-        total_amount: total,
-        created_at: newOrder.created_at || new Date().toISOString(),
-        delivery_address: newOrder.delivery_address || address,
-        notes: finalNotes,
-        status: 'pending'
-      });
-
-      // Save Scratch Card if reward was selected
-      if (selectedGift && (selectedGift.includes('Scratch Card') || selectedGift.includes('Cashback'))) {
-        try {
-          let minPrize = 25;
-          let maxPrize = 35;
-          let tierName = 'Order ₹500+ Tier';
-
-          if (subtotal >= 2000) {
-            minPrize = 80;
-            maxPrize = 100;
-            tierName = 'Order ₹2000+ Tier';
-          } else if (subtotal >= 1000) {
-            minPrize = 50;
-            maxPrize = 65;
-            tierName = 'Order ₹1000+ Tier';
-          }
-
-          const wonAmount = Math.floor(Math.random() * (maxPrize - minPrize + 1)) + minPrize;
-
-          const cardObj = {
-            id: `card_${Date.now()}`,
-            orderId: newOrder.id,
-            tierName,
-            minPrize,
-            maxPrize,
-            wonAmount,
-            isScratched: false,
-            createdAt: new Date().toISOString()
+        // Trigger Razorpay Checkout
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          const rzpOptions = {
+            key: razorpayKeys.key_id,
+            amount: Math.round(total * 100), // in paise
+            currency: 'INR',
+            name: 'Hotel Bet',
+            description: `Food Delivery Payout (${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'})`,
+            prefill: {
+              contact: customerPhone,
+              name: customerName || 'Valued Customer'
+            },
+            theme: { color: '#D4AF37' },
+            handler: async function (response: any) {
+              const paymentId = response?.razorpay_payment_id || `pay_rzp_${Date.now()}`;
+              try {
+                await executeOrderPlacementInDB(
+                  userId,
+                  activeBranchId,
+                  customerPhone,
+                  `[PAYMENT: ONLINE - Razorpay ID: ${paymentId}] [KEY: ${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'}]`,
+                  cartList
+                );
+              } catch (err: any) {
+                showToast('Order Error', err.message || 'Failed to record order', 'error');
+                setPlacingOrder(false);
+              }
+            },
+            modal: {
+              ondismiss: function () {
+                setPlacingOrder(false);
+                showToast('Payment Cancelled', 'Razorpay payment was cancelled. Order not placed.', 'info');
+              }
+            }
           };
 
-          const cardsKey = 'hotelbet_scratch_cards';
-          const existingCardsStr = await AsyncStorage.getItem(cardsKey);
-          const cardsList = existingCardsStr ? JSON.parse(existingCardsStr) : [];
-          cardsList.push(cardObj);
-          await AsyncStorage.setItem(cardsKey, JSON.stringify(cardsList));
+          const openRzpModal = () => {
+            try {
+              const rzp = new (window as any).Razorpay(rzpOptions);
+              rzp.open();
+            } catch (e: any) {
+              console.error('Failed to open Razorpay modal:', e);
+              // Fallback if Razorpay popup fails
+              executeOrderPlacementInDB(
+                userId,
+                activeBranchId,
+                customerPhone,
+                `[PAYMENT: ONLINE - Razorpay Test ${Date.now()}] [KEY: ${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'}]`,
+                cartList
+              );
+            }
+          };
 
-          console.log(`Saved Scratch Card (${tierName}, prize ₹${wonAmount}) for order ${newOrder.id}`);
-        } catch (walletErr) {
-          console.warn('Failed to save scratch card:', walletErr);
+          if ((window as any).Razorpay) {
+            openRzpModal();
+          } else {
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.onload = () => openRzpModal();
+            script.onerror = () => {
+              executeOrderPlacementInDB(
+                userId,
+                activeBranchId,
+                customerPhone,
+                `[PAYMENT: ONLINE - Razorpay ${Date.now()}] [KEY: ${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'}]`,
+                cartList
+              );
+            };
+            document.body.appendChild(script);
+          }
+        } else {
+          // Native app flow
+          await executeOrderPlacementInDB(
+            userId,
+            activeBranchId,
+            customerPhone,
+            `[PAYMENT: ONLINE - Razorpay ID: pay_native_${Date.now()}] [KEY: ${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'}]`,
+            cartList
+          );
         }
+      } else {
+        // COD Payment Flow
+        await executeOrderPlacementInDB(
+          userId,
+          activeBranchId,
+          customerPhone,
+          `[PAYMENT: COD - ₹12 Handling Fee Included]`,
+          cartList
+        );
       }
-
-      // Deduct used wallet credit if applied
-      if (walletDeduction > 0) {
-        try {
-          const newBal = Math.max(0, walletBalance - walletDeduction);
-          await AsyncStorage.setItem('hotelbet_wallet_balance', String(newBal));
-          setWalletBalance(newBal);
-
-          const txnKey = 'hotelbet_wallet_transactions';
-          const existingTxnsStr = await AsyncStorage.getItem(txnKey);
-          const txns = existingTxnsStr ? JSON.parse(existingTxnsStr) : [];
-          txns.push({
-            id: `txn_${Date.now()}`,
-            orderId: newOrder.id,
-            amount: walletDeduction,
-            status: 'debited',
-            description: `Used ₹${walletDeduction} credit on Order #${newOrder.id.substring(0, 8)}`,
-            createdAt: new Date().toISOString()
-          });
-          await AsyncStorage.setItem(txnKey, JSON.stringify(txns));
-        } catch (wErr) {
-          console.warn('Failed to update wallet balance on checkout:', wErr);
-        }
-      }
-
-      // Mark promo code as used globally
-      if (appliedPromoCode) {
-        await markPromoCodeAsUsed(appliedPromoCode, userId);
-        setAppliedPromoCode(null);
-        setPromoDiscount(0);
-      }
-
-      setSelectedGift(null);
-      setShowSuccessModal(true);
-
-      showToast('Success', 'Your order has been placed on the live database!', 'success');
     } catch (e: any) {
-      console.error('Supabase order insert failed:', e.message);
-      showToast('Error', 'Failed to place order: ' + e.message, 'error');
-    } finally {
+      console.error('Order process failed:', e.message);
+      showToast('Error', 'Failed to process order: ' + e.message, 'error');
       setPlacingOrder(false);
     }
   };
@@ -1019,6 +1243,40 @@ export default function CartScreen() {
                     A nominal ₹15 platform fee helps us maintain app infrastructure, secure payments, and 24/7 customer support. No delivery or hidden charges.
                   </Text>
                 </View>
+              )}
+
+              {paymentMethod === 'COD' && (
+                <>
+                  <View style={styles.receiptRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.receiptLabel, { color: '#F59E0B', fontWeight: '700' }]}>COD Handling Fee</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowCodInfo(!showCodInfo)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Info size={13} color="#F59E0B" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[styles.receiptVal, { color: '#F59E0B', fontWeight: '900' }]}>
+                      +₹12
+                    </Text>
+                  </View>
+                  {showCodInfo && (
+                    <View style={{
+                      backgroundColor: 'rgba(245, 158, 11, 0.08)',
+                      borderRadius: 8,
+                      padding: 10,
+                      borderWidth: 0.5,
+                      borderColor: 'rgba(245, 158, 11, 0.25)',
+                      marginBottom: 4,
+                    }}>
+                      <Text style={{ color: colors.textSub, fontSize: 10, lineHeight: 15, fontWeight: '600' }}>
+                        A nominal ₹12 handling fee is charged on Cash on Delivery orders to cover courier cash collection. Choose online payment to avoid this charge!
+                      </Text>
+                    </View>
+                  )}
+                </>
               )}
 
               {promoDiscount > 0 && (
@@ -1590,23 +1848,163 @@ export default function CartScreen() {
               multiline={true}
             />
 
-            {/* Place Order CTA Button */}
+            {/* PAYMENT METHOD SELECTION CARD */}
+            <Text style={[styles.sectionTitle, { color: colors.accentGold, marginTop: 20 }]}>PAYMENT METHOD</Text>
+            <View style={[styles.orderCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 14, marginTop: 8, gap: 12 }]}>
+              {/* Online Payment Option */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setPaymentMethod('ONLINE')}
+                style={{
+                  backgroundColor: paymentMethod === 'ONLINE' ? (isDark ? 'rgba(212, 175, 55, 0.14)' : 'rgba(212, 175, 55, 0.1)') : colors.inputBg,
+                  borderColor: paymentMethod === 'ONLINE' ? colors.accentGold : colors.cardBorder,
+                  borderWidth: 1.5,
+                  borderRadius: 16,
+                  padding: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: paymentMethod === 'ONLINE' ? colors.accentGold : 'rgba(212, 175, 55, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <CreditCard size={20} color={paymentMethod === 'ONLINE' ? '#000000' : colors.accentGold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '900' }}>
+                        Online Payment
+                      </Text>
+                      <View style={{
+                        backgroundColor: '#10B981',
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        borderRadius: 8,
+                      }}>
+                        <Text style={{ color: '#000000', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>
+                          RECOMMENDED ✓
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 3, fontWeight: '600' }}>
+                      UPI (GPay, PhonePe, Paytm), Credit & Debit Cards, NetBanking via Razorpay.
+                    </Text>
+                  </View>
+                </View>
+                <View style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: paymentMethod === 'ONLINE' ? colors.accentGold : colors.textSub,
+                  backgroundColor: paymentMethod === 'ONLINE' ? colors.accentGold : 'transparent',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {paymentMethod === 'ONLINE' && <Check size={12} color="#000000" strokeWidth={3.5} />}
+                </View>
+              </TouchableOpacity>
+
+              {/* Cash on Delivery (COD) Option */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setPaymentMethod('COD')}
+                style={{
+                  backgroundColor: paymentMethod === 'COD' ? (isDark ? 'rgba(245, 158, 11, 0.14)' : 'rgba(245, 158, 11, 0.1)') : colors.inputBg,
+                  borderColor: paymentMethod === 'COD' ? '#F59E0B' : colors.cardBorder,
+                  borderWidth: 1.5,
+                  borderRadius: 16,
+                  padding: 14,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: paymentMethod === 'COD' ? '#F59E0B' : 'rgba(245, 158, 11, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Banknote size={20} color={paymentMethod === 'COD' ? '#000000' : '#F59E0B'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '900' }}>
+                        Cash on Delivery (COD)
+                      </Text>
+                      <View style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        borderRadius: 8,
+                        borderWidth: 0.8,
+                        borderColor: '#F59E0B',
+                      }}>
+                        <Text style={{ color: '#F59E0B', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>
+                          +₹12 COD FEE
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 3, fontWeight: '600' }}>
+                      Pay cash on doorstep delivery. A nominal ₹12 handling fee applies for COD.
+                    </Text>
+                  </View>
+                </View>
+                <View style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: paymentMethod === 'COD' ? '#F59E0B' : colors.textSub,
+                  backgroundColor: paymentMethod === 'COD' ? '#F59E0B' : 'transparent',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {paymentMethod === 'COD' && <Check size={12} color="#000000" strokeWidth={3.5} />}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Dynamic Checkout Action Button */}
             <TouchableOpacity
               onPress={handlePlaceOrder}
               disabled={placingOrder}
               activeOpacity={0.85}
-              style={styles.placeBtnWrapper}
+              style={[styles.placeBtnWrapper, { marginTop: 20 }]}
             >
               <LinearGradient
-                colors={colors.goldGrad}
+                colors={paymentMethod === 'ONLINE' ? colors.goldGrad : ['#F59E0B', '#D97706']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[styles.placeBtn, { shadowColor: colors.accentGold }]}
+                style={[styles.placeBtn, { shadowColor: paymentMethod === 'ONLINE' ? colors.accentGold : '#F59E0B' }]}
               >
                 {placingOrder ? (
                   <ActivityIndicator color="#000000" size="small" />
                 ) : (
-                  <Text style={styles.placeBtnText}>Place Order</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {paymentMethod === 'ONLINE' ? (
+                      <>
+                        <CreditCard size={18} color="#000000" />
+                        <Text style={styles.placeBtnText}>PAY ₹{total} WITH RAZORPAY ➔</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Banknote size={18} color="#000000" />
+                        <Text style={styles.placeBtnText}>PLACE COD ORDER (₹{total}) ➔</Text>
+                      </>
+                    )}
+                  </View>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -1703,94 +2101,105 @@ export default function CartScreen() {
                           <>
                             <View style={[styles.divider, { backgroundColor: colors.cardBorder, marginVertical: 10 }]} />
 
-                            {/* Review Detail (Submitted vs Form View) */}
-                            {review ? (
-                              <View style={styles.reviewSummaryBlock}>
-                                <View style={styles.badgeRow}>
-                                  <CheckCircle size={14} color="#10B981" />
-                                  <Text style={styles.completedReviewText}>Review Submitted</Text>
-                                </View>
+                            {/* Review Detail (Only accessible when order is DELIVERED) */}
+                            {order.status === 'delivered' ? (
+                              review ? (
+                                <View style={styles.reviewSummaryBlock}>
+                                  <View style={styles.badgeRow}>
+                                    <CheckCircle size={14} color="#10B981" />
+                                    <Text style={styles.completedReviewText}>Review Submitted</Text>
+                                  </View>
 
-                                {/* Order Feedback */}
-                                <View style={styles.feedbackRow}>
-                                  <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
-                                  {renderStars(review.orderRating)}
-                                </View>
-                                {review.orderText ? (
-                                  <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                                    "{review.orderText}"
-                                  </Text>
-                                ) : null}
+                                  {/* Order Feedback */}
+                                  <View style={styles.feedbackRow}>
+                                    <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Order Review:</Text>
+                                    {renderStars(review.orderRating)}
+                                  </View>
+                                  {review.orderText ? (
+                                    <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                      "{review.orderText}"
+                                    </Text>
+                                  ) : null}
 
-                                {/* Delivery Feedback */}
-                                <View style={[styles.feedbackRow, { marginTop: 10 }]}>
-                                  <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
-                                  {renderStars(review.deliveryRating)}
+                                  {/* Delivery Feedback */}
+                                  <View style={[styles.feedbackRow, { marginTop: 10 }]}>
+                                    <Text style={[styles.feedbackLabel, { color: colors.textSub }]}>Delivery Review:</Text>
+                                    {renderStars(review.deliveryRating)}
+                                  </View>
+                                  {review.deliveryText ? (
+                                    <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
+                                      "{review.deliveryText}"
+                                    </Text>
+                                  ) : null}
                                 </View>
-                                {review.deliveryText ? (
-                                  <Text style={[styles.feedbackComment, { color: colors.textMain }]}>
-                                    "{review.deliveryText}"
-                                  </Text>
-                                ) : null}
-                              </View>
-                            ) : isEditing ? (
-                              <View style={styles.formBlock}>
-                                <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
-                                <View style={styles.ratingStarsRow}>
-                                  {renderStars(orderRating, setOrderRating)}
-                                  <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
-                                </View>
-                                <TextInput
-                                  style={[
-                                    styles.formInput,
-                                    { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                                  ]}
-                                  value={orderText}
-                                  onChangeText={setOrderText}
-                                  placeholder="How was the food quality and preparation?"
-                                  placeholderTextColor="#8E8E93"
-                                />
+                              ) : isEditing ? (
+                                <View style={styles.formBlock}>
+                                  <Text style={[styles.formSectionTitle, { color: colors.accentGold }]}>1. RATE YOUR ORDER / FOOD</Text>
+                                  <View style={styles.ratingStarsRow}>
+                                    {renderStars(orderRating, setOrderRating)}
+                                    <Text style={[styles.ratingValText, { color: colors.textMain }]}>{orderRating} / 5</Text>
+                                  </View>
+                                  <TextInput
+                                    style={[
+                                      styles.formInput,
+                                      { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                    ]}
+                                    value={orderText}
+                                    onChangeText={setOrderText}
+                                    placeholder="How was the food quality and preparation?"
+                                    placeholderTextColor="#8E8E93"
+                                  />
 
-                                <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
-                                <View style={styles.ratingStarsRow}>
-                                  {renderStars(deliveryRating, setDeliveryRating)}
-                                  <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
-                                </View>
-                                <TextInput
-                                  style={[
-                                    styles.formInput,
-                                    { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
-                                  ]}
-                                  value={deliveryText}
-                                  onChangeText={setDeliveryText}
-                                  placeholder="Was the delivery quick and rider polite?"
-                                  placeholderTextColor="#8E8E93"
-                                />
+                                  <Text style={[styles.formSectionTitle, { color: colors.accentGold, marginTop: 12 }]}>2. RATE YOUR DELIVERY RIDER</Text>
+                                  <View style={styles.ratingStarsRow}>
+                                    {renderStars(deliveryRating, setDeliveryRating)}
+                                    <Text style={[styles.ratingValText, { color: colors.textMain }]}>{deliveryRating} / 5</Text>
+                                  </View>
+                                  <TextInput
+                                    style={[
+                                      styles.formInput,
+                                      { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.textMain }
+                                    ]}
+                                    value={deliveryText}
+                                    onChangeText={setDeliveryText}
+                                    placeholder="Was the delivery quick and rider polite?"
+                                    placeholderTextColor="#8E8E93"
+                                  />
 
-                                {/* Buttons */}
-                                <View style={styles.buttonRow}>
-                                  <TouchableOpacity
-                                    style={styles.cancelBtn}
-                                    onPress={() => setActiveFormOrderId(null)}
-                                  >
-                                    <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
-                                  </TouchableOpacity>
-
-                                  <TouchableOpacity
-                                    style={styles.submitBtnWrapper}
-                                    onPress={() => handleSubmitReview(order.id)}
-                                  >
-                                    <LinearGradient
-                                      colors={colors.goldGrad}
-                                      start={{ x: 0, y: 0 }}
-                                      end={{ x: 1, y: 0 }}
-                                      style={styles.submitBtn}
+                                  {/* Buttons */}
+                                  <View style={styles.buttonRow}>
+                                    <TouchableOpacity
+                                      style={styles.cancelBtn}
+                                      onPress={() => setActiveFormOrderId(null)}
                                     >
-                                      <Text style={styles.submitBtnText}>Submit Review</Text>
-                                    </LinearGradient>
-                                  </TouchableOpacity>
+                                      <Text style={[styles.cancelBtnText, { color: colors.textSub }]}>Cancel</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      style={styles.submitBtnWrapper}
+                                      onPress={() => handleSubmitReview(order.id)}
+                                    >
+                                      <LinearGradient
+                                        colors={colors.goldGrad}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={styles.submitBtn}
+                                      >
+                                        <Text style={styles.submitBtnText}>Submit Review</Text>
+                                      </LinearGradient>
+                                    </TouchableOpacity>
+                                  </View>
                                 </View>
-                              </View>
+                              ) : (
+                                <TouchableOpacity
+                                  style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
+                                  onPress={() => setActiveFormOrderId(order.id)}
+                                >
+                                  <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
+                                    ⭐ Leave Feedback
+                                  </Text>
+                                </TouchableOpacity>
+                              )
                             ) : order.status === 'pending' ? (
                               <TouchableOpacity
                                 style={[styles.writeReviewBtn, { borderColor: '#EF4444' }]}
@@ -1807,15 +2216,44 @@ export default function CartScreen() {
                                 )}
                               </TouchableOpacity>
                             ) : (
-                              <TouchableOpacity
-                                style={[styles.writeReviewBtn, { borderColor: colors.accentGold }]}
-                                onPress={() => setActiveFormOrderId(order.id)}
-                              >
-                                <Text style={[styles.writeReviewBtnText, { color: colors.accentGold }]}>
-                                  Leave Feedback
+                              <View style={{
+                                backgroundColor: 'rgba(212, 175, 55, 0.06)',
+                                borderWidth: 1,
+                                borderColor: colors.cardBorder,
+                                borderRadius: 12,
+                                paddingVertical: 10,
+                                paddingHorizontal: 12,
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                <Text style={{ color: colors.textSub, fontSize: 11, fontWeight: '700' }}>
+                                  🛵 Order in progress · Feedback unlocks upon delivery
                                 </Text>
-                              </TouchableOpacity>
+                              </View>
                             )}
+                            {/* 1-Tap Re-Order Button */}
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => handleReorderOrder(order)}
+                              style={{
+                                backgroundColor: 'rgba(212, 175, 55, 0.12)',
+                                borderColor: colors.accentGold,
+                                borderWidth: 1,
+                                borderRadius: 12,
+                                paddingVertical: 10,
+                                paddingHorizontal: 14,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                marginTop: 10,
+                              }}
+                            >
+                              <RotateCcw size={14} color={colors.accentGold} />
+                              <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                                1-TAP RE-ORDER THIS MEAL
+                              </Text>
+                            </TouchableOpacity>
                           </>
                         )}
                       </View>

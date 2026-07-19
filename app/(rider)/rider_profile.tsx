@@ -8,13 +8,14 @@ import {
    TextInput, 
    ActivityIndicator, 
    Platform,
-   Switch
+   Switch,
+   Modal
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, DollarSign, Award } from 'lucide-react-native';
+import { Home, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, DollarSign, Award, Sparkles, ChevronRight, Info, X, Gift } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
@@ -56,6 +57,8 @@ export default function RiderProfileScreen() {
   // Rider metrics
   const [totalDeliveries, setTotalDeliveries] = useState(0);
   const [tipsEarned, setTipsEarned] = useState(0);
+  const [showTipsModal, setShowTipsModal] = useState(false);
+  const [tipDetailsList, setTipDetailsList] = useState<any[]>([]);
 
   const colors = {
     bg: isDark ? '#0F0F0B' : '#F8FAFC',
@@ -129,8 +132,18 @@ export default function RiderProfileScreen() {
         .select(`
           id,
           status,
+          updated_at,
           orders (
-            tip_amount
+            id,
+            total_amount,
+            delivery_address,
+            notes,
+            tip_amount,
+            created_at,
+            profiles (
+              full_name,
+              phone_number
+            )
           )
         `)
         .eq('rider_id', currentUserId)
@@ -140,12 +153,25 @@ export default function RiderProfileScreen() {
         setTotalDeliveries(deliveriesData.length);
         
         let sumTips = 0;
+        const tipItems: any[] = [];
         deliveriesData.forEach((d: any) => {
-          if (d.orders && d.orders.tip_amount) {
-            sumTips += d.orders.tip_amount;
+          const orderObj = Array.isArray(d.orders) ? d.orders[0] : d.orders;
+          if (orderObj && orderObj.tip_amount && orderObj.tip_amount > 0) {
+            sumTips += orderObj.tip_amount;
+            const customerObj = Array.isArray(orderObj.profiles) ? orderObj.profiles[0] : orderObj.profiles;
+            const tipMatch = orderObj.notes ? orderObj.notes.match(/\[TIP_PAYMENT:\s*₹?(\d+)\s*via\s*Razorpay ID:\s*([^\]\s]+)\]/i) : null;
+            tipItems.push({
+              orderId: orderObj.id,
+              customerName: customerObj?.full_name || 'Guest Customer',
+              address: orderObj.delivery_address || 'Customer Location',
+              amount: orderObj.tip_amount,
+              razorpayId: tipMatch ? tipMatch[2].trim() : null,
+              date: orderObj.created_at || d.updated_at
+            });
           }
         });
         setTipsEarned(sumTips);
+        setTipDetailsList(tipItems);
       }
     } catch (e) {
       console.error('Error fetching rider profile & stats:', e);
@@ -193,7 +219,7 @@ export default function RiderProfileScreen() {
     }
   };
 
-  const baseEarnings = totalDeliveries * 150;
+  const baseEarnings = totalDeliveries * 40;
   const netEarnings = baseEarnings + tipsEarned;
 
   return (
@@ -251,14 +277,26 @@ export default function RiderProfileScreen() {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statRow}>
-                <Text style={[styles.statLabel, { color: colors.textSub }]}>Base Earnings (₹150/del)</Text>
+                <Text style={[styles.statLabel, { color: colors.textSub }]}>Base Earnings (₹40/del)</Text>
                 <Text style={[styles.statValue, { color: colors.textMain }]}>₹{baseEarnings.toLocaleString()}</Text>
               </View>
               <View style={styles.statDivider} />
-              <View style={styles.statRow}>
-                <Text style={[styles.statLabel, { color: colors.textSub }]}>Tips Collected</Text>
-                <Text style={[styles.statValue, { color: colors.statusGreen, fontWeight: '800' }]}>+₹{tipsEarned.toLocaleString()}</Text>
-              </View>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setShowTipsModal(true)}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.statLabel, { color: colors.textSub }]}>Tips Collected</Text>
+                  <Info size={13} color={colors.accentGold} />
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={[styles.statValue, { color: colors.statusGreen, fontWeight: '800' }]}>
+                    +₹{tipsEarned.toLocaleString()}
+                  </Text>
+                  <ChevronRight size={14} color={colors.accentGold} />
+                </View>
+              </TouchableOpacity>
               <View style={styles.statDivider} />
               <View style={[styles.statRow, { marginTop: 4 }]}>
                 <Text style={[styles.statLabel, { color: colors.accentGold, fontWeight: '800' }]}>Total Net Payout</Text>
@@ -330,6 +368,140 @@ export default function RiderProfileScreen() {
                 thumbColor={isDark ? '#B88E2F' : '#f4f3f4'}
               />
             </View>
+
+            {/* Tips Breakdown Liquid Glass Modal */}
+            <Modal
+              animationType="fade"
+              transparent={true}
+              visible={showTipsModal}
+              onRequestClose={() => setShowTipsModal(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <BlurView
+                  intensity={90}
+                  tint={isDark ? 'dark' : 'light'}
+                  style={[
+                    styles.modalContent,
+                    {
+                      borderColor: colors.cardBorder,
+                      backgroundColor: isDark ? 'rgba(15, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                      maxHeight: '80%',
+                    }
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.modalTitle, { color: colors.accentGold, marginBottom: 0 }]}>
+                        CUSTOMER TIPS
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setShowTipsModal(false)}>
+                      <X size={20} color={colors.textSub} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{
+                    width: '100%',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(16, 185, 129, 0.25)',
+                    borderRadius: 14,
+                    padding: 12,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 16
+                  }}>
+                    <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>
+                      Total Doorstep Tips Earned:
+                    </Text>
+                    <Text style={{ color: colors.statusGreen, fontSize: 16, fontWeight: '900' }}>
+                      +₹{tipsEarned.toLocaleString()}
+                    </Text>
+                  </View>
+
+                  {tipDetailsList.length === 0 ? (
+                    <View style={{ padding: 24, alignItems: 'center', gap: 8 }}>
+                      <Gift size={32} color={colors.textSub} style={{ opacity: 0.5 }} />
+                      <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
+                        No Tips Collected Yet
+                      </Text>
+                      <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center' }}>
+                        Doorstep tips paid via Razorpay by customers for your completed deliveries will appear here with full payment IDs.
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={{ width: '100%' }} contentContainerStyle={{ gap: 12, paddingBottom: 10 }}>
+                      {tipDetailsList.map((tip, idx) => (
+                        <View
+                          key={idx}
+                          style={{
+                            backgroundColor: colors.inputBg,
+                            borderWidth: 1,
+                            borderColor: colors.cardBorder,
+                            borderRadius: 16,
+                            padding: 14,
+                            gap: 8
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ color: colors.accentGold, fontSize: 12, fontWeight: '900' }}>
+                              ORDER #{tip.orderId.slice(0, 8).toUpperCase()}
+                            </Text>
+                            <Text style={{ color: colors.statusGreen, fontSize: 15, fontWeight: '900' }}>
+                              +₹{tip.amount}
+                            </Text>
+                          </View>
+
+                          <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '700' }}>
+                            Customer: {tip.customerName}
+                          </Text>
+
+                          <Text style={{ color: colors.textSub, fontSize: 11 }} numberOfLines={1}>
+                             {tip.address}
+                          </Text>
+
+                          <View style={{ height: 0.8, backgroundColor: colors.cardBorder, marginVertical: 2 }} />
+
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '700' }}>
+                              Method: ONLINE (Razorpay)
+                            </Text>
+                            <Text style={{ color: colors.textSub, fontSize: 10 }}>
+                              {new Date(tip.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                            </Text>
+                          </View>
+
+                          {tip.razorpayId ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(212, 175, 55, 0.08)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                              <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '700' }}>Razorpay ID:</Text>
+                              <Text style={{ color: colors.accentGold, fontSize: 10, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                                {tip.razorpayId}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  <TouchableOpacity
+                    style={{
+                      width: '100%',
+                      backgroundColor: colors.accentGold,
+                      paddingVertical: 12,
+                      borderRadius: 14,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 16
+                    }}
+                    onPress={() => setShowTipsModal(false)}
+                  >
+                    <Text style={{ color: '#000000', fontWeight: '900', fontSize: 13 }}>Close Audit</Text>
+                  </TouchableOpacity>
+                </BlurView>
+              </View>
+            </Modal>
 
             {/* Logout Row */}
             <TouchableOpacity 
@@ -586,5 +758,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
     lineHeight: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1.2,
+    padding: 20,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });

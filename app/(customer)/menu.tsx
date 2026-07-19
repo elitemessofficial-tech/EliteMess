@@ -16,17 +16,20 @@ import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ShoppingCart, ChevronLeft, Plus, Minus } from 'lucide-react-native';
+import { ShoppingCart, ChevronLeft, Plus, Minus, Heart, Star, Sparkles, Tag } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import { supabase } from '../../src/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFavoriteDishIds, toggleFavoriteDishId } from '../../src/utils/favorites';
+import { getZomatoPriceForItem } from '../../src/utils/zomatoPrices';
 
 interface MenuItem {
   id: string;
   name: string;
   description: string;
   price: number;
+  zomato_price?: number;
   category: string;
   is_available?: boolean;
   image_url?: string | null;
@@ -141,9 +144,16 @@ export default function MenuScreen() {
     (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const [favIds, setFavIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    getFavoriteDishIds().then(setFavIds);
+  }, []);
+
   const renderItem = ({ item, index }: { item: MenuItem; index: number }) => {
     const qty = cart[item.id] || 0;
     const isUnavailable = item.is_available === false;
+    const isFav = favIds.includes(item.id);
 
     return (
       <AnimatedEntrance delay={index * 60}>
@@ -156,6 +166,31 @@ export default function MenuScreen() {
             {/* Left Details */}
             <View style={styles.menuInfo}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {/* Veg / Non-Veg Indicator Box */}
+                {(() => {
+                  const cat = (item.category || '').toLowerCase();
+                  const name = (item.name || '').toLowerCase();
+                  const isNonVeg = cat.includes('non-veg') || cat.includes('chicken') || cat.includes('mutton') || cat.includes('fish') || name.includes('chicken') || name.includes('mutton') || name.includes('egg') || name.includes('fish') || name.includes('murgha');
+                  return (
+                    <View style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: 3,
+                      borderWidth: 1.5,
+                      borderColor: isNonVeg ? '#EF4444' : '#10B981',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <View style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: isNonVeg ? '#EF4444' : '#10B981',
+                      }} />
+                    </View>
+                  );
+                })()}
+
                 <Text style={[styles.menuName, { color: colors.textMain }]}>{item.name}</Text>
                 {isUnavailable && (
                   <View style={styles.unavailableBadge}>
@@ -166,9 +201,62 @@ export default function MenuScreen() {
               <Text style={[styles.menuDescription, { color: colors.textSub }]}>{item.description}</Text>
 
               <View style={styles.priceRow}>
-                <Text style={[styles.menuPrice, { color: colors.accentGold }]}>
-                  ₹ {item.price.toLocaleString()}
-                </Text>
+                {(() => {
+                  const zomatoPrice = getZomatoPriceForItem(item.name, item.price, item.zomato_price);
+                  const savings = zomatoPrice - item.price;
+                  const percentOff = zomatoPrice > item.price ? Math.round((savings / zomatoPrice) * 100) : 0;
+                  return (
+                    <View style={{ flexDirection: 'column', gap: 4, marginTop: 2 }}>
+                      {/* Price Row: Hotel Bet Gold Price vs Zomato Strikethrough Badge */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={[styles.menuPrice, { color: colors.accentGold, fontSize: 16, fontWeight: '900' }]}>
+                          ₹ {item.price.toLocaleString()}
+                        </Text>
+                        {zomatoPrice > item.price && (
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 3,
+                            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                            borderWidth: 0.7,
+                            borderColor: 'rgba(239, 68, 68, 0.25)',
+                            borderRadius: 6,
+                            paddingHorizontal: 5,
+                            paddingVertical: 1.5
+                          }}>
+                            <Text style={{ textDecorationLine: 'line-through', color: '#EF4444', fontSize: 10, fontWeight: '800' }}>
+                              ₹{zomatoPrice}
+                            </Text>
+                            <Text style={{ color: 'rgba(239, 68, 68, 0.75)', fontSize: 8, fontWeight: '900' }}>
+                              ZOMATO
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Savings Glowing Emerald Badge */}
+                      {savings > 0 && (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                          borderWidth: 0.9,
+                          borderColor: 'rgba(16, 185, 129, 0.35)',
+                          borderRadius: 6,
+                          paddingHorizontal: 7,
+                          paddingVertical: 2.5,
+                          alignSelf: 'flex-start'
+                        }}>
+                          <Sparkles size={10} color="#10B981" />
+                          <Text style={{ color: '#10B981', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.2 }}>
+                            SAVE ₹{savings} ({percentOff}% OFF VS ZOMATO)
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
 
                 {isUnavailable ? (
                   <View style={styles.unavailablePlaceholder}>
@@ -196,7 +284,7 @@ export default function MenuScreen() {
               </View>
             </View>
 
-            {/* Right Image */}
+            {/* Right Image + Favorite Heart Button */}
             <View style={styles.photoContainer}>
               {item.image_url ? (
                 <Image
@@ -207,6 +295,29 @@ export default function MenuScreen() {
               ) : (
                 <Text style={styles.photoText}>Food Photo</Text>
               )}
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={async () => {
+                  const updated = await toggleFavoriteDishId(item.id);
+                  setFavIds(updated);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(15, 15, 12, 0.75)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 0.8,
+                  borderColor: isFav ? '#EF4444' : colors.cardBorder
+                }}
+              >
+                <Heart size={14} color={isFav ? '#EF4444' : colors.textSub} fill={isFav ? '#EF4444' : 'transparent'} />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -282,7 +393,7 @@ export default function MenuScreen() {
       />
 
       {/* Menu Search Bar */}
-      <View style={{ paddingTop: 100, paddingHorizontal: 16, marginBottom: -8 }}>
+      <View style={{ paddingTop: 100, paddingHorizontal: 16, marginBottom: 8 }}>
         <TextInput
           style={{
             height: 40,
@@ -299,6 +410,47 @@ export default function MenuScreen() {
           placeholder="Search menu items..."
           placeholderTextColor="#8E8E93"
         />
+      </View>
+
+      {/* Best Price Guarantee Glass Banner */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+        <View style={{
+          borderRadius: 12,
+          overflow: 'hidden',
+          borderWidth: 0.8,
+          borderColor: 'rgba(212, 175, 55, 0.35)',
+        }}>
+          <LinearGradient
+            colors={isDark ? ['rgba(212, 175, 55, 0.14)', 'rgba(15, 15, 12, 0.7)'] : ['rgba(212, 175, 55, 0.18)', 'rgba(255, 255, 255, 0.85)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <View style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: 'rgba(212, 175, 55, 0.2)',
+              borderWidth: 1,
+              borderColor: colors.accentGold,
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Tag size={14} color={colors.accentGold} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '900', letterSpacing: 0.4 }}>
+                  HOTEL BET SPECIAL PRICES
+                </Text>
+                <Sparkles size={10} color={colors.accentGold} />
+              </View>
+              <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '600', marginTop: 1 }}>
+                Direct from kitchen — Up to 40% cheaper than Zomato & Swiggy!
+              </Text>
+            </View>
+          </LinearGradient>
+        </View>
       </View>
 
       {/* Categories Horizontal Pill scroller */}

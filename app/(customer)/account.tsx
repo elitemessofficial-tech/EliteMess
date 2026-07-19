@@ -15,12 +15,13 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit, HelpCircle, ChevronRight, Wallet, DollarSign } from 'lucide-react-native';
+import { Home, ShoppingBag, User, Sun, Moon, LogOut, ShieldCheck, UserCheck, CheckCircle, AlertCircle, MapPin, Briefcase, Plus, Trash2, Edit, HelpCircle, ChevronRight, Wallet, DollarSign, RefreshCw, Heart } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
+import { getFavoriteDishIds } from '../../src/utils/favorites';
 export default function AccountScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
@@ -62,10 +63,11 @@ export default function AccountScreen() {
   const [newRecipientPhone, setNewRecipientPhone] = useState('');
   const [isOrderingForSomeoneElse, setIsOrderingForSomeoneElse] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0.00);
+  const [favCount, setFavCount] = useState<number>(0);
  
   useFocusEffect(
     useCallback(() => {
-      const loadWalletBalance = async () => {
+      const loadData = async () => {
         try {
           const balStr = await AsyncStorage.getItem('hotelbet_wallet_balance');
           if (balStr) {
@@ -73,11 +75,13 @@ export default function AccountScreen() {
           } else {
             setWalletBalance(0.00);
           }
+          const favs = await getFavoriteDishIds();
+          setFavCount(favs.length);
         } catch (e) {
           console.error(e);
         }
       };
-      loadWalletBalance();
+      loadData();
     }, [])
   );
 
@@ -362,8 +366,84 @@ export default function AccountScreen() {
               <ChevronRight size={16} color={colors.textSub} />
             </TouchableOpacity>
 
+            {/* Bank Refunds Section */}
+            <Text style={[styles.sectionTitle, { color: colors.accentGold, marginTop: 16 }]}>MY BANK REFUNDS</Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/(customer)/refunds')}
+              style={[styles.settingsRow, { 
+                backgroundColor: colors.cardBg, 
+                borderColor: colors.cardBorder, 
+                flexDirection: 'row', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: 16,
+                borderRadius: 12,
+                borderWidth: 1
+              }]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 0.8,
+                  borderColor: '#10B981'
+                }}>
+                  <RefreshCw size={16} color="#10B981" />
+                </View>
+                <View>
+                  <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>Bank Refund Tracker</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>Track direct UTR payouts & refund status</Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={colors.textSub} />
+            </TouchableOpacity>
+
+            {/* Favorite Dishes Section */}
+            <Text style={[styles.sectionTitle, { color: colors.accentGold, marginTop: 16 }]}>MY FAVORITE DISHES</Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push('/(customer)/favorites')}
+              style={[styles.settingsRow, { 
+                backgroundColor: colors.cardBg, 
+                borderColor: colors.cardBorder, 
+                flexDirection: 'row', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: 16,
+                borderRadius: 12,
+                borderWidth: 1
+              }]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 0.8,
+                  borderColor: '#EF4444'
+                }}>
+                  <Heart size={16} color="#EF4444" fill="#EF4444" />
+                </View>
+                <View>
+                  <Text style={{ color: colors.textMain, fontSize: 13, fontWeight: '800' }}>Favorite Dishes</Text>
+                  <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2 }}>
+                    {favCount > 0 ? `${favCount} Saved Dish${favCount > 1 ? 'es' : ''}` : 'View your saved food items'}
+                  </Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={colors.textSub} />
+            </TouchableOpacity>
+
             {/* Profile Inputs */}
-            <Text style={[styles.sectionTitle, { color: colors.accentGold }]}>EDIT PERSONAL DETAILS</Text>
+            <Text style={[styles.sectionTitle, { color: colors.accentGold, marginTop: 20 }]}>EDIT PERSONAL DETAILS</Text>
             
             <View style={styles.inputWrapper}>
               <Text style={[styles.inputLabel, { color: colors.textSub }]}>Full Name</Text>
