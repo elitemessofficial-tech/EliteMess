@@ -557,13 +557,17 @@ export default function CartScreen() {
         .single();
 
       if (error || !data) {
+        // Get the real phone from Descope session if available
+        const realPhone = session?.user?.phone || '';
+        const realName = session?.user?.name || '';
+
         // Insert profile to satisfy FK REFERENCES check
         await supabase
           .from('profiles')
           .insert({
             id: userId,
-            phone_number: '+15550192834',
-            full_name: 'Guest Customer',
+            phone_number: realPhone,
+            full_name: realName || 'Customer',
             role: 'customer'
           });
       }
@@ -820,7 +824,7 @@ export default function CartScreen() {
       await ensureUserProfileExists(userId);
 
       // Fetch user profile phone number
-      let customerPhone = '+15550192834';
+      let customerPhone = session?.user?.phone || '';
       try {
         const { data: profile } = await supabase
           .from('profiles')
@@ -837,7 +841,7 @@ export default function CartScreen() {
         const razorpayKeys = getRazorpayKeys(customerPhone);
         
         if (razorpayKeys.isTestMode) {
-          showToast('Razorpay Test Mode', 'Using Razorpay Sandbox Test Key for (+15550192834)', 'info');
+          showToast('Razorpay Test Mode', 'Using Razorpay Sandbox Test Key', 'info');
         } else {
           showToast('Razorpay Live Mode', 'Opening Secure Razorpay Payment Gateway...', 'info');
         }

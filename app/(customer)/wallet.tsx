@@ -36,6 +36,7 @@ import FloatingHeader from '../../components/FloatingHeader';
 import ScratchCardModal, { ScratchCardData } from '../../src/components/ScratchCardModal';
 import { supabase } from '../../src/services/supabase';
 import { getRazorpayKeys } from '../../src/config/razorpayConfig';
+import { useSession } from '@descope/react-native-sdk';
 
 interface WalletTransaction {
   id: string;
@@ -303,7 +304,7 @@ export default function WalletScreen() {
 
     try {
       // Get customer phone for Razorpay key selection
-      let customerPhone = '+15550192834';
+      let customerPhone = '';
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {

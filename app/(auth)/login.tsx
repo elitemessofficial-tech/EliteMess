@@ -249,19 +249,37 @@ export default function PhoneLoginScreen() {
       console.log('Verifying Descope OTP code for:', formattedPhone);
       
       // Verify OTP code using Descope SDK
-      const response = await sdk.otp.verify.sms(formattedPhone, codeToVerify);
-      
-      if (!response.ok || !response.data) {
-        throw new Error(response.error?.errorMessage || 'Invalid verification code');
+      // NOTE: The React Native SDK may throw on failure instead of returning { ok: false }
+      // On success it returns { data: JWTResponse } — the `.ok` property is not always present on native
+      let response: any;
+      try {
+        response = await sdk.otp.verify.sms(formattedPhone, codeToVerify);
+      } catch (verifyErr: any) {
+        // Descope native SDK throws on invalid OTP
+        console.error('Descope OTP verify threw:', verifyErr);
+        throw new Error(verifyErr?.message || verifyErr?.errorMessage || 'Invalid verification code. Please try again.');
       }
       
+      // Extract response data — handle both web SDK format ({ok, data}) and native ({data}) 
+      const responseData = response?.data || response;
+      
+      if (!responseData || (!responseData.sessionJwt && !responseData.refreshJwt)) {
+        // If we still don't have session tokens, check if the response itself has them
+        if (!response?.sessionJwt && !response?.refreshJwt) {
+          throw new Error('Invalid verification code or no session returned');
+        }
+      }
+      
+      // Normalize: use responseData if it has sessionJwt, else use response directly
+      const sessionPayload = responseData?.sessionJwt ? responseData : response;
+      
       // Persist the session in Descope session manager
-      await manageSession(response.data);
+      await manageSession(sessionPayload);
       
       // Access the session token and user details from Descope response
-      const sessionToken = response.data.sessionJwt;
-      const refreshSessionToken = response.data.refreshJwt;
-      const descopeUser = response.data.user;
+      const sessionToken = sessionPayload.sessionJwt;
+      const refreshSessionToken = sessionPayload.refreshJwt;
+      const descopeUser = sessionPayload.user;
       
       if (!descopeUser) {
         throw new Error('No user data returned from Descope');
@@ -318,6 +336,7 @@ export default function PhoneLoginScreen() {
         setShowNameForm(true);
       }
     } catch (err: any) {
+      console.error('OTP Verification error:', err);
       setErrorMsg(err.message || 'Invalid verification code');
     } finally {
       setLoading(false);

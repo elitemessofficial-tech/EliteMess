@@ -22,9 +22,11 @@ import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
 import { getFavoriteDishIds } from '../../src/utils/favorites';
+import { useSession } from '@descope/react-native-sdk';
 export default function AccountScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
+  const { session: descopeSession } = useSession();
 
   // Custom Toast/Alert State
   const [toastVisible, setToastVisible] = useState(false);
@@ -141,16 +143,16 @@ export default function AccountScreen() {
           .single();
 
         if (error || !profile) {
-          // If profile does not exist in DB yet, seed a placeholder
-          const placeholderPhone = '+15550192834';
-          const placeholderName = 'Guest Customer';
+          // If profile does not exist in DB yet, seed with real session data
+          const realPhone = descopeSession?.user?.phone || '';
+          const realName = descopeSession?.user?.name || 'Customer';
           
           const { data: newProfile } = await supabase
             .from('profiles')
             .insert({
               id: currentUserId,
-              phone_number: placeholderPhone,
-              full_name: placeholderName,
+              phone_number: realPhone,
+              full_name: realName,
               role: 'customer'
             })
             .select()

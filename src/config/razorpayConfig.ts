@@ -5,17 +5,25 @@ export interface RazorpayKeyConfig {
   label: string;
 }
 
+// VIP number from env bypass config — always gets test mode
+let VIP_NUMBER_DIGITS = '';
+try {
+  const envBypass = require('./env_bypass.json');
+  VIP_NUMBER_DIGITS = (envBypass.EXPO_PUBLIC_VIP_NUMBER || '').replace(/\D/g, '');
+} catch (e) {}
+
 /**
  * Returns Razorpay credentials based on customer phone number.
- * Uses TEST KEY for guest/test phone number (+15550192834).
- * Uses LIVE KEY for all real customer phone numbers.
+ * Uses TEST KEY when:
+ *   - No phone number is available (anonymous/test sessions)
+ *   - Phone matches the VIP number (admin test account)
+ * Uses LIVE KEY for all real authenticated users.
  */
 export const getRazorpayKeys = (phone?: string | null): RazorpayKeyConfig => {
   const cleanPhone = (phone || '').replace(/\D/g, '');
-  const isTestAccount = 
-    cleanPhone.includes('15550192834') || 
-    cleanPhone.includes('5550192834') || 
-    cleanPhone === '15550192834';
+  
+  const isVipPhone = VIP_NUMBER_DIGITS.length >= 5 && cleanPhone.endsWith(VIP_NUMBER_DIGITS);
+  const isTestAccount = !cleanPhone || cleanPhone.length < 5 || isVipPhone;
 
   if (isTestAccount) {
     return {

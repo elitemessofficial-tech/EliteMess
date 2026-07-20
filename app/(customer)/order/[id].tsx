@@ -348,7 +348,7 @@ export default function OrderDetailsScreen() {
     if (amount <= 0 || !order) return;
     try {
       setTipping(true);
-      const customerPhone = order.delivery_phone || '+15550192834';
+      const customerPhone = order.delivery_phone || '';
       const razorpayKeys = getRazorpayKeys(customerPhone);
 
       const processTipSuccess = async (paymentId: string) => {
