@@ -64,6 +64,27 @@ const CATEGORIES = [
   'Bhigwan Special Chilapi Thali (Fish)'
 ];
 
+function MenuItemImage({ imageUrl, style, photoTextStyle }: { imageUrl?: string | null; style: any; photoTextStyle: any }) {
+  const [imgErr, setImgErr] = useState(false);
+
+  useEffect(() => {
+    setImgErr(false);
+  }, [imageUrl]);
+
+  if (!imageUrl || imgErr) {
+    return <Text style={photoTextStyle}>Food Photo</Text>;
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={style}
+      resizeMode="cover"
+      onError={() => setImgErr(true)}
+    />
+  );
+}
+
 export default function MenuScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
@@ -95,7 +116,7 @@ export default function MenuScreen() {
         if (cartItemIds.length > 0 && menuItems.length > 0) {
           const hasMismatch = cartItemIds.some(itemId => {
             const item = menuItems.find(m => m.id === itemId);
-            return item && item.branch_id !== activeBranchId;
+            return item && item.branch_id && item.branch_id !== activeBranchId;
           });
 
           if (hasMismatch) {
@@ -131,14 +152,16 @@ export default function MenuScreen() {
   };
 
   const branchItems = selectedBranchId
-    ? menuItems.filter(item => item.branch_id === selectedBranchId)
+    ? (menuItems.some(item => item.branch_id === selectedBranchId)
+        ? menuItems.filter(item => !item.branch_id || item.branch_id === selectedBranchId)
+        : menuItems)
     : menuItems;
 
   const filteredMenu = (selectedCategory === 'All'
     ? branchItems
     : branchItems.filter(item => item.category === selectedCategory)
   ).filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
@@ -178,23 +201,19 @@ export default function MenuScreen() {
                       borderColor: isNonVeg ? '#EF4444' : '#10B981',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      padding: 1.5
                     }}>
                       <View style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: isNonVeg ? '#EF4444' : '#10B981',
+                        width: 5,
+                        height: 5,
+                        borderRadius: 2.5,
+                        backgroundColor: isNonVeg ? '#EF4444' : '#10B981'
                       }} />
                     </View>
                   );
                 })()}
 
                 <Text style={[styles.menuName, { color: colors.textMain }]}>{item.name}</Text>
-                {isUnavailable && (
-                  <View style={styles.unavailableBadge}>
-                    <Text style={styles.unavailableBadgeText}>NOT DELIVERABLE</Text>
-                  </View>
-                )}
               </View>
               <Text style={[styles.menuDescription, { color: colors.textSub }]}>{item.description}</Text>
 
@@ -284,15 +303,11 @@ export default function MenuScreen() {
 
             {/* Right Image + Favorite Heart Button */}
             <View style={styles.photoContainer}>
-              {item.image_url ? (
-                <Image
-                  source={{ uri: item.image_url }}
-                  style={styles.foodPhoto}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text style={styles.photoText}>Food Photo</Text>
-              )}
+              <MenuItemImage
+                imageUrl={item.image_url}
+                style={styles.foodPhoto}
+                photoTextStyle={styles.photoText}
+              />
 
               <TouchableOpacity
                 activeOpacity={0.8}

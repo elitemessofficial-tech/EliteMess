@@ -806,15 +806,22 @@ export default function OwnerDashboard() {
     if (!localItem) return;
 
     try {
+      const cleanFields = {
+        ...updatedFields,
+        image_url: updatedFields.image_url && typeof updatedFields.image_url === 'string' && updatedFields.image_url.trim().length > 0 
+          ? updatedFields.image_url.trim() 
+          : null
+      };
+
       // Update item across all locations with the same name
       const { error } = await supabase
         .from('menu_items')
-        .update(updatedFields)
+        .update(cleanFields)
         .eq('name', localItem.name);
 
       if (error) {
         // Fallback update without zomato_price if column is missing on DB
-        const { zomato_price, ...fallbackFields } = updatedFields as any;
+        const { zomato_price, ...fallbackFields } = cleanFields as any;
         await supabase.from('menu_items').update(fallbackFields).eq('name', localItem.name);
       }
 
