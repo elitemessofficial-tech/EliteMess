@@ -32,6 +32,7 @@ import LottieView from 'lottie-react-native';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
 import { getZomatoPriceForItem } from '../../src/utils/zomatoPrices';
 import { useDescope, useSession } from '@descope/react-native-sdk';
+import { getRiderPayouts, recordRiderPayout, calculateRiderFinancials, RiderPayoutRecord } from '../../src/utils/riderPayouts';
 
 
 interface OrderItem {
@@ -326,6 +327,90 @@ export default function OwnerDashboard() {
   // Delete Menu Item Glass Modal State
   const [deleteConfirmationItem, setDeleteConfirmationItem] = useState<any | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
+
+  // Rider Financials & Payouts State
+  const [riderPayoutsList, setRiderPayoutsList] = useState<RiderPayoutRecord[]>([]);
+  const [completedDeliveries, setCompletedDeliveries] = useState<any[]>([]);
+  const [payoutModalRider, setPayoutModalRider] = useState<any | null>(null);
+  const [payoutAmountInput, setPayoutAmountInput] = useState<string>('');
+  const [payoutMethodInput, setPayoutMethodInput] = useState<'UPI' | 'Cash' | 'Bank Transfer'>('UPI');
+  const [payoutNoteInput, setPayoutNoteInput] = useState<string>('');
+  const [recordingPayout, setRecordingPayout] = useState(false);
+
+  const fetchRiderPayoutsAndDeliveries = async () => {
+    try {
+      const { data: delData } = await supabase
+        .from('deliveries')
+        .select(`
+          id,
+          rider_id,
+          status,
+          updated_at,
+          orders (
+            id,
+            tip_amount,
+            total_amount
+          ),
+          profiles (
+            id,
+            full_name,
+            phone_number
+          )
+        `)
+        .eq('status', 'delivered');
+
+      setCompletedDeliveries(delData || []);
+
+      const payouts = await getRiderPayouts();
+      setRiderPayoutsList(payouts);
+    } catch (e) {
+      console.warn('Error fetching rider payouts & deliveries:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRiderPayoutsAndDeliveries();
+  }, []);
+
+  const handleOpenRecordPayoutModal = (rider: any, pendingAmount: number) => {
+    setPayoutModalRider(rider);
+    setPayoutAmountInput(pendingAmount > 0 ? String(pendingAmount) : '');
+    setPayoutMethodInput('UPI');
+    setPayoutNoteInput('');
+  };
+
+  const handleConfirmRecordPayout = async () => {
+    if (!payoutModalRider) return;
+    const amt = parseFloat(payoutAmountInput);
+    if (isNaN(amt) || amt <= 0) {
+      showToast('Invalid Amount', 'Please enter a valid payout amount greater than 0', 'error');
+      return;
+    }
+
+    try {
+      setRecordingPayout(true);
+      const riderId = payoutModalRider.id || payoutModalRider.phone_number;
+      const riderName = payoutModalRider.full_name || 'Rider Staff';
+      const riderPhone = payoutModalRider.phone_number || '';
+
+      await recordRiderPayout(
+        riderId,
+        riderName,
+        riderPhone,
+        amt,
+        payoutMethodInput,
+        payoutNoteInput.trim() || 'Settlement payout from owner'
+      );
+
+      showToast('Payout Recorded! ⚡', `₹${amt} payout recorded for ${riderName}`, 'success');
+      setPayoutModalRider(null);
+      fetchRiderPayoutsAndDeliveries();
+    } catch (e: any) {
+      showToast('Error', 'Failed to record payout: ' + e.message, 'error');
+    } finally {
+      setRecordingPayout(false);
+    }
+  };
 
   const isOwnerSameDay = (createdAtIso: string) => {
     if (!createdAtIso) return true;
@@ -3348,10 +3433,10 @@ export default function OwnerDashboard() {
               </View>
 
               <Text style={[styles.menuFormTitle, { color: colors.accentGold, marginTop: 12, marginBottom: 8 }]}>
-                ACTIVE RIDERS DIRECTORY
+                ACTIVE RIDERS & PAYOUT FINANCIALS
               </Text>
               
-              <View style={{ gap: 12, paddingBottom: 32 }}>
+              <View style={{ gap: 14, paddingBottom: 16 }}>
                 {loadingRiders && riders.length === 0 ? (
                   <View style={{ height: 80, justifyContent: 'center' }}>
                     <Loader />
@@ -3365,40 +3450,158 @@ export default function OwnerDashboard() {
                     </Text>
                   </View>
                 ) : (
-                  riders.map((rider, index) => (
-                    <AnimatedEntrance key={rider.id} delay={index * 60}>
+                  riders.map((rider, index) => {
+                    const fin = calculateRiderFinancials(rider.id || rider.phone_number, completedDeliveries, riderPayoutsList);
+
+                    return (
+                      <AnimatedEntrance key={rider.id} delay={index * 60}>
+                        <View style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, padding: 14 }]}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
+                                {rider.full_name || 'Rider Staff'}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 1 }}>
+                                {rider.phone_number || 'N/A'}
+                              </Text>
+                            </View>
+
+                            <TouchableOpacity 
+                              style={{
+                                borderColor: '#EF4444',
+                                borderWidth: 0.8,
+                                borderRadius: 8,
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                              }}
+                              onPress={() => handleRevokeRider(rider.id, rider.full_name || rider.phone_number)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>
+                                Revoke
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* 3 Financial Metrics Cards: Earned, Value Given, Pending */}
+                          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                            {/* Income Earned */}
+                            <View style={{ flex: 1, backgroundColor: 'rgba(212, 175, 55, 0.08)', borderRadius: 10, padding: 8, borderWidth: 0.8, borderColor: 'rgba(212, 175, 55, 0.25)' }}>
+                              <Text style={{ fontSize: 8, color: colors.textSub, fontWeight: '800', letterSpacing: 0.5 }}>INCOME EARNED</Text>
+                              <Text style={{ fontSize: 14, color: colors.accentGold, fontWeight: '900', marginTop: 2 }}>₹{fin.totalEarned}</Text>
+                              <Text style={{ fontSize: 8, color: colors.textSub, marginTop: 2 }}>{fin.deliveryCount} Del. + Tips</Text>
+                            </View>
+
+                            {/* Value Given */}
+                            <View style={{ flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: 10, padding: 8, borderWidth: 0.8, borderColor: 'rgba(16, 185, 129, 0.25)' }}>
+                              <Text style={{ fontSize: 8, color: colors.textSub, fontWeight: '800', letterSpacing: 0.5 }}>VALUE GIVEN</Text>
+                              <Text style={{ fontSize: 14, color: '#10B981', fontWeight: '900', marginTop: 2 }}>₹{fin.totalValueGiven}</Text>
+                              <Text style={{ fontSize: 8, color: '#10B981', marginTop: 2 }}>Settled so far</Text>
+                            </View>
+
+                            {/* Pending to Give */}
+                            <View style={{ flex: 1, backgroundColor: fin.pendingToGive > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.04)', borderRadius: 10, padding: 8, borderWidth: 0.8, borderColor: fin.pendingToGive > 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.2)' }}>
+                              <Text style={{ fontSize: 8, color: colors.textSub, fontWeight: '800', letterSpacing: 0.5 }}>PENDING TO GIVE</Text>
+                              <Text style={{ fontSize: 14, color: fin.pendingToGive > 0 ? '#EF4444' : '#10B981', fontWeight: '900', marginTop: 2 }}>₹{fin.pendingToGive}</Text>
+                              <Text style={{ fontSize: 8, color: fin.pendingToGive > 0 ? '#EF4444' : '#10B981', marginTop: 2 }}>
+                                {fin.pendingToGive > 0 ? 'Due to rider' : 'All Settled ✓'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Action Button to Record Payout */}
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: fin.pendingToGive > 0 ? colors.accentGold : 'rgba(255, 255, 255, 0.05)',
+                              borderRadius: 10,
+                              height: 38,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: fin.pendingToGive > 0 ? 0 : 1,
+                              borderColor: colors.cardBorder
+                            }}
+                            onPress={() => handleOpenRecordPayoutModal(rider, fin.pendingToGive)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={{ color: fin.pendingToGive > 0 ? '#000000' : colors.textMain, fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>
+                              {fin.pendingToGive > 0 ? `⚡ SETTLE PAYOUT (₹${fin.pendingToGive} PENDING)` : '+ RECORD EXTRA PAYOUT'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </AnimatedEntrance>
+                    );
+                  })
+                )}
+              </View>
+
+              {/* RIDER PAYOUT HISTORY LOG FOR OWNER */}
+              <Text style={[styles.menuFormTitle, { color: colors.accentGold, marginTop: 12, marginBottom: 8 }]}>
+                RIDER PAYOUTS HISTORY FEED
+              </Text>
+
+              <View style={{ gap: 10, paddingBottom: 32 }}>
+                {riderPayoutsList.length === 0 ? (
+                  <View style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, alignItems: 'center', padding: 20 }]}>
+                    <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center' }}>
+                      No payouts recorded yet. Tap "Settle Payout" on any rider above to log payouts.
+                    </Text>
+                  </View>
+                ) : (
+                  riderPayoutsList.map((payout) => {
+                    const payoutDate = new Date(payout.created_at).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+
+                    return (
                       <View 
-                        style={[styles.menuCard, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 }]}
+                        key={payout.id}
+                        style={{
+                          backgroundColor: colors.inputBg,
+                          borderColor: colors.cardBorder,
+                          borderWidth: 1,
+                          borderRadius: 14,
+                          padding: 12,
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
                       >
-                        <View style={{ gap: 2, flex: 1, marginRight: 8 }}>
-                          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textMain }}>
-                            {rider.full_name || 'Rider Staff'}
+                        <View style={{ flex: 1, marginRight: 10 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>
+                              {payout.rider_name}
+                            </Text>
+                            <View style={{
+                              backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                              borderColor: '#10B981',
+                              borderWidth: 0.8,
+                              borderRadius: 6,
+                              paddingHorizontal: 6,
+                              paddingVertical: 1
+                            }}>
+                              <Text style={{ color: '#10B981', fontSize: 9, fontWeight: '800' }}>
+                                {payout.payment_method}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2 }} numberOfLines={1}>
+                            Note: {payout.reference_note}
                           </Text>
-                          <Text style={{ fontSize: 11, color: colors.textSub }}>
-                            {rider.phone_number || 'N/A'}
+                          <Text style={{ color: colors.textSub, fontSize: 9, marginTop: 2 }}>
+                            {payoutDate}
                           </Text>
                         </View>
-                        
-                        <TouchableOpacity 
-                          style={{
-                            borderColor: '#EF4444',
-                            borderWidth: 0.8,
-                            borderRadius: 8,
-                            paddingHorizontal: 10,
-                            paddingVertical: 6,
-                            justifyContent: 'center',
-                            alignItems: 'center'
-                          }}
-                          onPress={() => handleRevokeRider(rider.id, rider.full_name || rider.phone_number)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>
-                            Revoke Access
-                          </Text>
-                        </TouchableOpacity>
+
+                        <Text style={{ color: '#10B981', fontSize: 15, fontWeight: '900' }}>
+                          +₹{payout.amount}
+                        </Text>
                       </View>
-                    </AnimatedEntrance>
-                  ))
+                    );
+                  })
                 )}
               </View>
             </ScrollView>
@@ -3649,6 +3852,205 @@ export default function OwnerDashboard() {
                 activeOpacity={0.8}
               >
                 <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '900' }}>Revoke</Text>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Record Rider Payout Liquid Glass Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={payoutModalRider !== null}
+        onRequestClose={() => setPayoutModalRider(null)}
+      >
+        <View style={styles.glassModalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.glassModalContainer,
+              {
+                borderColor: 'rgba(212, 175, 55, 0.35)',
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+                maxWidth: 380,
+                alignItems: 'center',
+                padding: 24,
+              }
+            ]}
+          >
+            {/* Dollar Icon Glow */}
+            <View style={{
+              width: 58,
+              height: 58,
+              borderRadius: 29,
+              backgroundColor: 'rgba(212, 175, 55, 0.12)',
+              borderWidth: 1.5,
+              borderColor: colors.accentGold,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}>
+              <DollarSign size={28} color={colors.accentGold} />
+            </View>
+
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textMain, textAlign: 'center', marginBottom: 4, letterSpacing: 0.5 }}>
+              RECORD RIDER PAYOUT
+            </Text>
+
+            <Text style={{ fontSize: 12, color: colors.textSub, textAlign: 'center', marginBottom: 16 }}>
+              Rider: <Text style={{ color: colors.accentGold, fontWeight: '800' }}>{payoutModalRider?.full_name || payoutModalRider?.phone_number}</Text>
+            </Text>
+
+            {/* Rider Financial Summary Card inside modal */}
+            {payoutModalRider && (() => {
+              const fin = calculateRiderFinancials(payoutModalRider.id || payoutModalRider.phone_number, completedDeliveries, riderPayoutsList);
+              return (
+                <View style={{
+                  width: '100%',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)',
+                  borderColor: colors.cardBorder,
+                  borderWidth: 1,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginBottom: 16,
+                  gap: 6
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: colors.textSub, fontSize: 11 }}>Total Income Earned:</Text>
+                    <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '800' }}>₹{fin.totalEarned}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: colors.textSub, fontSize: 11 }}>Value Given / Paid:</Text>
+                    <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>₹{fin.totalValueGiven}</Text>
+                  </View>
+                  <View style={{ height: 1, backgroundColor: colors.cardBorder, marginVertical: 2 }} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: colors.textMain, fontSize: 11, fontWeight: '900' }}>Pending to Give:</Text>
+                    <Text style={{ color: fin.pendingToGive > 0 ? '#EF4444' : colors.statusGreen, fontSize: 13, fontWeight: '900' }}>
+                      ₹{fin.pendingToGive}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* Input: Amount to Pay */}
+            <View style={{ width: '100%', marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSub, marginBottom: 6 }}>
+                PAYOUT AMOUNT (₹)
+              </Text>
+              <TextInput
+                style={{
+                  height: 44,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                  backgroundColor: colors.inputBg,
+                  color: colors.textMain,
+                  paddingHorizontal: 12,
+                  fontSize: 14,
+                  fontWeight: '800',
+                }}
+                keyboardType="numeric"
+                placeholder="Enter amount to pay..."
+                placeholderTextColor={colors.textSub}
+                value={payoutAmountInput}
+                onChangeText={setPayoutAmountInput}
+              />
+            </View>
+
+            {/* Payment Method Selector */}
+            <View style={{ width: '100%', marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSub, marginBottom: 6 }}>
+                PAYMENT METHOD
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(['UPI', 'Cash', 'Bank Transfer'] as const).map(method => (
+                  <TouchableOpacity
+                    key={method}
+                    style={{
+                      flex: 1,
+                      height: 38,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: payoutMethodInput === method ? colors.accentGold : colors.cardBorder,
+                      backgroundColor: payoutMethodInput === method ? (isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.1)') : colors.inputBg,
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    onPress={() => setPayoutMethodInput(method)}
+                  >
+                    <Text style={{ color: payoutMethodInput === method ? colors.accentGold : colors.textMain, fontSize: 11, fontWeight: '800' }}>
+                      {method}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Input: Reference Note */}
+            <View style={{ width: '100%', marginBottom: 20 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSub, marginBottom: 6 }}>
+                REFERENCE NOTE / UTR (OPTIONAL)
+              </Text>
+              <TextInput
+                style={{
+                  height: 40,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                  backgroundColor: colors.inputBg,
+                  color: colors.textMain,
+                  paddingHorizontal: 12,
+                  fontSize: 11,
+                }}
+                placeholder="e.g. UTR 9381203810, Weekly settlement"
+                placeholderTextColor={colors.textSub}
+                value={payoutNoteInput}
+                onChangeText={setPayoutNoteInput}
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                }}
+                onPress={() => setPayoutModalRider(null)}
+                disabled={recordingPayout}
+              >
+                <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 12 }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1.5,
+                  height: 46,
+                  borderRadius: 14,
+                  backgroundColor: colors.accentGold,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={handleConfirmRecordPayout}
+                disabled={recordingPayout}
+              >
+                {recordingPayout ? (
+                  <ActivityIndicator size="small" color="#000000" />
+                ) : (
+                  <Text style={{ color: '#000000', fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }}>
+                    CONFIRM PAYOUT
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </BlurView>

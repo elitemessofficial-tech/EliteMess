@@ -22,6 +22,7 @@ import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import { useDescope, useSession } from '@descope/react-native-sdk';
+import { getRiderPayouts, calculateRiderFinancials, RiderPayoutRecord } from '../../src/utils/riderPayouts';
 
 interface DBActiveDelivery {
   id: string;
@@ -75,6 +76,20 @@ export default function RiderDashboard() {
   const [loading, setLoading] = useState(true);
   const [riderId, setRiderId] = useState<string | null>(null);
   const [selectedDetailDelivery, setSelectedDetailDelivery] = useState<any | null>(null);
+  const [payoutsList, setPayoutsList] = useState<RiderPayoutRecord[]>([]);
+
+  const loadPayoutsData = async () => {
+    try {
+      const data = await getRiderPayouts();
+      setPayoutsList(data);
+    } catch (e) {
+      console.warn('Error loading rider payouts:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadPayoutsData();
+  }, []);
 
   const handleOpenMap = (lat?: number, lng?: number) => {
     if (!lat || !lng) return;
@@ -1080,33 +1095,100 @@ export default function RiderDashboard() {
               </View>
             </View>
 
-            {/* Earnings Stats Cards */}
+            {/* Rider Financial Overview Cards */}
             {(() => {
-              const basePayout = filteredDeliveries.length * 40;
-              const totalTips = filteredDeliveries.reduce((sum, item) => sum + (item.orders?.tip_amount || 0), 0);
-              const totalPayout = basePayout + totalTips;
+              const fin = calculateRiderFinancials(riderId || '', filteredDeliveries, payoutsList);
 
               return (
                 <View style={{ gap: 12, marginBottom: 20 }}>
+                  {/* Main Income Earned Card */}
                   <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 20 }]}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>TOTAL PAYOUT</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>TOTAL INCOME EARNED</Text>
                     <Text style={{ fontSize: 32, fontWeight: '900', color: colors.accentGold, marginTop: 8 }}>
-                      ₹{totalPayout.toLocaleString()}
+                      ₹{fin.totalEarned.toLocaleString()}
                     </Text>
-                    {totalTips > 0 ? (
+                    {fin.tipEarnings > 0 ? (
                       <Text style={{ fontSize: 11, color: colors.statusGreen, marginTop: 4, fontWeight: '700' }}>
-                        Base: ₹{basePayout.toLocaleString()} · Tips: ₹{totalTips.toLocaleString()}
+                        Base (₹40 × {fin.deliveryCount}): ₹{fin.baseEarnings.toLocaleString()} · Tips: ₹{fin.tipEarnings.toLocaleString()}
                       </Text>
                     ) : (
-                      <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>Earned via completed doorstep deliveries</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>
+                        Earned across {fin.deliveryCount} completed doorstep deliveries
+                      </Text>
                     )}
                   </View>
 
-                  <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textSub, letterSpacing: 1 }}>DELIVERIES COMPLETED</Text>
-                    <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textMain, marginTop: 4 }}>
-                      {filteredDeliveries.length}
-                    </Text>
+                  {/* 2 Sub Stats Cards: Value Received vs Pending Balance */}
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={[styles.taskCard, { flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.25)', padding: 14 }]}>
+                      <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textSub, letterSpacing: 0.5 }}>RECEIVED FROM OWNER</Text>
+                      <Text style={{ fontSize: 20, fontWeight: '900', color: '#10B981', marginTop: 4 }}>
+                        ₹{fin.totalValueGiven.toLocaleString()}
+                      </Text>
+                      <Text style={{ fontSize: 9, color: '#10B981', marginTop: 2 }}>Value given / paid</Text>
+                    </View>
+
+                    <View style={[styles.taskCard, { flex: 1, backgroundColor: fin.pendingToGive > 0 ? 'rgba(212, 175, 55, 0.1)' : 'rgba(16, 185, 129, 0.04)', borderColor: fin.pendingToGive > 0 ? colors.accentGold : 'rgba(16, 185, 129, 0.25)', padding: 14 }]}>
+                      <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textSub, letterSpacing: 0.5 }}>PENDING FROM OWNER</Text>
+                      <Text style={{ fontSize: 20, fontWeight: '900', color: fin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 4 }}>
+                        ₹{fin.pendingToGive.toLocaleString()}
+                      </Text>
+                      <Text style={{ fontSize: 9, color: fin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 2 }}>
+                        {fin.pendingToGive > 0 ? 'Pending to receive' : 'All Settled ✓'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Payout History from Owner Section */}
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold, marginBottom: 8 }]}>OWNER PAYOUTS RECEIVED</Text>
+                    {fin.riderPayouts.length === 0 ? (
+                      <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, alignItems: 'center', padding: 18 }]}>
+                        <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center' }}>
+                          No payouts recorded by owner yet. Once the owner settles payouts, they will appear here.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ gap: 10 }}>
+                        {fin.riderPayouts.map(payout => {
+                          const pDate = new Date(payout.created_at).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+
+                          return (
+                            <View 
+                              key={payout.id}
+                              style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 }]}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMain }}>
+                                    Payout via {payout.payment_method}
+                                  </Text>
+                                  <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: '#10B981', borderWidth: 0.8, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                                    <Text style={{ color: '#10B981', fontSize: 9, fontWeight: '800' }}>RECEIVED ✓</Text>
+                                  </View>
+                                </View>
+                                <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 2 }}>
+                                  Note: {payout.reference_note}
+                                </Text>
+                                <Text style={{ fontSize: 9, color: colors.textSub, marginTop: 2 }}>
+                                  {pDate}
+                                </Text>
+                              </View>
+
+                              <Text style={{ fontSize: 16, fontWeight: '900', color: '#10B981' }}>
+                                +₹{payout.amount}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                   </View>
                 </View>
               );
