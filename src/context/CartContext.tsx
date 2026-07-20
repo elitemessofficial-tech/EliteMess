@@ -203,13 +203,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase
         .from('menu_items')
-        .select('*');
+        .select('*')
+        .neq('category', 'Archived Items');
       if (!error && data) {
-        const loaded = data.map((item: any) => ({
-          ...item,
-          price: parseFloat(item.price),
-          is_available: item.is_available ?? true
-        }));
+        const loaded = data
+          .filter((item: any) => item.category !== 'Archived Items')
+          .map((item: any) => ({
+            ...item,
+            price: parseFloat(item.price),
+            is_available: item.is_available ?? true
+          }));
         setMenuItems(loaded);
       }
     } catch (err) {
@@ -223,12 +226,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         let { data, error } = await supabase
           .from('menu_items')
-          .select('*');
+          .select('*')
+          .neq('category', 'Archived Items');
         
         if (error) throw error;
         
         let loadedItems = [];
-        if (!data || data.length === 0) {
+        if (data && data.length > 0) {
+          loadedItems = data
+            .filter((item: any) => item.category !== 'Archived Items')
+            .map((item: any) => ({
+              ...item,
+              price: parseFloat(item.price),
+              is_available: item.is_available ?? true
+            }));
+        } else {
           // Wait a random delay (e.g. 0-500ms) to prevent concurrent inserts
           const delay = Math.random() * 500;
           await new Promise(resolve => setTimeout(resolve, delay));
