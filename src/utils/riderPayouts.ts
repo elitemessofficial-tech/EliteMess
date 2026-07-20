@@ -15,24 +15,35 @@ export interface RiderPayoutRecord {
 const STORAGE_KEY = 'hotelbet_rider_payouts';
 
 /**
- * Fetch all rider payouts from Supabase and local AsyncStorage backup
+ * Fetch all rider payouts from Supabase profiles and local AsyncStorage backup
  */
 export async function getRiderPayouts(): Promise<RiderPayoutRecord[]> {
   try {
     let remotePayouts: RiderPayoutRecord[] = [];
     
-    // Try fetching from Supabase table if it exists
+    // Fetch all rider profiles to collect payouts saved in Supabase profiles.fcm_token
     try {
-      const { data, error } = await supabase
-        .from('rider_payouts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data: riderProfiles, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, phone_number, fcm_token')
+        .eq('role', 'rider');
 
-      if (!error && data) {
-        remotePayouts = data as RiderPayoutRecord[];
+      if (!error && riderProfiles) {
+        riderProfiles.forEach(prof => {
+          if (prof.fcm_token) {
+            try {
+              const parsed = JSON.parse(prof.fcm_token);
+              if (Array.isArray(parsed)) {
+                remotePayouts.push(...parsed);
+              }
+            } catch (err) {
+              // Ignore non-JSON fcm_tokens
+            }
+          }
+        });
       }
     } catch (e) {
-      console.warn('Supabase rider_payouts fetch notice:', e);
+      console.warn('Supabase profiles payouts fetch notice:', e);
     }
 
     // Fetch local backup from AsyncStorage
@@ -85,11 +96,50 @@ export async function recordRiderPayout(
   existing.unshift(newRecord);
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
 
-  // 2. Try pushing to Supabase
+  // 2. Sync payout record to Supabase profile row
   try {
-    await supabase.from('rider_payouts').insert(newRecord);
+    const cleanPhone = (riderPhone || '').replace(/\D/g, '');
+
+    // Find rider profile in Supabase
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, fcm_token')
+      .or(`id.eq.${riderId},phone_number.eq.${riderPhone},phone_number.eq.+91${cleanPhone}`)
+      .maybeSingle();
+
+    if (prof) {
+      let existingRemote: RiderPayoutRecord[] = [];
+      if (prof.fcm_token) {
+        try {
+          const parsed = JSON.parse(prof.fcm_token);
+          if (Array.isArray(parsed)) existingRemote = parsed;
+        } catch (e) {}
+      }
+      
+      // Avoid duplicate insert
+      if (!existingRemote.some(p => p.id === newRecord.id)) {
+        existingRemote.unshift(newRecord);
+      }
+
+      await supabase
+        .from('profiles')
+        .update({ fcm_token: JSON.stringify(existingRemote) })
+        .eq('id', prof.id);
+    }
   } catch (e) {
-    console.warn('Could not insert payout to Supabase table (saved locally):', e);
+    console.warn('Could not sync payout to Supabase profiles (saved locally):', e);
+  }
+
+  // 3. Broadcast Realtime event for instant cross-device updates
+  try {
+    const channel = supabase.channel('rider_payouts_sync');
+    channel.send({
+      type: 'broadcast',
+      event: 'PAYOUT_RECORDED',
+      payload: newRecord
+    });
+  } catch (e) {
+    console.warn('Broadcast sync error:', e);
   }
 
   return newRecord;
@@ -106,36 +156,47 @@ export function calculateRiderFinancials(
   const cleanId = (riderIdOrPhone || '').toLowerCase().trim();
   const cleanPhone = (riderIdOrPhone || '').replace(/\D/g, '');
 
-  // 1. Calculate Income Earned (Deliveries count * 40 + tips)
-  const completedDeliveries = riderDeliveries.filter(d => {
-    const dRiderId = (d.rider_id || d.deliveries?.rider_id || '').toLowerCase();
-    const dRiderPhone = (d.rider_phone || d.profiles?.phone_number || '').replace(/\D/g, '');
-    return (
-      (cleanId && dRiderId === cleanId) ||
-      (cleanPhone && dRiderPhone.endsWith(cleanPhone.slice(-10)))
-    );
-  });
+  // 1. Filter deliveries matching rider if specific ID/phone is provided, else fallback to all passed deliveries
+  let matchingDeliveries = riderDeliveries;
+  if (cleanId || cleanPhone) {
+    const filtered = riderDeliveries.filter(d => {
+      const dRiderId = (d.rider_id || d.deliveries?.rider_id || '').toLowerCase();
+      const dRiderPhone = (d.rider_phone || d.profiles?.phone_number || '').replace(/\D/g, '');
+      if (!dRiderId && !dRiderPhone) return true; // Default match if legacy delivery row
+      return (
+        (cleanId && dRiderId === cleanId) ||
+        (cleanPhone && cleanPhone.length >= 8 && dRiderPhone.endsWith(cleanPhone.slice(-10)))
+      );
+    });
+    if (filtered.length > 0) {
+      matchingDeliveries = filtered;
+    }
+  }
 
-  const deliveryCount = completedDeliveries.length;
+  const deliveryCount = matchingDeliveries.length;
   const baseEarnings = deliveryCount * 40;
-  const tipEarnings = completedDeliveries.reduce((sum, d) => {
+  const tipEarnings = matchingDeliveries.reduce((sum, d) => {
     const tip = d.orders?.tip_amount || d.tip_amount || 0;
     return sum + (typeof tip === 'number' ? tip : parseFloat(tip) || 0);
   }, 0);
 
   const totalEarned = baseEarnings + tipEarnings;
 
-  // 2. Calculate Total Value Given / Paid
-  const riderPayouts = allPayouts.filter(p => {
-    const pRiderId = (p.rider_id || '').toLowerCase();
-    const pRiderPhone = (p.rider_phone || '').replace(/\D/g, '');
-    return (
-      (cleanId && pRiderId === cleanId) ||
-      (cleanPhone && cleanPhone.length >= 8 && pRiderPhone.endsWith(cleanPhone.slice(-10)))
-    );
-  });
+  // 2. Filter payouts matching rider if specific ID/phone is provided
+  let matchingPayouts = allPayouts;
+  if (cleanId || cleanPhone) {
+    const filteredP = allPayouts.filter(p => {
+      const pRiderId = (p.rider_id || '').toLowerCase();
+      const pRiderPhone = (p.rider_phone || '').replace(/\D/g, '');
+      return (
+        (cleanId && pRiderId === cleanId) ||
+        (cleanPhone && cleanPhone.length >= 8 && pRiderPhone.endsWith(cleanPhone.slice(-10)))
+      );
+    });
+    matchingPayouts = filteredP;
+  }
 
-  const totalValueGiven = riderPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalValueGiven = matchingPayouts.reduce((sum, p) => sum + (p.amount || 0), 0);
 
   // 3. Pending Balance to Give
   const pendingToGive = Math.max(0, totalEarned - totalValueGiven);
@@ -147,6 +208,6 @@ export function calculateRiderFinancials(
     totalEarned,
     totalValueGiven,
     pendingToGive,
-    riderPayouts
+    riderPayouts: matchingPayouts
   };
 }

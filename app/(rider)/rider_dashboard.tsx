@@ -89,6 +89,23 @@ export default function RiderDashboard() {
 
   useEffect(() => {
     loadPayoutsData();
+
+    // Subscribe to Realtime payout broadcast events & profile updates for instant sync across browsers/devices
+    const channel = supabase
+      .channel('rider_payouts_sync')
+      .on('broadcast', { event: 'PAYOUT_RECORDED' }, () => {
+        console.log('Realtime payout broadcast received!');
+        loadPayoutsData();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+        console.log('Realtime profile payout update detected!');
+        loadPayoutsData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleOpenMap = (lat?: number, lng?: number) => {
@@ -1097,44 +1114,52 @@ export default function RiderDashboard() {
 
             {/* Rider Financial Overview Cards */}
             {(() => {
-              const fin = calculateRiderFinancials(riderId || '', filteredDeliveries, payoutsList);
+              const filteredPayouts = getFilteredDeliveries(payoutsList, earningsFilter);
+              const rangeFin = calculateRiderFinancials(riderId || '', filteredDeliveries, filteredPayouts);
+              const lifetimeFin = calculateRiderFinancials(riderId || '', completedDeliveries, payoutsList);
 
               return (
                 <View style={{ gap: 12, marginBottom: 20 }}>
                   {/* Main Income Earned Card */}
                   <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 20 }]}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>TOTAL INCOME EARNED</Text>
-                    <Text style={{ fontSize: 32, fontWeight: '900', color: colors.accentGold, marginTop: 8 }}>
-                      ₹{fin.totalEarned.toLocaleString()}
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textSub, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                      TOTAL INCOME EARNED ({earningsFilter === 'lifetime' ? 'LIFETIME' : earningsFilter.toUpperCase()})
                     </Text>
-                    {fin.tipEarnings > 0 ? (
+                    <Text style={{ fontSize: 32, fontWeight: '900', color: colors.accentGold, marginTop: 8 }}>
+                      ₹{rangeFin.totalEarned.toLocaleString()}
+                    </Text>
+                    {rangeFin.tipEarnings > 0 ? (
                       <Text style={{ fontSize: 11, color: colors.statusGreen, marginTop: 4, fontWeight: '700' }}>
-                        Base (₹40 × {fin.deliveryCount}): ₹{fin.baseEarnings.toLocaleString()} · Tips: ₹{fin.tipEarnings.toLocaleString()}
+                        Base (₹40 × {rangeFin.deliveryCount}): ₹{rangeFin.baseEarnings.toLocaleString()} · Tips: ₹{rangeFin.tipEarnings.toLocaleString()}
                       </Text>
                     ) : (
                       <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>
-                        Earned across {fin.deliveryCount} completed doorstep deliveries
+                        Earned across {rangeFin.deliveryCount} completed doorstep deliveries
                       </Text>
                     )}
                   </View>
 
                   {/* 2 Sub Stats Cards: Value Received vs Pending Balance */}
                   <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {/* RECEIVED FROM OWNER (Filtered by Time Range) */}
                     <View style={[styles.taskCard, { flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.25)', padding: 14 }]}>
                       <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textSub, letterSpacing: 0.5 }}>RECEIVED FROM OWNER</Text>
                       <Text style={{ fontSize: 20, fontWeight: '900', color: '#10B981', marginTop: 4 }}>
-                        ₹{fin.totalValueGiven.toLocaleString()}
+                        ₹{rangeFin.totalValueGiven.toLocaleString()}
                       </Text>
-                      <Text style={{ fontSize: 9, color: '#10B981', marginTop: 2 }}>Value given / paid</Text>
+                      <Text style={{ fontSize: 9, color: '#10B981', marginTop: 2 }}>
+                        {earningsFilter === 'lifetime' ? 'All-time payouts' : `${earningsFilter} payouts`}
+                      </Text>
                     </View>
 
-                    <View style={[styles.taskCard, { flex: 1, backgroundColor: fin.pendingToGive > 0 ? 'rgba(212, 175, 55, 0.1)' : 'rgba(16, 185, 129, 0.04)', borderColor: fin.pendingToGive > 0 ? colors.accentGold : 'rgba(16, 185, 129, 0.25)', padding: 14 }]}>
+                    {/* PENDING FROM OWNER (Lifetime True Account Balance) */}
+                    <View style={[styles.taskCard, { flex: 1, backgroundColor: lifetimeFin.pendingToGive > 0 ? 'rgba(212, 175, 55, 0.1)' : 'rgba(16, 185, 129, 0.04)', borderColor: lifetimeFin.pendingToGive > 0 ? colors.accentGold : 'rgba(16, 185, 129, 0.25)', padding: 14 }]}>
                       <Text style={{ fontSize: 8, fontWeight: '800', color: colors.textSub, letterSpacing: 0.5 }}>PENDING FROM OWNER</Text>
-                      <Text style={{ fontSize: 20, fontWeight: '900', color: fin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 4 }}>
-                        ₹{fin.pendingToGive.toLocaleString()}
+                      <Text style={{ fontSize: 20, fontWeight: '900', color: lifetimeFin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 4 }}>
+                        ₹{lifetimeFin.pendingToGive.toLocaleString()}
                       </Text>
-                      <Text style={{ fontSize: 9, color: fin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 2 }}>
-                        {fin.pendingToGive > 0 ? 'Pending to receive' : 'All Settled ✓'}
+                      <Text style={{ fontSize: 9, color: lifetimeFin.pendingToGive > 0 ? colors.accentGold : '#10B981', marginTop: 2 }}>
+                        {lifetimeFin.pendingToGive > 0 ? 'Overall Account Balance' : 'All Settled ✓'}
                       </Text>
                     </View>
                   </View>
@@ -1142,15 +1167,15 @@ export default function RiderDashboard() {
                   {/* Payout History from Owner Section */}
                   <View style={{ marginTop: 8 }}>
                     <Text style={[styles.sectionHeaderTitle, { color: colors.accentGold, marginBottom: 8 }]}>OWNER PAYOUTS RECEIVED</Text>
-                    {fin.riderPayouts.length === 0 ? (
+                    {filteredPayouts.length === 0 ? (
                       <View style={[styles.taskCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, alignItems: 'center', padding: 18 }]}>
                         <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center' }}>
-                          No payouts recorded by owner yet. Once the owner settles payouts, they will appear here.
+                          No payouts recorded for the selected time range ({earningsFilter}).
                         </Text>
                       </View>
                     ) : (
                       <View style={{ gap: 10 }}>
-                        {fin.riderPayouts.map(payout => {
+                        {filteredPayouts.map(payout => {
                           const pDate = new Date(payout.created_at).toLocaleDateString(undefined, {
                             day: 'numeric',
                             month: 'short',

@@ -370,6 +370,20 @@ export default function OwnerDashboard() {
 
   useEffect(() => {
     fetchRiderPayoutsAndDeliveries();
+
+    const channel = supabase
+      .channel('rider_payouts_sync')
+      .on('broadcast', { event: 'PAYOUT_RECORDED' }, () => {
+        fetchRiderPayoutsAndDeliveries();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, () => {
+        fetchRiderPayoutsAndDeliveries();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleOpenRecordPayoutModal = (rider: any, pendingAmount: number) => {
