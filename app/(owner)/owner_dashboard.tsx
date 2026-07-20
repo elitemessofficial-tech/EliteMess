@@ -753,6 +753,7 @@ export default function OwnerDashboard() {
       const { data, error } = await supabase
         .from('menu_items')
         .select('*')
+        .neq('category', 'Archived Items')
         .order('created_at', { ascending: false });
       if (error) throw error;
       
@@ -760,6 +761,7 @@ export default function OwnerDashboard() {
       const seenNames = new Set<string>();
       const loaded: any[] = [];
       rawList.forEach((item: any) => {
+        if (item.category === 'Archived Items') return;
         const lowerName = item.name.trim().toLowerCase();
         if (!seenNames.has(lowerName)) {
           seenNames.add(lowerName);
@@ -823,19 +825,44 @@ export default function OwnerDashboard() {
     const localItem = menuItems.find(item => item.id === id);
     if (!localItem) return;
 
-    try {
-      // Delete item across all locations with the same name
-      const { error } = await supabase
-        .from('menu_items')
-        .delete()
-        .eq('name', localItem.name);
+    Alert.alert(
+      'Delete Menu Item',
+      `Are you sure you want to delete "${localItem.name}" from the menu?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // 1. First set is_available = false and category = 'Archived Items' to remove from all views
+              await supabase
+                .from('menu_items')
+                .update({ is_available: false, category: 'Archived Items' })
+                .eq('name', localItem.name);
 
-      if (error) throw error;
-      Alert.alert('Success', 'Menu item deleted successfully across all branches.');
-      fetchMenuItems();
-    } catch (err: any) {
-      Alert.alert('Delete Failed', err.message);
-    }
+              // 2. Try hard deletion for any unreferenced records
+              const { error } = await supabase
+                .from('menu_items')
+                .delete()
+                .eq('name', localItem.name);
+
+              if (error && !error.message.includes('foreign key constraint') && !error.message.includes('violates')) {
+                console.warn('Delete warning:', error.message);
+              }
+
+              // Update local state immediately
+              setMenuItems(prev => prev.filter(item => item.name.trim().toLowerCase() !== localItem.name.trim().toLowerCase()));
+              showToast('Deleted', `"${localItem.name}" deleted successfully from menu!`, 'success');
+              fetchMenuItems();
+            } catch (err: any) {
+              console.error('Delete menu item error:', err);
+              showToast('Error', 'Failed to delete menu item: ' + err.message, 'error');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleAddMenuItem = async () => {
