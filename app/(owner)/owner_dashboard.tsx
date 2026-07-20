@@ -323,6 +323,10 @@ export default function OwnerDashboard() {
   const [ownerRefundModalOrder, setOwnerRefundModalOrder] = useState<any | null>(null);
   const [ownerTxnRefId, setOwnerTxnRefId] = useState<string>('');
 
+  // Delete Menu Item Glass Modal State
+  const [deleteConfirmationItem, setDeleteConfirmationItem] = useState<any | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
+
   const isOwnerSameDay = (createdAtIso: string) => {
     if (!createdAtIso) return true;
     const ordDate = new Date(createdAtIso);
@@ -821,48 +825,45 @@ export default function OwnerDashboard() {
     }
   };
 
-  const handleDeleteMenuItem = async (id: string) => {
+  const handleDeleteMenuItem = (id: string) => {
     const localItem = menuItems.find(item => item.id === id);
     if (!localItem) return;
+    setDeleteConfirmationItem(localItem);
+  };
 
-    Alert.alert(
-      'Delete Menu Item',
-      `Are you sure you want to delete "${localItem.name}" from the menu?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // 1. First set is_available = false and category = 'Archived Items' to remove from all views
-              await supabase
-                .from('menu_items')
-                .update({ is_available: false, category: 'Archived Items' })
-                .eq('name', localItem.name);
+  const confirmDeleteMenuItem = async () => {
+    if (!deleteConfirmationItem) return;
+    try {
+      setDeletingItem(true);
+      const itemName = deleteConfirmationItem.name;
 
-              // 2. Try hard deletion for any unreferenced records
-              const { error } = await supabase
-                .from('menu_items')
-                .delete()
-                .eq('name', localItem.name);
+      // 1. First set is_available = false and category = 'Archived Items' to remove from all views
+      await supabase
+        .from('menu_items')
+        .update({ is_available: false, category: 'Archived Items' })
+        .eq('name', itemName);
 
-              if (error && !error.message.includes('foreign key constraint') && !error.message.includes('violates')) {
-                console.warn('Delete warning:', error.message);
-              }
+      // 2. Try hard deletion for any unreferenced records
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('name', itemName);
 
-              // Update local state immediately
-              setMenuItems(prev => prev.filter(item => item.name.trim().toLowerCase() !== localItem.name.trim().toLowerCase()));
-              showToast('Deleted', `"${localItem.name}" deleted successfully from menu!`, 'success');
-              fetchMenuItems();
-            } catch (err: any) {
-              console.error('Delete menu item error:', err);
-              showToast('Error', 'Failed to delete menu item: ' + err.message, 'error');
-            }
-          }
-        }
-      ]
-    );
+      if (error && !error.message.includes('foreign key constraint') && !error.message.includes('violates')) {
+        console.warn('Delete warning:', error.message);
+      }
+
+      // Update local state immediately
+      setMenuItems(prev => prev.filter(item => item.name.trim().toLowerCase() !== itemName.trim().toLowerCase()));
+      showToast('Deleted', `"${itemName}" deleted successfully from menu!`, 'success');
+      setDeleteConfirmationItem(null);
+      fetchMenuItems();
+    } catch (err: any) {
+      console.error('Delete menu item error:', err);
+      showToast('Error', 'Failed to delete menu item: ' + err.message, 'error');
+    } finally {
+      setDeletingItem(false);
+    }
   };
 
   const handleAddMenuItem = async () => {
@@ -3647,7 +3648,130 @@ export default function OwnerDashboard() {
         </View>
       </Modal>
 
-      {/* Customer Profile Info Modal */}
+      {/* Delete Menu Item Confirmation Liquid Glass Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={deleteConfirmationItem !== null}
+        onRequestClose={() => setDeleteConfirmationItem(null)}
+      >
+        <View style={styles.glassModalOverlay}>
+          <BlurView
+            intensity={95}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.glassModalContainer,
+              {
+                borderColor: 'rgba(239, 68, 68, 0.35)',
+                backgroundColor: isDark ? 'rgba(15, 15, 12, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+                maxWidth: 360,
+                alignItems: 'center',
+                padding: 24,
+              }
+            ]}
+          >
+            {/* Trash Icon with Red Glass Glow */}
+            <View style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              borderWidth: 1.5,
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+              shadowColor: '#EF4444',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 10,
+              elevation: 4,
+            }}>
+              <Trash2 size={28} color="#EF4444" />
+            </View>
+
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textMain, textAlign: 'center', marginBottom: 8, letterSpacing: 0.5 }}>
+              DELETE MENU ITEM?
+            </Text>
+
+            <Text style={{ fontSize: 12, color: colors.textSub, textAlign: 'center', lineHeight: 18, marginBottom: 16, fontWeight: '500' }}>
+              Are you sure you want to remove <Text style={{ color: colors.accentGold, fontWeight: '800' }}>"{deleteConfirmationItem?.name}"</Text> from all branch menus?
+            </Text>
+
+            {/* Item Details Glass Pill */}
+            {deleteConfirmationItem && (
+              <View style={{
+                width: '100%',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
+                borderColor: colors.cardBorder,
+                borderWidth: 1,
+                borderRadius: 14,
+                padding: 12,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 20,
+              }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 12 }} numberOfLines={1}>
+                    {deleteConfirmationItem.name}
+                  </Text>
+                  <Text style={{ color: colors.textSub, fontSize: 10, marginTop: 2 }}>
+                    Category: {deleteConfirmationItem.category}
+                  </Text>
+                </View>
+                <Text style={{ color: colors.accentGold, fontWeight: '900', fontSize: 14 }}>
+                  ₹{deleteConfirmationItem.price}
+                </Text>
+              </View>
+            )}
+
+            {/* Modal Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: colors.cardBorder,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+                }}
+                onPress={() => setDeleteConfirmationItem(null)}
+                disabled={deletingItem}
+              >
+                <Text style={{ color: colors.textMain, fontWeight: '800', fontSize: 12 }}>Keep Item</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 46,
+                  borderRadius: 14,
+                  backgroundColor: '#EF4444',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#EF4444',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.35,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
+                onPress={confirmDeleteMenuItem}
+                disabled={deletingItem}
+              >
+                {deletingItem ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }}>Yes, Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
 
 
       {/* Detailed Order Modal for Owner */}
@@ -4828,6 +4952,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  glassModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  glassModalContainer: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    borderWidth: 1.2,
+    padding: 24,
+    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
   },
   modalContent: {
     width: '90%',
