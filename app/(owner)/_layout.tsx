@@ -19,20 +19,31 @@ export default function OwnerLayout() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
       try {
+        const isLogout = await AsyncStorage.getItem('explicit_logout');
+        if (isLogout === 'true') {
+          if (isMounted) {
+            setAuthorized(false);
+            router.replace('/(auth)/login');
+          }
+          return;
+        }
+
         // 1. VIP bypass active check
         const isVipActive = await AsyncStorage.getItem('vip_session_active');
         const selectedRole = await AsyncStorage.getItem('user_selected_role');
         if (isVipActive === 'true' && selectedRole === 'owner') {
-          setAuthorized(true);
+          if (isMounted) setAuthorized(true);
           return;
         }
 
         // 2. Demo role check
         const demoRole = await AsyncStorage.getItem('demo_role');
         if (demoRole === 'owner') {
-          setAuthorized(true);
+          if (isMounted) setAuthorized(true);
           return;
         }
 
@@ -44,7 +55,7 @@ export default function OwnerLayout() {
           if (phone && isSpecialOwnerNumber(phone)) {
             // Verify if owner selection was chosen
             if (selectedRole === 'owner') {
-              setAuthorized(true);
+              if (isMounted) setAuthorized(true);
               return;
             }
           }
@@ -56,22 +67,30 @@ export default function OwnerLayout() {
             .single();
 
           if (profile && profile.role === 'owner') {
-            setAuthorized(true);
+            if (isMounted) setAuthorized(true);
             return;
           }
         }
 
         // Default to not authorized
-        setAuthorized(false);
-        router.replace('/(auth)/login');
+        if (isMounted) {
+          setAuthorized(false);
+          router.replace('/(auth)/login');
+        }
       } catch (e) {
         console.error('Owner route guard error:', e);
-        setAuthorized(false);
-        router.replace('/(auth)/login');
+        if (isMounted) {
+          setAuthorized(false);
+          router.replace('/(auth)/login');
+        }
       }
     };
 
     checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, [session]);
 
   if (authorized === null) {

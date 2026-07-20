@@ -35,6 +35,8 @@ export default function EntrypointIndex() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    let isMounted = true;
+
     // Entrance animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -68,10 +70,20 @@ export default function EntrypointIndex() {
     // Check local supabase session or local demo bypass
     const checkSessionAndRole = async () => {
       try {
-        // Enforce a minimum load time of 5 seconds to showcase the premium loading screen
-        const minDelay = new Promise(resolve => setTimeout(resolve, 4000));
+        const isLogout = await AsyncStorage.getItem('explicit_logout');
+        if (isLogout === 'true') {
+          if (isMounted) router.replace('/(auth)/login');
+          return;
+        }
+
+        const minDelay = new Promise(resolve => setTimeout(resolve, 1200));
 
         const determineRoute = async () => {
+          const isLogoutCheck = await AsyncStorage.getItem('explicit_logout');
+          if (isLogoutCheck === 'true') {
+            return '/(auth)/login';
+          }
+
           const isVipActive = await AsyncStorage.getItem('vip_session_active');
           if (isVipActive === 'true') {
             const selectedRole = await AsyncStorage.getItem('user_selected_role');
@@ -134,14 +146,27 @@ export default function EntrypointIndex() {
         };
 
         const [targetRoute] = await Promise.all([determineRoute(), minDelay]);
-        router.replace(targetRoute as any);
+        
+        const freshLogoutCheck = await AsyncStorage.getItem('explicit_logout');
+        if (freshLogoutCheck === 'true') {
+          if (isMounted) router.replace('/(auth)/login');
+          return;
+        }
+
+        if (isMounted) {
+          router.replace(targetRoute as any);
+        }
       } catch (e) {
         console.error('Error during role routing:', e);
-        router.replace('/(auth)/login');
+        if (isMounted) router.replace('/(auth)/login');
       }
     };
 
     checkSessionAndRole();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
   return (

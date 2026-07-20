@@ -276,6 +276,7 @@ export default function AccountScreen() {
 
   const handleLogout = async () => {
     try {
+      await AsyncStorage.setItem('explicit_logout', 'true');
       await AsyncStorage.removeItem('demo_role');
       await AsyncStorage.removeItem('user_selected_role');
       await AsyncStorage.removeItem('vip_session_active');

@@ -98,6 +98,11 @@ export default function PhoneLoginScreen() {
 
   useEffect(() => {
     const checkVipSession = async () => {
+      const isLogout = await AsyncStorage.getItem('explicit_logout');
+      if (isLogout === 'true') {
+        return true; // Stay on login screen if user explicitly logged out
+      }
+
       const isVipActive = await AsyncStorage.getItem('vip_session_active');
       if (isVipActive === 'true') {
         const storedRole = await AsyncStorage.getItem('user_selected_role');
@@ -193,6 +198,7 @@ export default function PhoneLoginScreen() {
     setLoading(true);
     setErrorMsg('');
     try {
+      await AsyncStorage.removeItem('explicit_logout');
       const formattedPhone = `+91${phoneNumber.trim()}`;
       
       // Check VIP bypass

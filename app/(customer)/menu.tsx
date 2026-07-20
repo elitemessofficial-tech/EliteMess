@@ -38,7 +38,6 @@ interface MenuItem {
 
 const MOCK_MENU: MenuItem[] = [
   { id: 'm1', name: "Crispy Paneer", price: 239, category: "Veg Starter", description: "Crisp fried paneer tossed in savory spices" },
-  { id: 'm2', name: "Masala Papad", price: 49, category: "Papad", description: "Fried or roasted papad topped with spicy onion tomato mix" },
   { id: 'm3', name: "Chicken Chilli", price: 239, category: "Non-Veg Starter", description: "Tender chicken chunks in spicy chilli glaze" },
   { id: 'm4', name: "Paneer Tikka", price: 239, category: "Tandoor Veg Starter", description: "Skewered char-grilled spiced paneer cubes" },
   { id: 'm5', name: "Paneer Butter Masala", price: 259, category: "Main Course Veg", description: "Paneer in rich tomato, butter, and cashew gravy" },
@@ -48,7 +47,6 @@ const MOCK_MENU: MenuItem[] = [
 const CATEGORIES = [
   'All',
   'Veg Starter',
-  'Papad',
   'Non-Veg Starter',
   'Fish Starter',
   'Tandoor Veg Starter',

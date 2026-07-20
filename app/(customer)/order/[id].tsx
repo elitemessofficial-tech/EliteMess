@@ -178,6 +178,38 @@ export default function OrderDetailsScreen() {
   const executeCancelOrder = async () => {
     if (!order || order.status === 'delivered' || order.status === 'cancelled') return;
 
+    const isCodOrder = order.notes?.toLowerCase().includes('payment: cod') || 
+                       (order.notes?.toLowerCase().includes('cod') && !order.notes?.toLowerCase().includes('online'));
+
+    if (isCodOrder) {
+      try {
+        setCancelling(true);
+        const codCancelTag = `[COD_CANCELLED: status=CANCELLED | method=COD | refund=NONE]`;
+        const updatedNotes = order.notes ? `${codCancelTag} ${order.notes}` : codCancelTag;
+
+        const { error } = await supabase
+          .from('orders')
+          .update({
+            status: 'cancelled',
+            notes: updatedNotes
+          })
+          .eq('id', order.id);
+
+        if (error) throw error;
+
+        setOrder(prev => prev ? { ...prev, status: 'cancelled', notes: updatedNotes, delivery_otp: undefined } : null);
+        setShowCancelConfirmation(false);
+        showToast('Order Cancelled', 'Your Cash on Delivery (COD) order has been cancelled. Since no payment was collected, no refund is applicable.', 'info');
+      } catch (e: any) {
+        console.error('Error cancelling COD order:', e.message);
+        showToast('Error', 'Failed to cancel order: ' + e.message, 'error');
+        setShowCancelConfirmation(false);
+      } finally {
+        setCancelling(false);
+      }
+      return;
+    }
+
     const refund = getRefundInfo(order.status, order.total_amount);
 
     try {
@@ -611,8 +643,11 @@ export default function OrderDetailsScreen() {
             (() => {
               const minutesElapsed = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (1000 * 60));
               const canCancel = minutesElapsed <= 30;
+              const isCodOrder = order.notes?.toLowerCase().includes('payment: cod') || 
+                                 (order.notes?.toLowerCase().includes('cod') && !order.notes?.toLowerCase().includes('online'));
 
               if (canCancel) {
+                const refundInfo = getRefundInfo(order.status, order.total_amount);
                 return (
                   <TouchableOpacity
                     style={{ borderColor: colors.statusRed, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', marginTop: 14 }}
@@ -624,7 +659,9 @@ export default function OrderDetailsScreen() {
                       <ActivityIndicator size="small" color={colors.statusRed} />
                     ) : (
                       <Text style={{ color: colors.statusRed, fontWeight: '800', fontSize: 12 }}>
-                        Cancel Order ({getRefundInfo(order.status, order.total_amount).percent}% Bank Refund) · {30 - minutesElapsed}m left
+                        {isCodOrder
+                          ? `Cancel Order (COD - No Payment Collected) · ${30 - minutesElapsed}m left`
+                          : `Cancel Order (${refundInfo.percent}% Bank Refund) · ${30 - minutesElapsed}m left`}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -644,16 +681,34 @@ export default function OrderDetailsScreen() {
             })()
           )}
 
-          {/* Refund Tracker Link Button if Cancelled */}
+          {/* Refund Tracker Link Button if Cancelled - ONLY FOR ONLINE REFUNDABLE ORDERS */}
           {order.status === 'cancelled' && (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => router.push('/(customer)/refunds')}
-              style={{ backgroundColor: 'rgba(59, 130, 246, 0.12)', borderColor: '#3B82F6', borderWidth: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', marginTop: 14, flexDirection: 'row', gap: 6 }}
-            >
-              <CreditCard size={14} color="#3B82F6" />
-              <Text style={{ color: '#3B82F6', fontWeight: '900', fontSize: 12 }}>TRACK BANK REFUND STATUS ➔</Text>
-            </TouchableOpacity>
+            (() => {
+              const isCodOrder = order.notes?.toLowerCase().includes('payment: cod') || 
+                                 order.notes?.toLowerCase().includes('cod_cancelled') ||
+                                 (order.notes?.toLowerCase().includes('cod') && !order.notes?.toLowerCase().includes('online'));
+
+              if (isCodOrder) {
+                return (
+                  <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', borderRadius: 12, padding: 10, borderWidth: 0.8, borderColor: 'rgba(239, 68, 68, 0.2)', marginTop: 14, alignItems: 'center' }}>
+                    <Text style={{ color: colors.statusRed, fontSize: 11, fontWeight: '800' }}>
+                      🚫 COD Order Cancelled (No Payment Collected)
+                    </Text>
+                  </View>
+                );
+              }
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/(customer)/refunds')}
+                  style={{ backgroundColor: 'rgba(59, 130, 246, 0.12)', borderColor: '#3B82F6', borderWidth: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', marginTop: 14, flexDirection: 'row', gap: 6 }}
+                >
+                  <CreditCard size={14} color="#3B82F6" />
+                  <Text style={{ color: '#3B82F6', fontWeight: '900', fontSize: 12 }}>TRACK BANK REFUND STATUS ➔</Text>
+                </TouchableOpacity>
+              );
+            })()
           )}
         </View>
 
@@ -1167,9 +1222,38 @@ export default function OrderDetailsScreen() {
               loop
               style={{ width: 80, height: 80, marginBottom: 8 }}
             />
-            <Text style={[styles.modalTitle, { color: colors.statusRed }]}>CANCEL ORDER & REFUND</Text>
+            <Text style={[styles.modalTitle, { color: colors.statusRed }]}>
+              {order?.notes?.toLowerCase().includes('payment: cod') || (order?.notes?.toLowerCase().includes('cod') && !order?.notes?.toLowerCase().includes('online'))
+                ? 'CANCEL COD ORDER?'
+                : 'CANCEL ORDER & REFUND'}
+            </Text>
             
             {order && (() => {
+              const isCodOrder = order.notes?.toLowerCase().includes('payment: cod') || 
+                                 (order.notes?.toLowerCase().includes('cod') && !order.notes?.toLowerCase().includes('online'));
+
+              if (isCodOrder) {
+                return (
+                  <View style={{ width: '100%', gap: 10, marginBottom: 16 }}>
+                    <View style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                      borderRadius: 12,
+                      padding: 12,
+                      borderWidth: 0.8,
+                      borderColor: 'rgba(239, 68, 68, 0.25)',
+                      alignItems: 'center',
+                    }}>
+                      <Text style={{ color: colors.statusRed, fontSize: 12, fontWeight: '800', textAlign: 'center' }}>
+                        Cash on Delivery (COD) Order
+                      </Text>
+                      <Text style={{ color: colors.textSub, fontSize: 11, textAlign: 'center', marginTop: 4, lineHeight: 16 }}>
+                        No payment was collected for this order. Cancelling will notify kitchen and rider. No refund is required or issued.
+                      </Text>
+                    </View>
+                  </View>
+                );
+              }
+
               const refund = getRefundInfo(order.status, order.total_amount);
               return (
                 <View style={{ width: '100%', gap: 10, marginBottom: 16 }}>
@@ -1281,7 +1365,9 @@ export default function OrderDetailsScreen() {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }}>
-                    CONFIRM CANCELLATION (GET ₹{order ? getRefundInfo(order.status, order.total_amount).amount : 0})
+                    {order && (order.notes?.toLowerCase().includes('payment: cod') || (order.notes?.toLowerCase().includes('cod') && !order.notes?.toLowerCase().includes('online')))
+                      ? 'CONFIRM CANCELLATION'
+                      : `CONFIRM CANCELLATION (GET ₹${order ? getRefundInfo(order.status, order.total_amount).amount : 0})`}
                   </Text>
                 )}
               </TouchableOpacity>

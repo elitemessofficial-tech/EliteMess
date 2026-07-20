@@ -33,11 +33,6 @@ const SEED_MENU: MenuItem[] = [
   { id: 'v2', name: "Paneer Chilli", price: 239, category: "Veg Starter", description: "Paneer cubes tossed with bell peppers and chilli sauce" },
   { id: 'v3', name: "Veg Manchurian (Dry)", price: 219, category: "Veg Starter", description: "Mixed veg balls in dry Manchurian sauce" },
 
-  // Papad
-  { id: 'v4', name: "Masala Papad", price: 49, category: "Papad", description: "Fried or roasted papad topped with spicy onion tomato mix" },
-  { id: 'v5', name: "Fry Papad", price: 39, category: "Papad", description: "Crispy deep-fried papad" },
-  { id: 'v6', name: "Roasted Papad", price: 29, category: "Papad", description: "Crispy dry-roasted papad" },
-
   // Non-Veg Starter
   { id: 'v7', name: "Chicken Chilli", price: 239, category: "Non-Veg Starter", description: "Tender chicken chunks in spicy chilli glaze" },
   { id: 'v8', name: "Lollipop (Dry)", price: 239, category: "Non-Veg Starter", description: "Deep fried seasoned chicken lollipops" },
