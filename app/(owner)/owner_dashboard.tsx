@@ -31,6 +31,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
 import { getZomatoPriceForItem } from '../../src/utils/zomatoPrices';
+import { useDescope, useSession } from '@descope/react-native-sdk';
 
 
 interface OrderItem {
@@ -88,6 +89,8 @@ const MENU_CATEGORIES = [
 export default function OwnerDashboard() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
+  const sdk = useDescope();
+  const { manageSession } = useSession();
 
   const [orders, setOrders] = useState<DBOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1029,10 +1032,18 @@ export default function OwnerDashboard() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('demo_role');
-    await AsyncStorage.removeItem('user_selected_role');
-    await AsyncStorage.removeItem('vip_session_active');
-    router.replace('/(auth)/login');
+    try {
+      await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('vip_session_active');
+      try { await sdk.logout(); } catch (e) {}
+      try { await manageSession(undefined); } catch (e) {}
+      try { await supabase.auth.signOut(); } catch (e) {}
+      router.replace('/(auth)/login');
+    } catch (e) {
+      console.error('Failed to sign out:', e);
+      router.replace('/(auth)/login');
+    }
   };
 
   // Status-based stats calculation

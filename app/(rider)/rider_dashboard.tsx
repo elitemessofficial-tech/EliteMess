@@ -21,7 +21,7 @@ import { User, Home, ShoppingBag, Navigation, MapPin, Sun, Moon, LogOut, Package
 import { BlurView } from 'expo-blur';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
-import { useSession } from '@descope/react-native-sdk';
+import { useDescope, useSession } from '@descope/react-native-sdk';
 
 interface DBActiveDelivery {
   id: string;
@@ -67,7 +67,8 @@ interface DBAvailableOrder {
 export default function RiderDashboard() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
-  const { session } = useSession();
+  const sdk = useDescope();
+  const { session, manageSession } = useSession();
 
   const [activeDeliveries, setActiveDeliveries] = useState<DBActiveDelivery[]>([]);
   const [availableOrders, setAvailableOrders] = useState<DBAvailableOrder[]>([]);
@@ -632,10 +633,18 @@ export default function RiderDashboard() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('demo_role');
-    await AsyncStorage.removeItem('user_selected_role');
-    await AsyncStorage.removeItem('vip_session_active');
-    router.replace('/(auth)/login');
+    try {
+      await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('vip_session_active');
+      try { await sdk.logout(); } catch (e) {}
+      try { await manageSession(undefined); } catch (e) {}
+      try { await supabase.auth.signOut(); } catch (e) {}
+      router.replace('/(auth)/login');
+    } catch (e) {
+      console.error('Failed to sign out:', e);
+      router.replace('/(auth)/login');
+    }
   };
 
   const filteredDeliveries = getFilteredDeliveries(completedDeliveries, earningsFilter);

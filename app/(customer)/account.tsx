@@ -22,11 +22,12 @@ import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
 import { getFavoriteDishIds } from '../../src/utils/favorites';
-import { useSession } from '@descope/react-native-sdk';
+import { useDescope, useSession } from '@descope/react-native-sdk';
 export default function AccountScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
-  const { session: descopeSession } = useSession();
+  const sdk = useDescope();
+  const { session: descopeSession, manageSession } = useSession();
 
   // Custom Toast/Alert State
   const [toastVisible, setToastVisible] = useState(false);
@@ -278,7 +279,9 @@ export default function AccountScreen() {
       await AsyncStorage.removeItem('demo_role');
       await AsyncStorage.removeItem('user_selected_role');
       await AsyncStorage.removeItem('vip_session_active');
-      await supabase.auth.signOut();
+      try { await sdk.logout(); } catch (e) {}
+      try { await manageSession(undefined); } catch (e) {}
+      try { await supabase.auth.signOut(); } catch (e) {}
       router.replace('/(auth)/login');
     } catch (e) {
       console.error('Failed to sign out:', e);

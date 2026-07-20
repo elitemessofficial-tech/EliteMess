@@ -22,12 +22,13 @@ import { calculateHaversineDistance, formatDistance } from '../../src/utils/dist
 import LocationPickerModal, { AddressDetails } from '../../src/components/LocationPickerModal';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
-import { useSession } from '@descope/react-native-sdk';
+import { useDescope, useSession } from '@descope/react-native-sdk';
 
 export default function BranchesScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
-  const { session } = useSession();
+  const sdk = useDescope();
+  const { session, manageSession } = useSession();
 
   const [branches, setBranches] = useState<any[]>([]);
   const [rawBranches, setRawBranches] = useState<any[]>([]);
@@ -221,10 +222,18 @@ export default function BranchesScreen() {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('demo_role');
-    await AsyncStorage.removeItem('user_selected_role');
-    await AsyncStorage.removeItem('vip_session_active');
-    router.replace('/(auth)/login');
+    try {
+      await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_selected_role');
+      await AsyncStorage.removeItem('vip_session_active');
+      try { await sdk.logout(); } catch (e) {}
+      try { await manageSession(undefined); } catch (e) {}
+      try { await supabase.auth.signOut(); } catch (e) {}
+      router.replace('/(auth)/login');
+    } catch (e) {
+      console.error('Failed to sign out:', e);
+      router.replace('/(auth)/login');
+    }
   };
 
   const renderSkeletonCard = (index: number) => {

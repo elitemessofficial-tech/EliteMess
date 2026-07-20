@@ -20,12 +20,13 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
-import { useSession } from '@descope/react-native-sdk';
+import { useDescope, useSession } from '@descope/react-native-sdk';
 
 export default function RiderProfileScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
-  const { session, clearSession } = useSession();
+  const sdk = useDescope();
+  const { session, clearSession, manageSession } = useSession();
 
   // Custom Toast/Alert State
   const [toastVisible, setToastVisible] = useState(false);
@@ -210,8 +211,10 @@ export default function RiderProfileScreen() {
       await AsyncStorage.removeItem('demo_role');
       await AsyncStorage.removeItem('user_selected_role');
       await AsyncStorage.removeItem('vip_session_active');
-      await clearSession();
-      await supabase.auth.signOut();
+      try { await sdk.logout(); } catch (e) {}
+      try { await clearSession(); } catch (e) {}
+      try { await manageSession(undefined); } catch (e) {}
+      try { await supabase.auth.signOut(); } catch (e) {}
       router.replace('/(auth)/login');
     } catch (e) {
       console.error('Failed to sign out:', e);
