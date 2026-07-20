@@ -147,6 +147,20 @@ export default function WalletScreen() {
 
           let validCards: ScratchCardData[] = [];
           for (const card of loadedCards) {
+            const matchingDbOrder = dbOrders.find(o => o.id === card.orderId);
+            if (matchingDbOrder && matchingDbOrder.notes) {
+              const notesLower = matchingDbOrder.notes.toLowerCase();
+              const isScratchOrder = notesLower.includes('scratch card') || notesLower.includes('cashback');
+              if (!isScratchOrder) {
+                // Card was erroneously saved for non-scratch card order - purge it
+                if (card.isScratched) {
+                  loadedBal = Math.max(0, loadedBal - card.wonAmount);
+                  loadedTxns = loadedTxns.filter(t => t.orderId !== card.orderId);
+                }
+                continue;
+              }
+            }
+
             if (cancelledOrRefundedSet.has(card.orderId)) {
               if (card.isScratched) {
                 loadedBal = Math.max(0, loadedBal - card.wonAmount);
@@ -169,12 +183,10 @@ export default function WalletScreen() {
           const existingCardOrderIds = new Set(loadedCards.map(c => c.orderId));
 
           for (const order of dbOrders) {
-            const notesStr = order.notes || '';
+            const notesStr = (order.notes || '').toLowerCase();
             const isQualifyingReward = 
-              notesStr.includes('Scratch Card') || 
-              notesStr.includes('REWARD:') || 
-              notesStr.includes('Cashback') || 
-              order.total_amount >= 500;
+              notesStr.includes('scratch card') || 
+              notesStr.includes('cashback');
 
             if (isQualifyingReward && !existingCardOrderIds.has(order.id) && !cancelledOrRefundedSet.has(order.id)) {
               let minPrize = 25;

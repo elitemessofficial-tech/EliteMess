@@ -69,11 +69,15 @@ export default function RefundsScreen() {
 
       (dbOrders || []).forEach(order => {
         const notesStr = order.notes || '';
+        const isCodOrder = notesStr.toLowerCase().includes('payment: cod') || (notesStr.toLowerCase().includes('cod') && !notesStr.toLowerCase().includes('online'));
+
         const isRefundOrder =
-          notesStr.includes('Refund') ||
+          !isCodOrder &&
+          (notesStr.includes('Refund') ||
           notesStr.includes('CANCELLED') ||
           notesStr.includes('OWNER REFUND') ||
-          notesStr.includes('BANK_REFUND');
+          notesStr.includes('BANK_REFUND') ||
+          notesStr.includes('WALLET_REFUND'));
 
         if (isRefundOrder) {
           // Parse refund percent

@@ -463,7 +463,34 @@ export default function CartScreen() {
       const orderStatus = targetOrder?.status || 'pending';
       const orderNotes = targetOrder?.notes || '';
 
-      // Compute refund based on order stage
+      const isCodOrder = orderNotes.toLowerCase().includes('payment: cod') || 
+                         (orderNotes.toLowerCase().includes('cod') && !orderNotes.toLowerCase().includes('online'));
+
+      if (isCodOrder) {
+        // ── COD ORDER CANCELLATION (NO REFUND APPLICABLE) ──
+        const codCancelTag = `[COD_CANCELLED: status=CANCELLED | method=COD | refund=NONE]`;
+        const updatedNotes = orderNotes ? `${codCancelTag} ${orderNotes}` : codCancelTag;
+
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'cancelled', notes: updatedNotes })
+          .eq('id', orderId);
+
+        if (error) throw error;
+
+        setOrders(prev =>
+          prev.map(order =>
+            order.id === orderId
+              ? { ...order, status: 'cancelled', notes: updatedNotes, delivery_otp: undefined }
+              : order
+          )
+        );
+        showToast('Order Cancelled', 'Your Cash on Delivery (COD) order has been cancelled. Since no payment was collected, no refund is applicable.', 'info');
+        setCancelConfirmationOrderId(null);
+        return;
+      }
+
+      // Compute refund based on order stage for ONLINE prepaid orders
       let refundPercent = 100;
       if (orderStatus === 'accepted' || orderStatus === 'preparing' || orderStatus === 'cooking') {
         refundPercent = 70;
