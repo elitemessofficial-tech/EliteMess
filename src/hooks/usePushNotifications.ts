@@ -62,7 +62,7 @@ export function usePushNotifications(userId?: string | null, role: 'customer' | 
             name: 'Order & Delivery Alerts',
             importance: Notifications.AndroidImportance?.MAX || 5,
             vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#D4AF37', // Hotel Bet Gold Accent
+            lightColor: '#10B981', // Hotel Bet Emerald Accent
             sound: 'cash_register.mp3', // References assets/cash-register.mp3
             enableVibrate: true,
             showBadge: true,

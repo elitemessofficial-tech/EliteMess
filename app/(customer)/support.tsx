@@ -32,6 +32,7 @@ import {
 } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import FloatingHeader from '../../components/FloatingHeader';
+import CustomerBottomBar from '../../components/CustomerBottomBar';
 import { supabase } from '../../src/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '@descope/react-native-sdk';
@@ -66,7 +67,7 @@ export default function SupportScreen() {
     {
       id: 'init_1',
       sender: 'concierge',
-      text: 'Greetings! Welcome to Hotel Bet Support. How may we elevate your dining and delivery experience today?',
+      text: 'Greetings! Welcome to Elite Mess Support. How may we elevate your dining and delivery experience today?',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -164,7 +165,7 @@ export default function SupportScreen() {
             {
               id: 'init_1',
               sender: 'concierge',
-              text: 'Greetings! Welcome to your new Hotel Bet Support session. How may we elevate your dining and delivery experience today?',
+              text: 'Greetings! Welcome to your new Elite Mess Support session. How may we elevate your dining and delivery experience today?',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }
           ]),
@@ -183,7 +184,7 @@ export default function SupportScreen() {
           {
             id: 'init_1',
             sender: 'concierge',
-            text: 'Greetings! Welcome to your new Hotel Bet Support session. How may we elevate your dining and delivery experience today?',
+            text: 'Greetings! Welcome to your new Elite Mess Support session. How may we elevate your dining and delivery experience today?',
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -204,7 +205,7 @@ export default function SupportScreen() {
         {
           id: `resolve_${Date.now()}`,
           sender: 'concierge',
-          text: '✅ This support session has been closed and resolved. Thank you for choosing Hotel Bet.',
+          text: '✅ This support session has been closed and resolved. Thank you for choosing Elite Mess.',
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ];
@@ -266,23 +267,23 @@ export default function SupportScreen() {
   }, [supportOrderId]);
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.25)',
-    inputBg: isDark ? 'rgba(60, 60, 56, 0.3)' : 'rgba(15, 23, 42, 0.04)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
+    inputBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.04)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
-    goldGrad: ['#E2B755', '#B88E2F'] as const,
-    chatUserBg: '#D4AF37',
-    chatRiderBg: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
+    goldGrad: ['#10B981', '#059669'] as const,
+    chatUserBg: '#10B981',
+    chatRiderBg: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.05)',
   };
 
   const faqs: FAQItem[] = [
     {
       id: 'faq_1',
       question: 'How do I select the closest branch?',
-      answer: 'Upon signing in as a customer, you will see a list of active Hotel Bet branches with their approximate distance. Select the branch closest to you to view their specialized in-room menu.'
+      answer: 'Upon signing in as a customer, you will see a list of active Elite Mess branches with their approximate distance. Select the branch closest to you to view their specialized in-room menu.'
     },
     {
       id: 'faq_2',
@@ -343,7 +344,7 @@ export default function SupportScreen() {
   };
 
   const handleEmailSupport = () => {
-    Linking.openURL('mailto:support@hotelbet.com?subject=Hotel%20Bet%20Customer%20Support');
+    Linking.openURL('mailto:support@fleximeal.com?subject=Flexi%20Meal%20Customer%20Support');
   };
 
   const toggleFaq = (id: string) => {
@@ -467,7 +468,7 @@ export default function SupportScreen() {
                   <Mail size={18} color={colors.accentGold} />
                   <View>
                     <Text style={[styles.contactLabel, { color: colors.textMain }]}>Email Support</Text>
-                    <Text style={[styles.contactValue, { color: colors.textSub }]}>support@hotelbet.com</Text>
+                    <Text style={[styles.contactValue, { color: colors.textSub }]}>support@fleximeal.com</Text>
                   </View>
                 </View>
                 <Text style={{ color: colors.accentGold, fontWeight: '800', fontSize: 11 }}>WRITE EMAIL</Text>
@@ -693,6 +694,7 @@ export default function SupportScreen() {
           </View>
         )}
       </View>
+      <CustomerBottomBar activeTab="account" />
     </KeyboardAvoidingView>
   );
 }

@@ -16,9 +16,10 @@ import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ShoppingCart, ChevronLeft, Plus, Minus, Heart, Star, Sparkles, Tag } from 'lucide-react-native';
+import { ShoppingCart, ChevronLeft, Plus, Minus, Heart, Star, Zap, Tag } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
+import CustomerBottomBar from '../../components/CustomerBottomBar';
 import { supabase } from '../../src/services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFavoriteDishIds, toggleFavoriteDishId } from '../../src/utils/favorites';
@@ -91,7 +92,7 @@ export default function MenuScreen() {
   const { cart, menuItems, addToCart, removeFromCart, clearCart, cartTotalItems, cartTotalPrice, loading } = useCart();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
-  const [branchName, setBranchName] = useState('Hotel Bet — Menu');
+  const [branchName, setBranchName] = useState('Elite Mess — Menu');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -133,14 +134,14 @@ export default function MenuScreen() {
   }, [menuItems, cart]);
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.25)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37', // Gold highlight
-    goldGrad: ['#E2B755', '#B88E2F'] as const,
-    pillInactive: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.05)',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981', // Luxury Emerald accent
+    goldGrad: ['#10B981', '#059669'] as const,
+    pillInactive: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.05)',
   };
 
   const handleAddToCart = (id: string) => {
@@ -224,7 +225,7 @@ export default function MenuScreen() {
                   const percentOff = zomatoPrice > item.price ? Math.round((savings / zomatoPrice) * 100) : 0;
                   return (
                     <View style={{ flexDirection: 'column', gap: 4, marginTop: 2 }}>
-                      {/* Price Row: Hotel Bet Gold Price vs Zomato Strikethrough Badge */}
+                      {/* Price Row: Flexi Meal Gold Price vs Zomato Strikethrough Badge */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <Text style={[styles.menuPrice, { color: colors.accentGold, fontSize: 16, fontWeight: '900' }]}>
                           ₹ {item.price.toLocaleString()}
@@ -265,7 +266,7 @@ export default function MenuScreen() {
                           paddingVertical: 2.5,
                           alignSelf: 'flex-start'
                         }}>
-                          <Sparkles size={10} color="#10B981" />
+                          <Zap size={10} color="#10B981" />
                           <Text style={{ color: '#10B981', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.2 }}>
                             SAVE ₹{savings} ({percentOff}% OFF VS ZOMATO)
                           </Text>
@@ -361,7 +362,7 @@ export default function MenuScreen() {
         </View>
         <TouchableOpacity
           style={styles.checkoutBtn}
-          onPress={() => router.push('/(customer)/cart')}
+          onPress={() => router.push('/(customer)/discover')}
           activeOpacity={0.85}
         >
           <LinearGradient
@@ -385,7 +386,7 @@ export default function MenuScreen() {
         showBackButton={true}
         rightContent={(
           <TouchableOpacity
-            onPress={() => router.push('/(customer)/cart')}
+            onPress={() => router.push('/(customer)/discover')}
             style={[
               styles.cartCircle,
               {
@@ -454,9 +455,9 @@ export default function MenuScreen() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Text style={{ color: colors.accentGold, fontSize: 11, fontWeight: '900', letterSpacing: 0.4 }}>
-                  HOTEL BET SPECIAL PRICES
+                  ELITE MESS SPECIAL PRICES
                 </Text>
-                <Sparkles size={10} color={colors.accentGold} />
+                <Tag size={10} color={colors.accentGold} />
               </View>
               <Text style={{ color: colors.textSub, fontSize: 10, fontWeight: '600', marginTop: 1 }}>
                 Direct from kitchen — Up to 40% cheaper than Zomato & Swiggy!
@@ -514,10 +515,10 @@ export default function MenuScreen() {
         data={filteredMenu}
         keyExtractor={item => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={[styles.listContainer, { paddingBottom: 110 }]}
       />
 
-      {cartTotalItems > 0 && renderFloatingFooter()}
+      <CustomerBottomBar activeTab="menu" />
     </View>
   );
 }
@@ -630,7 +631,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -640,7 +641,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 999,
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
     padding: 2,
   },
   qtyBtn: {
@@ -654,7 +655,7 @@ const styles = StyleSheet.create({
   qtyVal: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#000000',
+    color: '#FFFFFF',
     marginHorizontal: 8,
   },
   photoContainer: {
@@ -720,7 +721,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkoutBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
   },

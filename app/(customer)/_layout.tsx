@@ -79,10 +79,17 @@ export default function CustomerLayout() {
         headerShown: false,
       }}
     >
-      <Stack.Screen name="branches" />
-      <Stack.Screen name="account" />
-      <Stack.Screen name="order/[id]" />
+      <Stack.Screen name="dashboard" />
+      <Stack.Screen name="discover" />
+      <Stack.Screen name="shortlist" />
+      <Stack.Screen name="bookings" />
+      <Stack.Screen name="booking-detail" />
+      <Stack.Screen name="mess-detail" />
+      <Stack.Screen name="wallet" />
+      <Stack.Screen name="profile" />
       <Stack.Screen name="support" />
+      <Stack.Screen name="refunds" />
+      <Stack.Screen name="subscription" />
     </Stack>
   );
 }

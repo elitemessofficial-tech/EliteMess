@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import Svg, { Defs, Mask, Rect, Path, LinearGradient as SvgLinearGradient, Stop as SvgStop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles, Gift, Zap, Award, CheckCircle2, Trophy, Star } from 'lucide-react-native';
+import { Gift, Zap, Award, CheckCircle2, Trophy, Star } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DEFAULT_CARD_SIZE = Math.min(SCREEN_WIDTH - 64, 280);
@@ -250,17 +250,17 @@ export default function PremiumScratchCard({
                   ) : null}
                 </Mask>
 
-                {/* Metallic Gold Liquid Foil Gradient */}
+                {/* Metallic Emerald Liquid Foil Gradient */}
                 <SvgLinearGradient id="metallicGold" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <SvgStop offset="0%" stopColor="#F9E8B2" />
-                  <SvgStop offset="25%" stopColor="#E3C465" />
-                  <SvgStop offset="50%" stopColor="#D4AF37" />
-                  <SvgStop offset="75%" stopColor="#B38E22" />
-                  <SvgStop offset="100%" stopColor="#F3E3AA" />
+                  <SvgStop offset="0%" stopColor="#A7F3D0" />
+                  <SvgStop offset="25%" stopColor="#34D399" />
+                  <SvgStop offset="50%" stopColor="#10B981" />
+                  <SvgStop offset="75%" stopColor="#059669" />
+                  <SvgStop offset="100%" stopColor="#6EE7B7" />
                 </SvgLinearGradient>
               </Defs>
 
-              {/* Render Metallic Gold Cover Card with Mask Applied */}
+              {/* Render Metallic Emerald Cover Card with Mask Applied */}
               <Rect
                 x="0"
                 y="0"
@@ -277,7 +277,7 @@ export default function PremiumScratchCard({
             {scratchPercentage < 40 && (
               <View style={styles.foilContentCenter} pointerEvents="none">
                 <View style={styles.glassIconCircle}>
-                  <Gift size={32} color="#3D310A" />
+                  <Gift size={32} color="#06402B" />
                 </View>
                 <Text style={styles.foilTitleText}>SCRATCH HERE</Text>
                 <Text style={styles.foilSubtext}>Rub finger in smooth circular motion</Text>
@@ -294,7 +294,7 @@ export default function PremiumScratchCard({
           onPress={handleQuickSweep}
           style={styles.sweepBtn}
         >
-          <Sparkles size={16} color="#000000" />
+          <Zap size={16} color="#000000" />
           <Text style={styles.sweepBtnText}>
             SCRATCH FASTER ({scratchPercentage}%)
           </Text>
@@ -326,13 +326,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 2,
-    borderColor: '#D4AF37',
-    shadowColor: '#D4AF37',
+    borderColor: '#10B981',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 20,
     elevation: 16,
-    backgroundColor: '#0F1912',
+    backgroundColor: '#041C14',
   },
   rewardLayer: {
     position: 'absolute',
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 110,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   bgRingInner: {
     position: 'absolute',
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 75,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.2)',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
   },
   trophyEmblemCircle: {
     width: 68,
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   cashbackAmountText: {
-    color: '#D4AF37',
+    color: '#10B981',
     fontSize: 52,
     fontWeight: '900',
     letterSpacing: 0.5,
@@ -443,13 +443,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   foilTitleText: {
-    color: '#3D310A',
+    color: '#06402B',
     fontSize: 17,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   foilSubtext: {
-    color: '#4A3B0D',
+    color: '#042E20',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -461,10 +461,10 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 13,
     borderRadius: 14,
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
   },
   sweepBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.5,

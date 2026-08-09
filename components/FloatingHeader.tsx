@@ -28,11 +28,11 @@ export default function FloatingHeader({
   const { isDark } = useAppTheme();
 
   const theme = {
-    bg: isDark ? 'rgba(15, 15, 12, 0.45)' : 'rgba(255, 255, 255, 0.45)',
-    border: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    bg: isDark ? 'rgba(12, 18, 16, 0.65)' : 'rgba(255, 255, 255, 0.75)',
+    border: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     text: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentEmerald: '#10B981',
   };
 
   const topOffset = Platform.OS === 'ios'
@@ -53,18 +53,18 @@ export default function FloatingHeader({
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace('/(customer)/branches');
+                router.replace('/(customer)/dashboard');
               }
             }}
             style={[
               styles.backCircle,
               {
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.04)',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.06)'
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.2)'
               }
             ]}
           >
-            <ChevronLeft size={16} color={theme.accentGold} />
+            <ChevronLeft size={16} color={theme.accentEmerald} />
           </TouchableOpacity>
         ) : (
           isCentered && <View style={{ width: 36 }} />

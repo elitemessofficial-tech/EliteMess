@@ -68,6 +68,7 @@ export default function PhoneLoginScreen() {
       await AsyncStorage.removeItem('vip_session_active');
       await AsyncStorage.removeItem('user_selected_role');
       await AsyncStorage.removeItem('demo_role');
+      await AsyncStorage.removeItem('user_phone');
 
       try {
         await sdk.logout();
@@ -109,7 +110,7 @@ export default function PhoneLoginScreen() {
         if (storedRole) {
           if (storedRole === 'customer') router.replace('/');
           else if (storedRole === 'owner') router.replace('/(owner)/owner_dashboard');
-          else if (storedRole === 'rider') router.replace('/(rider)/rider_dashboard');
+          else if (storedRole === 'rider') router.replace('/(rider)/rider_dashboard' as any);
         } else {
           setShowVipSelection(true);
           setDescopeUserData({ uid: 'vip_user_id', phone: `+91${process.env.EXPO_PUBLIC_VIP_NUMBER || '7777777777'}` });
@@ -159,7 +160,7 @@ export default function PhoneLoginScreen() {
 
           if (profile && profile.role === 'rider') {
             await AsyncStorage.setItem('user_selected_role', 'rider');
-            router.replace('/(rider)/rider_dashboard');
+            router.replace('/(rider)/rider_dashboard' as any);
             return;
           } else if (profile && profile.role === 'owner') {
             router.replace('/(owner)/owner_dashboard');
@@ -176,17 +177,17 @@ export default function PhoneLoginScreen() {
   }, [session]);
 
   const colors = {
-    bg: '#0F0F0B', // Pitch dark luxury background
-    cardBg: 'rgba(30, 30, 26, 0.7)',
-    cardBorder: 'rgba(212, 175, 55, 0.15)', // Subtle gold border
-    inputBg: 'rgba(60, 60, 56, 0.4)',
+    bg: '#080C0E', // Pitch dark obsidian luxury background
+    cardBg: 'rgba(18, 26, 23, 0.75)',
+    cardBorder: 'rgba(16, 185, 129, 0.18)', // Subtle emerald border
+    inputBg: 'rgba(255, 255, 255, 0.05)',
     inputText: '#FFFFFF',
-    inputPlaceholder: '#8E8E93',
+    inputPlaceholder: '#94A3B8',
     textMain: '#FFFFFF',
-    textSub: '#AEAEB2',
-    accentGold: '#D4AF37', // Aurum Stays Gold
-    goldGrad: ['#E2B755', '#B88E2F'] as const, // Smooth gold gradient
-    goldGlow: 'rgba(212, 175, 55, 0.3)',
+    textSub: '#94A3B8',
+    accentGold: '#10B981', // Luxury Emerald accent
+    goldGrad: ['#10B981', '#059669'] as const, // Smooth emerald gradient
+    goldGlow: 'rgba(16, 185, 129, 0.3)',
   };
 
   const handleSendCode = async () => {
@@ -294,21 +295,31 @@ export default function PhoneLoginScreen() {
 
       // Match Supabase session with Descope session token
       if (sessionToken) {
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: sessionToken,
-          refresh_token: refreshSessionToken || '',
-        });
-        if (sessionError) {
-          console.warn('Failed to sync Descope session with Supabase:', sessionError.message);
+        try {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: sessionToken,
+            refresh_token: refreshSessionToken || '',
+          });
+          if (sessionError) {
+            console.warn('Failed to sync Descope session with Supabase:', sessionError.message);
+          }
+        } catch (sErr: any) {
+          console.warn('Failed to sync Descope session with Supabase:', sErr?.message || sErr);
         }
       }
 
       // Check/create user profile in Supabase database by uid or by phone number
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, full_name, role')
-        .or(`id.eq.${uid},phone_number.eq.${descopeUser.phone || formattedPhone}`)
-        .maybeSingle();
+      let profile = null;
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, role')
+          .or(`id.eq.${uid},phone_number.eq.${descopeUser.phone || formattedPhone}`)
+          .maybeSingle();
+        profile = data;
+      } catch (pErr: any) {
+        console.warn('Supabase profile query failed (unreachable/network issue):', pErr?.message || pErr);
+      }
       
       const isOwnerNum = isSpecialOwnerNumber(descopeUser.phone || formattedPhone);
 
@@ -318,13 +329,17 @@ export default function PhoneLoginScreen() {
 
         // If the profile ID is a temporary one, update it to the proper UID
         if (profile.id !== uid) {
-          await supabase.from('profiles').delete().eq('id', profile.id);
-          await supabase.from('profiles').insert({
-            id: uid,
-            phone_number: descopeUser.phone || formattedPhone,
-            full_name: profile.full_name,
-            role: isOwnerNum ? 'owner' : profile.role
-          });
+          try {
+            await supabase.from('profiles').delete().eq('id', profile.id);
+            await supabase.from('profiles').insert({
+              id: uid,
+              phone_number: descopeUser.phone || formattedPhone,
+              full_name: profile.full_name,
+              role: isOwnerNum ? 'owner' : profile.role
+            });
+          } catch (updErr: any) {
+            console.warn('Supabase profile migration failed:', updErr?.message || updErr);
+          }
         }
 
         if (isOwnerNum) {
@@ -332,7 +347,7 @@ export default function PhoneLoginScreen() {
           setShowOwnerSelection(true);
         } else if (profile.role === 'rider') {
           await AsyncStorage.setItem('user_selected_role', 'rider');
-          router.replace('/(rider)/rider_dashboard');
+          router.replace('/(rider)/rider_dashboard' as any);
         } else {
           router.replace('/');
         }
@@ -343,7 +358,12 @@ export default function PhoneLoginScreen() {
       }
     } catch (err: any) {
       console.error('OTP Verification error:', err);
-      setErrorMsg(err.message || 'Invalid verification code');
+      const msg = err?.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('ENOTFOUND')) {
+        setErrorMsg('Unable to connect to database. Please check connection or Supabase status.');
+      } else {
+        setErrorMsg(msg || 'Invalid verification code');
+      }
     } finally {
       setLoading(false);
     }
@@ -362,40 +382,58 @@ export default function PhoneLoginScreen() {
       const { uid, phone } = descopeUserData;
 
       // Fetch existing profile to check if they are already rider/owner by uid or phone
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('id, role')
-        .or(`id.eq.${uid},phone_number.eq.${phone}`)
-        .maybeSingle();
+      let existing = null;
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .or(`id.eq.${uid},phone_number.eq.${phone}`)
+          .maybeSingle();
+        existing = data;
+      } catch (eErr: any) {
+        console.warn('Supabase query existing profile failed:', eErr?.message || eErr);
+      }
 
       const isOwnerNum = isSpecialOwnerNumber(phone);
       const finalRole = isOwnerNum ? 'owner' : (existing?.role || 'customer');
 
       if (existing && existing.id !== uid) {
-        // Delete the temporary profile row so we don't have duplicates or primary key conflicts
-        await supabase.from('profiles').delete().eq('id', existing.id);
+        try {
+          // Delete the temporary profile row so we don't have duplicates or primary key conflicts
+          await supabase.from('profiles').delete().eq('id', existing.id);
+        } catch (dErr: any) {
+          console.warn('Supabase delete temp profile failed:', dErr?.message || dErr);
+        }
       }
       
       // Upsert profile in Supabase database
-      const { error: upsertErr } = await supabase
-        .from('profiles')
-        .upsert({
-          id: uid,
-          phone_number: phone,
-          full_name: fullName.trim(),
-          role: finalRole
-        });
+      try {
+        const { error: upsertErr } = await supabase
+          .from('profiles')
+          .upsert({
+            id: uid,
+            phone_number: phone,
+            full_name: fullName.trim(),
+            role: finalRole
+          });
 
-      if (upsertErr) throw upsertErr;
+        if (upsertErr) {
+          console.warn('Supabase profile upsert warning:', upsertErr.message);
+        }
+      } catch (upsertDbErr: any) {
+        console.warn('Supabase profile upsert fetch error:', upsertDbErr?.message || upsertDbErr);
+      }
 
       console.log('User signed in with new profile name, role is:', finalRole);
+      await AsyncStorage.setItem('user_full_name', fullName.trim());
+      await AsyncStorage.setItem('user_phone', phone);
       await AsyncStorage.removeItem('demo_role');
 
       if (isOwnerNum) {
         setShowOwnerSelection(true);
       } else if (finalRole === 'rider') {
         await AsyncStorage.setItem('user_selected_role', 'rider');
-        router.replace('/(rider)/rider_dashboard');
+        router.replace('/(rider)/rider_dashboard' as any);
       } else {
         // Activate success animation view!
         setShowSuccessOnboarding(true);
@@ -406,7 +444,13 @@ export default function PhoneLoginScreen() {
         }, 2500);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Error saving details');
+      console.error('Save name error:', err);
+      const msg = err?.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('ENOTFOUND')) {
+        setErrorMsg('Unable to reach database server. Proceeding with local profile setup.');
+      } else {
+        setErrorMsg(msg || 'Error saving details');
+      }
       setLoading(false);
     }
   };
@@ -423,13 +467,13 @@ export default function PhoneLoginScreen() {
       >
         <View style={styles.logoInnerCircle}>
           <Image 
-            source={require('../../assets/images/hotelbet.png')} 
+            source={require('../../assets/images/icon.png')} 
             style={{ width: 82, height: 82 }} 
             resizeMode="contain"
           />
         </View>
       </LinearGradient>
-      <Text style={styles.logoText}>H O T E L   B E T</Text>
+      <Text style={styles.logoText}>F L E X I   M E A L</Text>
     </View>
   );
 
@@ -461,7 +505,7 @@ export default function PhoneLoginScreen() {
           Account Created Successfully!
         </Text>
         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '500', textAlign: 'center', paddingHorizontal: 32 }}>
-          Welcome to Hotel Bet. Loading your private portal...
+          Welcome to Flexi Meal. Loading your private portal...
         </Text>
       </View>
     );
@@ -492,6 +536,7 @@ export default function PhoneLoginScreen() {
 
             <TouchableOpacity 
               onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
                 await AsyncStorage.setItem('user_selected_role', 'owner');
                 router.replace('/(owner)/owner_dashboard');
               }} 
@@ -510,24 +555,7 @@ export default function PhoneLoginScreen() {
 
             <TouchableOpacity 
               onPress={async () => {
-                await AsyncStorage.setItem('user_selected_role', 'rider');
-                router.replace('/(rider)/rider_dashboard');
-              }} 
-              activeOpacity={0.85}
-              style={{ marginBottom: 10 }}
-            >
-              <LinearGradient
-                colors={colors.goldGrad}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
-              >
-                <Text style={styles.buttonText}>Enter Rider View</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
                 await AsyncStorage.setItem('user_selected_role', 'customer');
                 router.replace('/');
               }} 
@@ -540,7 +568,7 @@ export default function PhoneLoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
-              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+              <Text style={{ color: '#10B981', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
                 Use Different Number
               </Text>
             </TouchableOpacity>
@@ -556,6 +584,7 @@ export default function PhoneLoginScreen() {
 
             <TouchableOpacity 
               onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
                 await AsyncStorage.setItem('user_selected_role', 'owner');
                 router.replace('/(owner)/owner_dashboard');
               }} 
@@ -574,6 +603,7 @@ export default function PhoneLoginScreen() {
 
             <TouchableOpacity 
               onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
                 await AsyncStorage.setItem('user_selected_role', 'customer');
                 router.replace('/');
               }} 
@@ -586,7 +616,7 @@ export default function PhoneLoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
-              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+              <Text style={{ color: '#10B981', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
                 Use Different Number
               </Text>
             </TouchableOpacity>
@@ -602,8 +632,9 @@ export default function PhoneLoginScreen() {
 
             <TouchableOpacity 
               onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
                 await AsyncStorage.setItem('user_selected_role', 'rider');
-                router.replace('/(rider)/rider_dashboard');
+                router.replace('/(rider)/rider_dashboard' as any);
               }} 
               activeOpacity={0.85}
               style={{ marginBottom: 12 }}
@@ -632,7 +663,7 @@ export default function PhoneLoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
-              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+              <Text style={{ color: '#10B981', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
                 Use Different Number
               </Text>
             </TouchableOpacity>
@@ -678,7 +709,7 @@ export default function PhoneLoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={resetToLogin} style={styles.secondaryButton}>
-              <Text style={{ color: '#D4AF37', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+              <Text style={{ color: '#10B981', fontWeight: '800', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
                 Use Different Number
               </Text>
             </TouchableOpacity>
@@ -743,7 +774,7 @@ export default function PhoneLoginScreen() {
                 OTP Sent to {confirmResult.phone}
               </Text>
               <TouchableOpacity onPress={() => setConfirmResult(null)}>
-                <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '800', textDecorationLine: 'underline' }}>
+                <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '800', textDecorationLine: 'underline' }}>
                   Edit
                 </Text>
               </TouchableOpacity>
@@ -895,7 +926,7 @@ const styles = StyleSheet.create({
     padding: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -905,7 +936,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 55,
-    backgroundColor: '#0F0F0B',
+    backgroundColor: '#121A17',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -913,11 +944,11 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderWidth: 1.8,
-    borderColor: '#E2B755',
+    borderColor: '#34D399',
     transform: [{ rotate: '45deg' }],
   },
   logoText: {
-    color: '#D4AF37',
+    color: '#10B981',
     fontSize: 10,
     fontWeight: '800',
     marginTop: 14,
@@ -941,7 +972,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     borderWidth: 0.8,
-    backgroundColor: 'rgba(30, 30, 26, 0.4)',
+    backgroundColor: 'rgba(18, 26, 23, 0.75)',
   },
   formContainer: {
     width: '100%',
@@ -1004,7 +1035,7 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#000000',
+    color: '#FFFFFF',
   },
   secondaryButton: {
     marginTop: 16,
@@ -1057,7 +1088,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   segmentBtnActive: {
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
   },
   segmentText: {
     fontSize: 11,

@@ -4,7 +4,7 @@ import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ThemeProvider, useAppTheme } from '../src/context/ThemeContext';
-import { CartProvider } from '../src/context/CartContext';
+import { TokenProvider } from '../src/context/TokenContext';
 import { AuthProvider } from '@descope/react-native-sdk';
 
 function RootLayoutInner() {
@@ -12,10 +12,10 @@ function RootLayoutInner() {
 
   // Liquid glass color configuration
   const theme = {
-    bg: isDark ? '#080A0F' : '#F8FAFC',
-    headerBg: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    headerBg: isDark ? 'rgba(12, 18, 16, 0.85)' : 'rgba(255, 255, 255, 0.85)',
     headerText: isDark ? '#F8FAFC' : '#0F172A',
-    headerBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    headerBorder: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.10)',
     statusBar: isDark ? 'light-content' : 'dark-content',
   };
 
@@ -42,9 +42,6 @@ function RootLayoutInner() {
         
         {/* Owner View Layout */}
         <Stack.Screen name="(owner)" options={{ headerShown: false }} />
-        
-        {/* Rider View Layout */}
-        <Stack.Screen name="(rider)" options={{ headerShown: false }} />
       </Stack>
     </>
   );
@@ -56,9 +53,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider projectId={descopeProjectId}>
         <ThemeProvider>
-          <CartProvider>
+          <TokenProvider>
             <RootLayoutInner />
-          </CartProvider>
+          </TokenProvider>
         </ThemeProvider>
       </AuthProvider>
     </SafeAreaProvider>

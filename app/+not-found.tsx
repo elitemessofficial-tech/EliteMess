@@ -6,6 +6,7 @@ import LottieView from 'lottie-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Home, ArrowLeft } from 'lucide-react-native';
 import { useAppTheme } from '../src/context/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -15,14 +16,14 @@ export default function NotFoundScreen() {
 
   // Colors aligned with the luxury liquid-glass design system
   const colors = {
-    bgStart: isDark ? '#0A0A08' : '#F8FAFC',
-    bgEnd: isDark ? '#070705' : '#EFF6FF',
-    cardBg: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.02)',
-    cardBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    bgStart: isDark ? '#080C0E' : '#F0FDF4',
+    bgEnd: isDark ? '#060A0C' : '#EFF6FF',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     textPrimary: isDark ? '#F8FAFC' : '#0F172A',
-    textSecondary: isDark ? 'rgba(248, 250, 252, 0.6)' : 'rgba(15, 23, 42, 0.6)',
-    goldStart: '#D4AF37',
-    goldEnd: '#AA8C2C',
+    textSecondary: isDark ? '#94A3B8' : '#64748B',
+    emeraldStart: '#10B981',
+    emeraldEnd: '#059669',
   };
 
   return (
@@ -56,27 +57,33 @@ export default function NotFoundScreen() {
           {/* Navigation Buttons */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              onPress={() => router.replace('/')}
+              onPress={async () => {
+                await AsyncStorage.removeItem('user_selected_role');
+                await AsyncStorage.removeItem('demo_role');
+                router.replace('/(customer)/dashboard');
+              }}
               activeOpacity={0.8}
               style={styles.homeButton}
             >
               <LinearGradient
-                colors={[colors.goldStart, colors.goldEnd]}
+                colors={[colors.emeraldStart, colors.emeraldEnd]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.goldGrad}
               >
-                <Home size={18} color="#080A0F" style={styles.buttonIcon} />
+                <Home size={18} color="#FFFFFF" style={styles.buttonIcon} />
                 <Text style={styles.homeButtonText}>Return Home</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => {
+              onPress={async () => {
+                await AsyncStorage.removeItem('user_selected_role');
+                await AsyncStorage.removeItem('demo_role');
                 if (router.canGoBack()) {
                   router.back();
                 } else {
-                  router.replace('/');
+                  router.replace('/(customer)/dashboard');
                 }
               }}
               activeOpacity={0.7}
@@ -149,7 +156,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -163,7 +170,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   homeButtonText: {
-    color: '#080A0F',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.5,

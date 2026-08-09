@@ -9,7 +9,8 @@ import {
   ActivityIndicator, 
   Alert, 
   Platform,
-  Switch
+  Switch,
+  Modal,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +22,7 @@ import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
 import LocationPickerModal from '../../src/components/LocationPickerModal';
+import CustomerBottomBar from '../../components/CustomerBottomBar';
 import { getFavoriteDishIds } from '../../src/utils/favorites';
 import { useDescope, useSession } from '@descope/react-native-sdk';
 export default function AccountScreen() {
@@ -35,6 +37,7 @@ export default function AccountScreen() {
   const [toastTitle, setToastTitle] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const toastTimeoutRef = React.useRef<any>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const showToast = (title: string, message: string, type: 'success' | 'error' | 'info' = 'success') => {
     if (toastTimeoutRef.current) {
@@ -89,20 +92,20 @@ export default function AccountScreen() {
   );
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.25)',
-    inputBg: isDark ? 'rgba(60, 60, 56, 0.3)' : 'rgba(15, 23, 42, 0.04)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
+    inputBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.04)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
-    goldGrad: ['#E2B755', '#B88E2F'] as const,
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
+    goldGrad: ['#10B981', '#059669'] as const,
   };
 
   const getTabStyle = (isActive: boolean) => [
     styles.tabBtn,
     isActive && {
-      backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : 'rgba(212, 175, 55, 0.15)',
+      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.12)',
       borderRadius: 32,
       height: '100%' as any,
     }
@@ -274,7 +277,7 @@ export default function AccountScreen() {
     showToast('Address Deleted', 'Address removed successfully.', 'success');
   };
 
-  const handleLogout = async () => {
+  const doLogout = async () => {
     try {
       await AsyncStorage.setItem('explicit_logout', 'true');
       await AsyncStorage.removeItem('demo_role');
@@ -290,6 +293,10 @@ export default function AccountScreen() {
     }
   };
 
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {toastVisible && (
@@ -298,7 +305,7 @@ export default function AccountScreen() {
             <View style={styles.alertContent}>
               {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
               {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
-              {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
+              {toastType === 'info' && <ShieldCheck size={18} color="#10B981" />}
               <View style={styles.alertTextWrapper}>
                 <Text style={[styles.alertTitleText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{toastTitle}</Text>
                 <Text style={[styles.alertMsgText, { color: isDark ? '#AEAEB2' : '#48484A' }]}>{toastMessage}</Text>
@@ -711,33 +718,63 @@ export default function AccountScreen() {
         )}
       </ScrollView>
 
-      {/* Bottom Tab Navigation Bar */}
-      <BlurView 
-        intensity={95} 
-        tint={isDark ? 'dark' : 'light'} 
-        blurMethod="dimezisBlurView"
-        style={[
-          styles.bottomTabContainer, 
-          { 
-            borderColor: colors.cardBorder, 
-            backgroundColor: isDark ? 'rgba(10, 10, 8, 0.35)' : 'rgba(255, 255, 255, 0.35)',
-            borderWidth: 1
-          }
-        ]}
+      {/* ================= THEMED LOGOUT CONFIRMATION MODAL ================= */}
+      <Modal
+        visible={showLogoutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
       >
-        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/branches')}>
-          <Home size={18} color={colors.textSub} />
-          <Text style={[styles.tabText, { color: colors.textSub }]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={getTabStyle(false)} onPress={() => router.replace('/(customer)/cart')}>
-          <ShoppingBag size={18} color={colors.textSub} />
-          <Text style={[styles.tabText, { color: colors.textSub }]}>Orders</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={getTabStyle(true)}>
-          <User size={18} color={colors.accentGold} />
-          <Text style={[styles.tabText, { color: colors.accentGold }]}>Profile</Text>
-        </TouchableOpacity>
-      </BlurView>
+        <View style={modalStyles.overlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={modalStyles.cardWrapper}>
+            <View style={[modalStyles.card, { backgroundColor: isDark ? '#0D1412' : '#FFFFFF', borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : 'rgba(239, 68, 68, 0.2)' }]}>
+              {/* Icon Circle */}
+              <View style={modalStyles.iconCircle}>
+                <LogOut size={28} color="#EF4444" />
+              </View>
+
+              {/* Title & Subtitle */}
+              <Text style={[modalStyles.title, { color: colors.textMain }]}>Sign Out of Meal Pass?</Text>
+              <Text style={[modalStyles.subtitle, { color: colors.textSub }]}>
+                Are you sure you want to sign out? You will need to log back in to access your meal pass & active bookings.
+              </Text>
+
+              {/* Actions Row */}
+              <View style={modalStyles.btnRow}>
+                <TouchableOpacity
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder }]}
+                  onPress={() => setShowLogoutModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[modalStyles.cancelBtnText, { color: colors.textMain }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={modalStyles.confirmBtn}
+                  onPress={() => {
+                    setShowLogoutModal(false);
+                    doLogout();
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['#EF4444', '#DC2626']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={modalStyles.confirmGrad}
+                  >
+                    <LogOut size={16} color="#FFFFFF" />
+                    <Text style={modalStyles.confirmBtnText}>Sign Out</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Bottom Tab Navigation Bar */}
+      <CustomerBottomBar activeTab="account" />
 
       <LocationPickerModal
         visible={showPicker}
@@ -792,7 +829,7 @@ const styles = StyleSheet.create({
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
     borderRadius: 8,
     paddingVertical: 3,
     paddingHorizontal: 8,
@@ -801,7 +838,7 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 9,
     fontWeight: '900',
-    color: '#000000',
+    color: '#FFFFFF',
   },
   sectionTitle: {
     fontSize: 10,
@@ -832,7 +869,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginTop: 8,
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -976,5 +1013,88 @@ const styles = StyleSheet.create({
   addressFormSaveBtn: {
     paddingVertical: 10,
     borderRadius: 12,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  cardWrapper: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  card: {
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 24,
+  },
+  iconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 24,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  confirmGrad: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  confirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

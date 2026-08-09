@@ -6,6 +6,7 @@ import { supabase } from '../src/services/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
 import { useSession } from '@descope/react-native-sdk';
+import { Utensils } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -87,9 +88,12 @@ export default function EntrypointIndex() {
           const isVipActive = await AsyncStorage.getItem('vip_session_active');
           if (isVipActive === 'true') {
             const selectedRole = await AsyncStorage.getItem('user_selected_role');
-            if (selectedRole === 'customer') return '/(customer)/branches';
+            if (selectedRole === 'customer') return '/(customer)/dashboard';
             if (selectedRole === 'owner') return '/(owner)/owner_dashboard';
-            if (selectedRole === 'rider') return '/(rider)/rider_dashboard';
+            if (selectedRole === 'rider') {
+              await AsyncStorage.removeItem('user_selected_role');
+              return '/(customer)/dashboard';
+            }
             return '/(auth)/login';
           }
 
@@ -101,9 +105,13 @@ export default function EntrypointIndex() {
             if (phone && isSpecialOwnerNumber(phone)) {
               const selectedRole = await AsyncStorage.getItem('user_selected_role');
               if (selectedRole === 'customer') {
-                return '/(customer)/branches';
+                return '/(customer)/dashboard';
               } else if (selectedRole === 'owner') {
                 return '/(owner)/owner_dashboard';
+              }
+              if (selectedRole === 'rider') {
+                await AsyncStorage.removeItem('user_selected_role');
+                return '/(customer)/dashboard';
               }
               return '/(auth)/login';
             }
@@ -116,28 +124,19 @@ export default function EntrypointIndex() {
 
             const role = profile?.role || 'customer';
 
-            if (role === 'rider') {
-              const selectedRole = await AsyncStorage.getItem('user_selected_role');
-              if (selectedRole === 'customer') {
-                return '/(customer)/branches';
-              } else if (selectedRole === 'rider') {
-                return '/(rider)/rider_dashboard';
-              }
-              return '/(auth)/login';
-            }
-
             if (role === 'owner') {
               return '/(owner)/owner_dashboard';
             }
 
-            return '/(customer)/branches';
+            return '/(customer)/dashboard';
           }
 
           const demoRole = await AsyncStorage.getItem('demo_role');
           if (demoRole) {
-            if (demoRole === 'customer') return '/(customer)/branches';
+            if (demoRole === 'customer') return '/(customer)/dashboard';
             if (demoRole === 'owner') return '/(owner)/owner_dashboard';
-            if (demoRole === 'rider') return '/(rider)/rider_dashboard';
+            await AsyncStorage.removeItem('demo_role');
+            return '/(customer)/dashboard';
           }
 
           // Clear any leftover/anonymous Supabase session to prevent security bypass
@@ -171,7 +170,7 @@ export default function EntrypointIndex() {
 
   return (
     <LinearGradient
-      colors={['#0A0A08', '#181814', '#070705']}
+      colors={['#080C0E', '#0F1714', '#060A0C']}
       style={styles.container}
     >
       <Animated.View
@@ -186,17 +185,13 @@ export default function EntrypointIndex() {
         {/* Pulsing Glowing Logo Container */}
         <Animated.View style={[styles.logoOuterCircle, { transform: [{ scale: pulseAnim }] }]}>
           <View style={styles.logoInnerCircle}>
-            <Image
-              source={require('../assets/images/hotelbet.png')}
-              style={styles.logo}
-              resizeMode="cover"
-            />
+            <Utensils size={42} color="#10B981" />
           </View>
         </Animated.View>
 
         {/* Brand details */}
-        <Text style={styles.brandTitle}>HOTEL BET</Text>
-        <Text style={styles.brandSubtitle}>LUXURY DINING & DELIVERY</Text>
+        <Text style={styles.brandTitle}>ELITE MESS</Text>
+        <Text style={styles.brandSubtitle}>PREMIUM MEAL HOPPING PASS</Text>
 
         {/* Lottie Loader Illustration */}
         <View style={styles.loaderContainer}>
@@ -230,14 +225,14 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: 'rgba(212, 175, 55, 0.05)',
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.25)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 6,
     marginBottom: 24,
@@ -246,9 +241,9 @@ const styles = StyleSheet.create({
     width: 110,
     height: 110,
     borderRadius: 55,
-    backgroundColor: '#1E1E1A',
+    backgroundColor: '#121A17',
     borderWidth: 1.5,
-    borderColor: '#D4AF37',
+    borderColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -260,7 +255,7 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 22,
     fontWeight: '900',
-    color: '#D4AF37',
+    color: '#10B981',
     letterSpacing: 6,
     textTransform: 'uppercase',
     marginBottom: 6,

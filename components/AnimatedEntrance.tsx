@@ -5,6 +5,7 @@ interface AnimatedEntranceProps {
   children: React.ReactNode;
   delay?: number;
   duration?: number;
+  direction?: 'up' | 'down' | 'left' | 'right';
   style?: ViewStyle | ViewStyle[];
 }
 

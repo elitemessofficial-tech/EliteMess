@@ -5,7 +5,7 @@ interface LoaderProps {
   color?: string;
 }
 
-const Loader = ({ color = '#D4AF37' }: LoaderProps) => {
+const Loader = ({ color = '#10B981' }: LoaderProps) => {
   const anim1 = useRef(new Animated.Value(1)).current;
   const anim2 = useRef(new Animated.Value(1)).current;
   const anim3 = useRef(new Animated.Value(1)).current;

@@ -16,6 +16,7 @@ import { Heart, Plus, Minus, ShoppingBag, UtensilsCrossed } from 'lucide-react-n
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useCart } from '../../src/context/CartContext';
 import FloatingHeader from '../../components/FloatingHeader';
+import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import { getFavoriteDishIds, toggleFavoriteDishId } from '../../src/utils/favorites';
 import { useFocusEffect } from 'expo-router';
@@ -52,13 +53,13 @@ export default function FavoritesScreen() {
   const favoriteDishes = menuItems.filter(item => favIds.includes(item.id));
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.25)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
-    goldGrad: ['#E2B755', '#B88E2F'] as const,
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
+    goldGrad: ['#10B981', '#059669'] as const,
   };
 
   return (
@@ -81,7 +82,7 @@ export default function FavoritesScreen() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: colors.textMain, fontSize: 15, fontWeight: '900' }}>Your Saved Favorites ({favoriteDishes.length})</Text>
               <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2, lineHeight: 16 }}>
-                Quickly order your most-loved dishes from Hotel Bet with a single tap.
+                Quickly order your most-loved dishes from Elite Mess with a single tap.
               </Text>
             </View>
           </View>
@@ -184,7 +185,7 @@ export default function FavoritesScreen() {
                         <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                       ) : (
                         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 4 }}>
-                          <Text style={{ color: colors.textSub, fontSize: 10, textAlign: 'center', fontWeight: '700' }}>Hotel Bet Special</Text>
+                          <Text style={{ color: colors.textSub, fontSize: 10, textAlign: 'center', fontWeight: '700' }}>Elite Mess Special</Text>
                         </View>
                       )}
 
@@ -225,7 +226,7 @@ export default function FavoritesScreen() {
               </Text>
               <Text style={{ color: colors.textSub, fontSize: 10 }}>Ready to order</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(customer)/cart')} style={{ borderRadius: 10, overflow: 'hidden' }}>
+            <TouchableOpacity onPress={() => router.push('/(customer)/discover')} style={{ borderRadius: 10, overflow: 'hidden' }}>
               <LinearGradient colors={colors.goldGrad} style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
                 <Text style={{ color: '#000000', fontSize: 12, fontWeight: '900' }}>Checkout →</Text>
               </LinearGradient>
@@ -233,6 +234,8 @@ export default function FavoritesScreen() {
           </BlurView>
         </View>
       )}
+
+      <CustomerBottomBar activeTab="favorites" />
     </View>
   );
 }
@@ -268,7 +271,7 @@ const styles = StyleSheet.create({
   quantityControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
     borderRadius: 8,
     paddingHorizontal: 4,
     paddingVertical: 3,
@@ -278,7 +281,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   qtyVal: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '900',
   },

@@ -102,11 +102,11 @@ export default function ScratchCardModal({
   };
 
   const colors = {
-    cardBg: isDark ? 'rgba(18, 18, 14, 0.96)' : 'rgba(255, 255, 255, 0.98)',
-    cardBorder: 'rgba(212, 175, 55, 0.4)',
-    accentGold: '#D4AF37',
+    cardBg: isDark ? 'rgba(18, 24, 27, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+    cardBorder: 'rgba(16, 185, 129, 0.3)',
+    accentGold: '#10B981',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
+    textSub: isDark ? '#94A3B8' : '#64748B',
   };
 
   return (
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     padding: 20,
     alignItems: 'center',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.45,
     shadowRadius: 20,

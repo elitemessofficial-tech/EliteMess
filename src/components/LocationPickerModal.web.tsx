@@ -58,12 +58,12 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved, 
   const [isOrderingForSomeoneElse, setIsOrderingForSomeoneElse] = useState(false);
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-    cardBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(15, 23, 42, 0.06)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
     inputBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)',
   };
 
@@ -543,7 +543,7 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved, 
                 <ActivityIndicator size="small" color="#000000" />
               ) : (
                 <Text style={styles.saveBtnText}>
-                  {isBranchMode ? 'Confirm Hotel Location' : 'Save Delivery Address'}
+                  {isBranchMode ? 'Confirm Mess Location' : 'Save Delivery Address'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -672,20 +672,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   saveBtn: {
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#10B981',
     height: 48,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 8,
   },
   saveBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.5,

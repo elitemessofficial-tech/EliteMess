@@ -24,13 +24,13 @@ import {
   AlertCircle,
   ShieldCheck,
   ArrowRight,
-  Wallet,
-  Sparkles
+  Wallet
 } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import FloatingHeader from '../../components/FloatingHeader';
+import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface RefundRecord {
@@ -149,12 +149,12 @@ export default function RefundsScreen() {
   };
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(212, 175, 55, 0.15)' : 'rgba(212, 175, 55, 0.25)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
     statusGreen: '#10B981',
     statusBlue: '#3B82F6',
   };
@@ -246,7 +246,7 @@ export default function RefundsScreen() {
                 </View>
 
                 <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 4, lineHeight: 16 }}>
-                  Why wait 2–5 days for bank payouts? Switch to <Text style={{ color: colors.accentGold, fontWeight: '800' }}>Hotel Bet Money</Text> for 100% instant refunds ready to use immediately!
+                  Why wait 2–5 days for bank payouts? Switch to <Text style={{ color: colors.accentGold, fontWeight: '800' }}>Elite Mess Pass</Text> for 100% instant refunds ready to use immediately!
                 </Text>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 }}>
@@ -377,6 +377,7 @@ export default function RefundsScreen() {
           })
         )}
       </ScrollView>
+      <CustomerBottomBar activeTab="account" />
     </View>
   );
 }

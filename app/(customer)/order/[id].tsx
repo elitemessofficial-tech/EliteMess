@@ -15,7 +15,7 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, CheckCircle, AlertCircle, ArrowRight, ShieldCheck, User, Info, Gift, Wallet, Sparkles, Lock, CreditCard, RotateCcw } from 'lucide-react-native';
+import { ChevronLeft, MapPin, Phone, Clock, DollarSign, CheckCircle2, CheckCircle, AlertCircle, ArrowRight, ShieldCheck, User, Info, Gift, Wallet, Heart, Lock, CreditCard, RotateCcw } from 'lucide-react-native';
 import { useAppTheme } from '../../../src/context/ThemeContext';
 import { useCart } from '../../../src/context/CartContext';
 import { supabase } from '../../../src/services/supabase';
@@ -24,6 +24,7 @@ import LottieView from 'lottie-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import FloatingHeader from '../../../components/FloatingHeader';
 import { getRazorpayKeys } from '../../../src/config/razorpayConfig';
+import BookingDetailScreen from '../booking-detail';
 
 interface DBOrderItem {
   id: string;
@@ -62,11 +63,15 @@ interface DBOrder {
   } | null;
 }
 
-export default function OrderDetailsScreen() {
+function FoodDeliveryOrderDetailsScreen({ id }: { id?: string }) {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
   const { isDark } = useAppTheme();
-  const { addToCart } = useCart();
+  let addToCart: ((dishId: string) => void) | undefined;
+  try {
+    const cartCtx = useCart();
+    addToCart = cartCtx.addToCart;
+  } catch (e) {}
+
   const [order, setOrder] = useState<DBOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -83,7 +88,7 @@ export default function OrderDetailsScreen() {
       if (dishId) {
         const qty = itemObj.quantity || 1;
         for (let i = 0; i < qty; i++) {
-          addToCart(dishId);
+          addToCart?.(dishId);
           addedCount++;
         }
       }
@@ -257,7 +262,7 @@ export default function OrderDetailsScreen() {
 
         setOrder(prev => prev ? { ...prev, status: 'cancelled', notes: updatedNotes, delivery_otp: undefined } : null);
         setShowCancelConfirmation(false);
-        showToast('Instant Wallet Refund ⚡', `₹${refund.amount} (${refund.percent}%) instantly credited to your Hotel Bet Money wallet!`, 'success');
+        showToast('Instant Wallet Refund ⚡', `₹${refund.amount} (${refund.percent}%) instantly credited to your Elite Mess Money wallet!`, 'success');
       } else {
         // ── BANK REFUND (UTR PAYOUT) ──
         const cancelNotesTag = `[BANK_REFUND: status=INITIATED | percent=${refund.percent}% | amount=₹${refund.amount} | txn_id=PENDING_OWNER_REF]`;
@@ -287,15 +292,15 @@ export default function OrderDetailsScreen() {
   };
 
   const colors = {
-    bg: isDark ? '#0F0F0B' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(30, 30, 26, 0.45)' : 'rgba(255, 255, 255, 0.85)',
-    cardBorder: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+    bg: isDark ? '#080C0E' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#AEAEB2' : '#64748B',
-    accentGold: '#D4AF37',
+    textSub: isDark ? '#94A3B8' : '#64748B',
+    accentGold: '#10B981',
     statusGreen: '#10B981',
     statusRed: '#EF4444',
-    inputBg: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)',
+    inputBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)',
   };
 
   const fetchOrderDetails = async () => {
@@ -369,7 +374,7 @@ export default function OrderDetailsScreen() {
 
       setOrder(formatted);
     } catch (e: any) {
-      console.error('Failed to load order details:', e.message);
+      console.error('Failed to load delivery order details:', e.message);
       setErrorMsg(e.message);
     } finally {
       setLoading(false);
@@ -416,13 +421,13 @@ export default function OrderDetailsScreen() {
           key: razorpayKeys.key_id,
           amount: Math.round(amount * 100), // in paise
           currency: 'INR',
-          name: 'Hotel Bet',
+          name: 'Elite Mess',
           description: `Delivery Partner Tip ₹${amount} (${razorpayKeys.isTestMode ? 'TEST' : 'LIVE'})`,
           prefill: {
             contact: customerPhone,
             name: 'Valued Customer'
           },
-          theme: { color: '#D4AF37' },
+          theme: { color: '#10B981' },
           handler: async function (response: any) {
             const paymentId = response?.razorpay_payment_id || `pay_rzp_tip_${Date.now()}`;
             await processTipSuccess(paymentId);
@@ -1199,7 +1204,7 @@ export default function OrderDetailsScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.textMain, fontWeight: '700', fontSize: 12 }}>Preparation Kitchen</Text>
                 <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 2, lineHeight: 16 }}>
-                  {order.branches?.name || 'Hotel Bet - Narhe'} ({order.branches?.address})
+                  {order.branches?.name || 'Elite Mess - Narhe'} ({order.branches?.address})
                 </Text>
               </View>
             </View>
@@ -1328,7 +1333,7 @@ export default function OrderDetailsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: colors.textMain, fontSize: 11, fontWeight: '800' }}>
                         {refundPreference === 'wallet' 
-                          ? '⚡ Instant Hotel Bet Money (0 wait time)' 
+                          ? '⚡ Instant Elite Mess Money (0 wait time)' 
                           : '🏦 Bank UTR Payout (2-5 business days)'}
                       </Text>
                       <Text style={{ color: colors.textSub, fontSize: 9, marginTop: 2 }}>
@@ -1401,9 +1406,9 @@ export default function OrderDetailsScreen() {
               }
             ]}
           >
-            {/* Sparkle Glow Icon */}
+            {/* Heart Glow Icon */}
             <View style={styles.glassIconCircle}>
-              <Sparkles size={28} color="#D4AF37" />
+              <Heart size={28} color="#10B981" />
             </View>
 
             <Text style={[styles.glassModalTitle, { color: colors.textMain }]}>
@@ -1432,7 +1437,7 @@ export default function OrderDetailsScreen() {
               onPress={() => setTipSuccessModal(null)}
             >
               <LinearGradient
-                colors={['#D4AF37', '#F3E5AB', '#AA7C11']}
+                colors={['#10B981', '#34D399', '#059669']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.glassModalBtn}
@@ -1447,11 +1452,11 @@ export default function OrderDetailsScreen() {
       {/* Toast Alert overlay */}
       {toastVisible && (
         <View style={styles.alertOverlay}>
-          <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={[styles.alertGlassCard, { borderColor: 'rgba(212, 175, 55, 0.25)', backgroundColor: isDark ? 'rgba(15, 15, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
+          <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={[styles.alertGlassCard, { borderColor: 'rgba(16, 185, 129, 0.25)', backgroundColor: isDark ? 'rgba(6, 44, 30, 0.85)' : 'rgba(255, 255, 255, 0.85)' }]}>
             <View style={styles.alertContent}>
               {toastType === 'success' && <CheckCircle size={18} color="#10B981" />}
               {toastType === 'error' && <AlertCircle size={18} color="#EF4444" />}
-              {toastType === 'info' && <ShieldCheck size={18} color="#D4AF37" />}
+              {toastType === 'info' && <ShieldCheck size={18} color="#10B981" />}
               <View style={styles.alertTextWrapper}>
                 <Text style={[styles.alertTitleText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>{toastTitle}</Text>
                 <Text style={[styles.alertMsgText, { color: isDark ? '#AEAEB2' : '#48484A' }]}>{toastMessage}</Text>
@@ -1462,6 +1467,10 @@ export default function OrderDetailsScreen() {
       )}
     </View>
   );
+}
+
+export default function OrderDetailsScreen() {
+  return <BookingDetailScreen />;
 }
 
 const styles = StyleSheet.create({
@@ -1767,7 +1776,7 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     overflow: 'hidden',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 24,
@@ -1777,9 +1786,9 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: 'rgba(212, 175, 55, 0.12)',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
     borderWidth: 1.5,
-    borderColor: '#D4AF37',
+    borderColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -1814,14 +1823,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#D4AF37',
+    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
   glassModalBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.5,
