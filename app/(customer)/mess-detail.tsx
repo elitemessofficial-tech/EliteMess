@@ -35,6 +35,7 @@ import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import Loader from '../../components/Loader';
 import ConfirmModal from '../../components/ConfirmModal';
+import ReviewsModal from '../../src/components/ReviewsModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -61,6 +62,11 @@ export default function MessDetailScreen() {
 
   const [mess, setMess] = useState<MessDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reviewsModal, setReviewsModal] = useState<{ visible: boolean; messId: string; messName: string }>({
+    visible: false,
+    messId: '',
+    messName: '',
+  });
 
   const fetchMessDetail = useCallback(async () => {
     if (!messId) return;
@@ -298,23 +304,44 @@ export default function MessDetailScreen() {
 
         {/* Content Section */}
         <View style={styles.contentSection}>
-          {/* Primary Action: Book Meal */}
+          {/* Primary Actions: Book Meal & Student Reviews */}
           <AnimatedEntrance direction="up" delay={0}>
-            <TouchableOpacity
-              style={styles.bookButton}
-              onPress={handleBookMeal}
-              activeOpacity={0.88}
-            >
-              <LinearGradient
-                colors={['#10B981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.bookButtonGrad}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              <TouchableOpacity
+                style={[styles.bookButton, { flex: 1, marginBottom: 0 }]}
+                onPress={handleBookMeal}
+                activeOpacity={0.88}
               >
-                <Zap size={20} color="#FFFFFF" />
-                <Text style={styles.bookButtonText}>LOCK BOOKING (1 TOKEN)</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#10B981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.bookButtonGrad}
+                >
+                  <Zap size={18} color="#FFFFFF" />
+                  <Text style={[styles.bookButtonText, { fontSize: 13 }]}>BOOK (1 TOKEN)</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 16,
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(245, 158, 11, 0.14)',
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(245, 158, 11, 0.4)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                  gap: 6,
+                }}
+                onPress={() => setReviewsModal({ visible: true, messId: mess.id, messName: mess.name })}
+                activeOpacity={0.85}
+              >
+                <Star size={16} color="#F59E0B" fill="#F59E0B" />
+                <Text style={{ color: '#F59E0B', fontSize: 13, fontWeight: '900' }}>⭐ Reviews</Text>
+              </TouchableOpacity>
+            </View>
           </AnimatedEntrance>
 
           {/* Cutoff Time Card */}
@@ -422,6 +449,15 @@ export default function MessDetailScreen() {
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal((prev) => ({ ...prev, visible: false }))}
       />
+
+      {mess && (
+        <ReviewsModal
+          visible={reviewsModal.visible}
+          messId={reviewsModal.messId}
+          messName={reviewsModal.messName}
+          onClose={() => setReviewsModal({ visible: false, messId: '', messName: '' })}
+        />
+      )}
     </View>
   );
 }

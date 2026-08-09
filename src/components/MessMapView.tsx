@@ -291,7 +291,6 @@ export default function MessMapView({
             activeOpacity={0.85}
           >
             <Maximize2 size={13} color="#FFFFFF" />
-            <Text style={styles.expandBtnText}>Expand Map (Fullscreen)</Text>
           </TouchableOpacity>
         </View>
 

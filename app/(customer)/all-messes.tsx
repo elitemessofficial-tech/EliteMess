@@ -67,9 +67,17 @@ export default function AllMessesScreen() {
     fetchStudentLocation();
   }, []);
 
-  const getMessDistanceAndWalkLabel = (mess: MessRestaurantDB) => {
-    const messLat = mess.id === 'm1' ? 18.5204 : mess.id === 'm2' ? 18.5234 : mess.id === 'm3' ? 18.5185 : mess.id === 'm4' ? 18.5255 : 18.5155;
-    const messLng = mess.id === 'm1' ? 73.8567 : mess.id === 'm2' ? 73.8595 : mess.id === 'm3' ? 73.8542 : mess.id === 'm4' ? 73.8525 : 73.8610;
+  const getMessDistanceAndWalkLabel = (mess: MessRestaurantDB, idx: number = 0) => {
+    const MESS_COORDS = [
+      { lat: 18.5204, lng: 73.8567 },
+      { lat: 18.5245, lng: 73.8595 },
+      { lat: 18.5175, lng: 73.8540 },
+      { lat: 18.5255, lng: 73.8520 },
+      { lat: 18.5150, lng: 73.8605 },
+    ];
+    const coord = MESS_COORDS[idx % MESS_COORDS.length];
+    const messLat = mess.latitude || coord.lat;
+    const messLng = mess.longitude || coord.lng;
 
     if (userLocation) {
       const meters = calculateHaversineDistance(userLocation.latitude, userLocation.longitude, messLat, messLng);
@@ -313,9 +321,17 @@ export default function AllMessesScreen() {
         {viewMode === 'map' ? (
           <AnimatedEntrance direction="up">
             <MessMapView
-              messes={filteredMesses.map(m => {
-                const messLat = m.id === 'm1' ? 18.5204 : m.id === 'm2' ? 18.5234 : m.id === 'm3' ? 18.5185 : m.id === 'm4' ? 18.5255 : 18.5155;
-                const messLng = m.id === 'm1' ? 73.8567 : m.id === 'm2' ? 73.8595 : m.id === 'm3' ? 73.8542 : m.id === 'm4' ? 73.8525 : 73.8610;
+              messes={filteredMesses.map((m, idx) => {
+                const MESS_COORDS = [
+                  { lat: 18.5204, lng: 73.8567 },
+                  { lat: 18.5245, lng: 73.8595 },
+                  { lat: 18.5175, lng: 73.8540 },
+                  { lat: 18.5255, lng: 73.8520 },
+                  { lat: 18.5150, lng: 73.8605 },
+                ];
+                const coord = MESS_COORDS[idx % MESS_COORDS.length];
+                const messLat = m.latitude || coord.lat;
+                const messLng = m.longitude || coord.lng;
 
                 const distMeter = userLocation
                   ? calculateHaversineDistance(userLocation.latitude, userLocation.longitude, messLat, messLng)
@@ -372,7 +388,11 @@ export default function AllMessesScreen() {
             const shortlisted = isShortlisted(item.id);
             return (
               <AnimatedEntrance key={item.id} delay={idx * 60}>
-                <View style={[styles.messCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                <TouchableOpacity
+                  style={[styles.messCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
+                  onPress={() => router.push(`/(customer)/mess-detail?messId=${item.id}`)}
+                  activeOpacity={0.92}
+                >
                   {/* Top Image Banner */}
                   <View style={styles.cardImageHero}>
                     <Image source={{ uri: item.image_url }} style={styles.cardImage} />
@@ -395,7 +415,10 @@ export default function AllMessesScreen() {
                     {/* Shortlist Heart Icon */}
                     <TouchableOpacity
                       style={[styles.heartBtn, shortlisted && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
-                      onPress={() => (shortlisted ? removeFromShortlist(item.id) : addToShortlist(item.id))}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        shortlisted ? removeFromShortlist(item.id) : addToShortlist(item.id);
+                      }}
                       activeOpacity={0.8}
                     >
                       <Heart
@@ -417,7 +440,7 @@ export default function AllMessesScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
                           <MapPin size={12} color={colors.textSub} />
                           <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>
-                            {item.address} · {getMessDistanceAndWalkLabel(item)}
+                            {item.address} · {getMessDistanceAndWalkLabel(item, idx)}
                           </Text>
                         </View>
                       </View>
@@ -449,27 +472,14 @@ export default function AllMessesScreen() {
                       </Text>
                     </View>
 
-                    {/* Card Actions Row */}
+                    {/* Card Actions Row - Single Full Width Booking Button */}
                     <View style={styles.actionButtonsRow}>
                       <TouchableOpacity
-                        style={styles.detailBtn}
-                        onPress={() => router.push(`/(customer)/mess-detail?messId=${item.id}`)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={[styles.detailBtnText, { color: colors.textMain }]}>Menu</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.detailBtn, { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' }]}
-                        onPress={() => setReviewsModal({ visible: true, messId: item.id, messName: item.name })}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={[styles.detailBtnText, { color: '#F59E0B' }]}>⭐ Reviews</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
                         style={styles.bookBtn}
-                        onPress={() => handleBookMealClick(item)}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleBookMealClick(item);
+                        }}
                         activeOpacity={0.88}
                       >
                         <LinearGradient
@@ -484,7 +494,7 @@ export default function AllMessesScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               </AnimatedEntrance>
             );
           })
