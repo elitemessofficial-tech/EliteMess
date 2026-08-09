@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
   Image,
   Modal,
   Platform,
@@ -70,8 +71,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'Near Hostel 4, Main Road',
     distanceMeter: 450,
     walkTimeMinutes: 6,
-    lat: 18.5225,
-    lng: 73.8580,
+    lat: 18.5245,
+    lng: 73.8595,
     image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=500&q=80',
     todaysSpecial: 'Chicken Biryani & Butter Roti',
     isVegOnly: false,
@@ -85,8 +86,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'Student Plaza, Block C',
     distanceMeter: 180,
     walkTimeMinutes: 2,
-    lat: 18.5185,
-    lng: 73.8542,
+    lat: 18.5175,
+    lng: 73.8540,
     image: 'https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?w=500&q=80',
     todaysSpecial: 'Rajasthani Dal Baati Churma',
     isVegOnly: true,
@@ -100,8 +101,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'South Gate, Near Library',
     distanceMeter: 600,
     walkTimeMinutes: 8,
-    lat: 18.5235,
-    lng: 73.8530,
+    lat: 18.5255,
+    lng: 73.8520,
     image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80',
     todaysSpecial: 'Unlimited Gujarati Thali',
     isVegOnly: true,
@@ -115,8 +116,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'Hostel 7 Circle, West Wing',
     distanceMeter: 350,
     walkTimeMinutes: 4,
-    lat: 18.5165,
-    lng: 73.8590,
+    lat: 18.5150,
+    lng: 73.8605,
     image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&q=80',
     todaysSpecial: 'Amritsari Chole & Stuffed Paratha',
     isVegOnly: false,
@@ -141,6 +142,28 @@ export default function MessMapView({
     return true;
   });
 
+  // Listen to message events from the Leaflet iframe when a student taps any pin
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleWebMessage = (event: MessageEvent) => {
+        try {
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          if (data && data.type === 'SELECT_MESS' && data.id) {
+            const found = mapData.find(item => item.id === data.id);
+            if (found) {
+              setSelectedMess(found);
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      };
+
+      window.addEventListener('message', handleWebMessage);
+      return () => window.removeEventListener('message', handleWebMessage);
+    }
+  }, [mapData]);
+
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
     cardBg: isDark ? 'rgba(15, 26, 23, 0.96)' : 'rgba(255, 255, 255, 0.96)',
@@ -153,7 +176,7 @@ export default function MessMapView({
   const studentLat = userLocation?.latitude || 18.5195;
   const studentLng = userLocation?.longitude || 73.8550;
 
-  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles and auto fitBounds for ALL 5 messes!
+  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles and pin click handlers!
   const generateLeafletHTML = (isFull: boolean) => {
     const pinsJSON = JSON.stringify(
       filteredMapData.map(m => ({
@@ -191,13 +214,14 @@ export default function MessMapView({
             box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
             white-space: nowrap;
             cursor: pointer;
-            transition: transform 0.2s ease;
+            transition: all 0.2s ease;
           }
           .custom-pin.selected {
             background: #10B981;
             color: #FFFFFF;
             border-color: #FFFFFF;
-            transform: scale(1.15);
+            transform: scale(1.2);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.8);
             z-index: 1000 !important;
           }
           .leaflet-popup-content-wrapper {
@@ -232,7 +256,7 @@ export default function MessMapView({
           var userM = L.marker([${studentLat}, ${studentLng}], { icon: userIcon }).addTo(map).bindTooltip("You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
           boundsGroup.addLayer(userM);
 
-          // Add ALL 5 Mess markers & add to boundsGroup
+          // Add ALL 5 Mess markers & attach click handlers
           pins.forEach(function(p) {
             var iconClass = p.isSelected ? 'custom-pin selected' : 'custom-pin';
             var icon = L.divIcon({
@@ -243,6 +267,15 @@ export default function MessMapView({
             var m = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
             m.bindPopup('<b>' + p.name + '</b><br><span style="color:#10B981;font-weight:700;">' + p.rating + ' ★</span> · ' + p.address + '<br><small>🔥 ' + p.special + '</small>');
             boundsGroup.addLayer(m);
+
+            m.on('click', function() {
+              if (window.parent) {
+                window.parent.postMessage(JSON.stringify({ type: 'SELECT_MESS', id: p.id }), '*');
+              }
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_MESS', id: p.id }));
+              }
+            });
           });
 
           // Auto-fit map viewport so ALL 5 messes + student location are visible!
@@ -282,7 +315,7 @@ export default function MessMapView({
         {/* Top Controls Overlay */}
         <View style={styles.topControlsOverlay}>
           <View style={styles.mapLegend}>
-            <Text style={styles.legendText}>📍 OpenStreetMap • All {mapData.length} Messes Pinned</Text>
+            <Text style={styles.legendText}>📍 OpenStreetMap • Tap Any Mess Pin</Text>
           </View>
 
           <TouchableOpacity
@@ -291,7 +324,32 @@ export default function MessMapView({
             activeOpacity={0.85}
           >
             <Maximize2 size={13} color="#FFFFFF" />
+            <Text style={styles.expandBtnText}>Expand Map (Fullscreen)</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* HORIZONTAL MESS SELECTOR CHIPS */}
+        <View style={styles.messSelectorBar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingHorizontal: 8 }}>
+            {filteredMapData.map((m) => {
+              const isSelected = selectedMess?.id === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[
+                    styles.messSelectorPill,
+                    isSelected && { backgroundColor: '#10B981', borderColor: '#FFFFFF' },
+                  ]}
+                  onPress={() => setSelectedMess(m)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.messSelectorPillText, isSelected && { color: '#FFFFFF', fontWeight: '900' }]}>
+                    🍴 {m.name.split(' ')[0]} ({m.rating} ★)
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* BOTTOM SELECTED MESS FLOATING CARD */}
@@ -378,7 +436,7 @@ export default function MessMapView({
               <Compass size={22} color="#10B981" />
               <View>
                 <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>All {mapData.length} messes displayed with live bounds</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11 }}>Tap any mess pin or pill to select</Text>
               </View>
             </View>
 
@@ -519,7 +577,7 @@ const styles = StyleSheet.create({
   },
   inlineWrapper: {
     width: '100%',
-    height: 420,
+    height: 460,
     borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 1.5,
@@ -572,6 +630,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '900',
+  },
+  messSelectorBar: {
+    position: 'absolute',
+    bottom: 155,
+    left: 8,
+    right: 8,
+    zIndex: 10,
+  },
+  messSelectorPill: {
+    backgroundColor: 'rgba(15, 23, 20, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  messSelectorPillText: {
+    color: '#10B981',
+    fontSize: 11,
+    fontWeight: '800',
   },
   floatingCard: {
     position: 'absolute',
