@@ -38,6 +38,7 @@ import { useDashboardData, FavoriteMess } from '../../src/hooks/useDashboardData
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
+import ReviewsModal from '../../src/components/ReviewsModal';
 import ConfirmModal from '../../components/ConfirmModal';
 
 const modalStyles = StyleSheet.create({
@@ -151,6 +152,11 @@ export default function DashboardScreen() {
 
   // Countdown timer for active OTP booking
   const [countdownText, setCountdownText] = useState<string>('1h 45m');
+  const [reviewsModal, setReviewsModal] = useState<{ visible: boolean; messId: string; messName: string }>({
+    visible: false,
+    messId: '',
+    messName: '',
+  });
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -639,6 +645,13 @@ export default function DashboardScreen() {
         loading={confirmModal.loading}
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <ReviewsModal
+        visible={reviewsModal.visible}
+        messId={reviewsModal.messId}
+        messName={reviewsModal.messName}
+        onClose={() => setReviewsModal({ visible: false, messId: '', messName: '' })}
       />
 
       <CustomerBottomBar activeTab="dashboard" />

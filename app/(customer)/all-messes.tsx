@@ -34,6 +34,8 @@ import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import ConfirmModal from '../../components/ConfirmModal';
+import MessMapView from '../../src/components/MessMapView';
+import ReviewsModal from '../../src/components/ReviewsModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -47,6 +49,12 @@ export default function AllMessesScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [reviewsModal, setReviewsModal] = useState<{ visible: boolean; messId: string; messName: string }>({
+    visible: false,
+    messId: '',
+    messName: '',
+  });
 
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -241,15 +249,71 @@ export default function AllMessesScreen() {
           </View>
         </AnimatedEntrance>
 
-        {/* Count Label */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
+        {/* Count Label & View Mode Toggle Switch */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 6 }}>
           <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textSub }}>
             Showing {filteredMesses.length} Mess Partner{filteredMesses.length !== 1 ? 's' : ''}
           </Text>
+
+          <View style={{ flexDirection: 'row', backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', borderRadius: 10, padding: 2 }}>
+            <TouchableOpacity
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 8,
+                backgroundColor: viewMode === 'list' ? '#10B981' : 'transparent',
+              }}
+              onPress={() => setViewMode('list')}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '800', color: viewMode === 'list' ? '#FFFFFF' : colors.textMain }}>
+                📋 List
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 8,
+                backgroundColor: viewMode === 'map' ? '#10B981' : 'transparent',
+              }}
+              onPress={() => setViewMode('map')}
+            >
+              <Text style={{ fontSize: 11, fontWeight: '800', color: viewMode === 'map' ? '#FFFFFF' : colors.textMain }}>
+                🗺️ Map View
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Empty State if No Mess Matches Search */}
-        {filteredMesses.length === 0 ? (
+        {/* MAP VIEW MODE */}
+        {viewMode === 'map' ? (
+          <AnimatedEntrance direction="up">
+            <MessMapView
+              messes={filteredMesses.map(m => ({
+                id: m.id,
+                name: m.name,
+                category: m.type,
+                rating: m.rating,
+                reviewsCount: 140,
+                address: m.address,
+                distanceMeter: parseInt(m.distance.replace(/\D/g, '')) * 100 || 250,
+                walkTimeMinutes: Math.ceil((parseInt(m.distance.replace(/\D/g, '')) * 100 || 250) / 80),
+                coords: m.id === 'm1' ? { x: 30, y: 35 } : m.id === 'm2' ? { x: 65, y: 25 } : m.id === 'm3' ? { x: 45, y: 60 } : { x: 75, y: 70 },
+                image: m.image_url,
+                todaysSpecial: m.star_dish,
+                isVegOnly: m.type === 'Pure Veg',
+              }))}
+              onSelectMess={(mess) => {
+                const target = filteredMesses.find(item => item.id === mess.id);
+                if (target) handleBookMealClick(target);
+              }}
+              onOpenReviews={(messId, messName) => {
+                setReviewsModal({ visible: true, messId, messName });
+              }}
+            />
+          </AnimatedEntrance>
+        ) : filteredMesses.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
             <Store size={40} color={colors.textSub} style={{ opacity: 0.5, marginBottom: 10 }} />
             <Text style={[styles.emptyTitle, { color: colors.textMain }]}>No Mess Partners Found</Text>
@@ -356,7 +420,15 @@ export default function AllMessesScreen() {
                         onPress={() => router.push(`/(customer)/mess-detail?messId=${item.id}`)}
                         activeOpacity={0.85}
                       >
-                        <Text style={[styles.detailBtnText, { color: colors.textMain }]}>View Menu</Text>
+                        <Text style={[styles.detailBtnText, { color: colors.textMain }]}>Menu</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.detailBtn, { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' }]}
+                        onPress={() => setReviewsModal({ visible: true, messId: item.id, messName: item.name })}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.detailBtnText, { color: '#F59E0B' }]}>⭐ Reviews</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -394,6 +466,13 @@ export default function AllMessesScreen() {
         loading={confirmModal.loading}
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <ReviewsModal
+        visible={reviewsModal.visible}
+        messId={reviewsModal.messId}
+        messName={reviewsModal.messName}
+        onClose={() => setReviewsModal({ visible: false, messId: '', messName: '' })}
       />
 
       <CustomerBottomBar activeTab="dashboard" />
