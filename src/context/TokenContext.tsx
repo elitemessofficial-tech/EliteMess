@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { ensureDatabaseInitialized } from '../services/dbSeedSync';
+import { getCurrentUserIdentity } from '../utils/userSession';
 
 export interface BookingDetails {
   bookingId: string;
