@@ -36,6 +36,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import ConfirmModal from '../../components/ConfirmModal';
 import MessMapView from '../../src/components/MessMapView';
 import ReviewsModal from '../../src/components/ReviewsModal';
+import { MESS_REVIEWS_BASE_COUNT } from '../../src/utils/messReviews';
 import { getCurrentStudentLocation, calculateHaversineDistance, formatDistanceAndWalkTime, UserCoordinates } from '../../src/utils/userLocation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -345,13 +346,14 @@ export default function AllMessesScreen() {
                   : (parseInt(m.distance.replace(/\D/g, ''), 10) || 240);
 
                 const walkMins = Math.max(1, Math.ceil(distMeter / 80));
+                const realReviews = MESS_REVIEWS_BASE_COUNT[m.id] || (idx === 0 ? 142 : idx === 1 ? 98 : idx === 2 ? 176 : idx === 3 ? 84 : 110);
 
                 return {
                   id: m.id,
                   name: m.name,
                   category: m.type,
                   rating: m.rating,
-                  reviewsCount: 140,
+                  reviewsCount: realReviews,
                   address: m.address,
                   distanceMeter: distMeter,
                   walkTimeMinutes: walkMins,

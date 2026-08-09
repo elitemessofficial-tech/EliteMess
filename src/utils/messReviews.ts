@@ -110,8 +110,17 @@ export async function addMessReview(newReview: Omit<MessReview, 'id' | 'createdA
       });
     } catch (e) {}
 
-    return review;
-  } catch (e) {
-    return review;
-  }
+export const MESS_REVIEWS_BASE_COUNT: Record<string, number> = {
+  m1: 142,
+  m2: 98,
+  m3: 176,
+  m4: 84,
+  m5: 110,
+};
+
+export async function getMessReviewCount(messId: string): Promise<number> {
+  const reviews = await getReviewsForMess(messId);
+  const baseCount = MESS_REVIEWS_BASE_COUNT[messId] || 120;
+  const userAdded = Math.max(0, reviews.length - SEED_REVIEWS.filter(r => r.messId === messId).length);
+  return baseCount + userAdded;
 }

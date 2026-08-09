@@ -381,8 +381,7 @@ export default function MessMapView({
             onPress={() => setIsFullscreen(true)}
             activeOpacity={0.85}
           >
-            <Maximize2 size={13} color="#FFFFFF" />
-            <Text style={styles.expandBtnText}>Expand Map (Fullscreen)</Text>
+            <Maximize2 size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -671,13 +670,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   expandBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    width: 34,
+    height: 34,
     borderRadius: 10,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
