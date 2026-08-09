@@ -249,12 +249,13 @@ export default function MessMapView({
             font-size: 12px;
           }
           .leaflet-popup-tip { background: #0F1A17; }
+          .leaflet-control-zoom { display: none !important; }
         </style>
       </head>
       <body>
         <div id="map"></div>
         <script>
-          var map = L.map('map', { zoomControl: true, attributionControl: false }).setView([${studentLat}, ${studentLng}], 15);
+          var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([${studentLat}, ${studentLng}], 15);
           
           L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
