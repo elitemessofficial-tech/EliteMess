@@ -33,6 +33,7 @@ import { useRouter } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useToken } from '../../src/context/TokenContext';
+import QRCodeDisplay from '../../src/components/QRCodeDisplay';
 import { useDashboardData, FavoriteMess } from '../../src/hooks/useDashboardData';
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
@@ -385,9 +386,14 @@ export default function DashboardScreen() {
                   <Text style={{ color: colors.textSub, fontSize: 12 }}>{activeBooking.messAddress}</Text>
                 </View>
 
-                {/* 8-DIGIT VERIFICATION OTP */}
+                {/* QR CODE & 8-DIGIT VERIFICATION OTP */}
                 <View style={styles.otpBox}>
-                  <Text style={styles.otpLabel}>DINING VERIFICATION OTP</Text>
+                  <Text style={styles.otpLabel}>SCAN QR OR SHOW OTP AT COUNTER</Text>
+                  
+                  <View style={{ alignItems: 'center', marginVertical: 14 }}>
+                    <QRCodeDisplay value={activeBooking.otp} size={125} showCorners={true} />
+                  </View>
+
                   <View style={styles.otpDigitsRow}>
                     <View style={styles.otpSubRow}>
                       {otpPart1.split('').map((digit, i) => (
@@ -405,7 +411,7 @@ export default function DashboardScreen() {
                       ))}
                     </View>
                   </View>
-                  <Text style={styles.otpSubtext}>Show this 8-digit OTP to mess owner at dining counter</Text>
+                  <Text style={styles.otpSubtext}>Scan QR code or show 8-digit OTP at dining counter</Text>
                 </View>
 
                 {/* Get Directions Button */}

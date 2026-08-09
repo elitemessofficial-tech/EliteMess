@@ -36,6 +36,7 @@ import { useToken, MealHistoryItem } from '../../src/context/TokenContext';
 import LottieView from 'lottie-react-native';
 import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
+import QRCodeDisplay from '../../src/components/QRCodeDisplay';
 
 const modalStyles = StyleSheet.create({
   overlay: {
@@ -344,6 +345,11 @@ export default function BookingDetailScreen() {
                     {copied ? 'Copied' : 'Copy'}
                   </Text>
                 </TouchableOpacity>
+              </View>
+
+              {/* Dynamic Vector QR Code */}
+              <View style={{ alignItems: 'center', marginVertical: 8 }}>
+                <QRCodeDisplay value={rawOtp} size={130} showCorners={true} />
               </View>
 
               {/* 8-Digit OTP Grid Display */}
