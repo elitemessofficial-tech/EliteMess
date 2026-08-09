@@ -43,7 +43,7 @@ export default function ProfileScreen() {
   const sdk = useDescope();
   const { session, manageSession } = useSession();
   const { isDark, toggleTheme } = useAppTheme();
-  const { subscriptionPlan, totalTokens, streakDays, shortlist } = useToken();
+  const { subscriptionPlan, totalTokens, streakDays, shortlist = [] } = useToken();
 
   const [dietaryPref, setDietaryPref] = useState<'Veg Only' | 'Non-Veg & Veg'>('Veg Only');
   const [allowNotifications, setAllowNotifications] = useState(true);
@@ -190,7 +190,7 @@ export default function ProfileScreen() {
                 </View>
                 <View>
                   <Text style={[styles.rowText, { color: colors.textMain, fontWeight: '900' }]}>
-                    Saved Messes ({shortlist.length})
+                    Saved Messes ({(shortlist || []).length})
                   </Text>
                   <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
                     Compare saved mess menus & pre-book meals
