@@ -97,6 +97,18 @@ export default function EntrypointIndex() {
             return '/(auth)/login';
           }
 
+          const savedPhone = await AsyncStorage.getItem('user_phone');
+          if (savedPhone && savedPhone.trim().length >= 5) {
+            const clean = savedPhone.replace(/\D/g, '');
+            if (clean && clean.length >= 5) {
+              const selectedRole = await AsyncStorage.getItem('user_selected_role');
+              if (selectedRole === 'owner' || isSpecialOwnerNumber(clean)) {
+                if (selectedRole === 'owner') return '/(owner)/owner_dashboard';
+              }
+              return '/(customer)/dashboard';
+            }
+          }
+
           if (session) {
             const uid = session.user.userId;
             const phone = session.user.phone || '';
@@ -120,7 +132,7 @@ export default function EntrypointIndex() {
               .from('profiles')
               .select('role')
               .eq('id', uid)
-              .single();
+              .maybeSingle();
 
             const role = profile?.role || 'customer';
 
@@ -139,8 +151,6 @@ export default function EntrypointIndex() {
             return '/(customer)/dashboard';
           }
 
-          // Clear any leftover/anonymous Supabase session to prevent security bypass
-          await supabase.auth.signOut();
           return '/(auth)/login';
         };
 

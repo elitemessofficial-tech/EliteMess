@@ -121,8 +121,28 @@ export default function PhoneLoginScreen() {
     };
 
     const runChecks = async () => {
+      const isLogout = await AsyncStorage.getItem('explicit_logout');
+      if (isLogout === 'true') {
+        return;
+      }
+
       const isVip = await checkVipSession();
       if (isVip) return;
+
+      const savedPhone = await AsyncStorage.getItem('user_phone');
+      if (savedPhone && savedPhone.trim().length >= 5) {
+        const cleanPhone = savedPhone.replace(/\D/g, '');
+        const savedName = (await AsyncStorage.getItem(`mealhop_user_name_${cleanPhone}`)) || (await AsyncStorage.getItem('user_full_name'));
+        if (savedName && savedName.trim().length >= 2) {
+          const storedRole = await AsyncStorage.getItem('user_selected_role');
+          if (storedRole === 'owner') {
+            router.replace('/(owner)/owner_dashboard');
+          } else {
+            router.replace('/');
+          }
+          return;
+        }
+      }
 
       if (session) {
         try {
