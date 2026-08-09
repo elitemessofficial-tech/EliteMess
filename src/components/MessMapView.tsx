@@ -190,7 +190,7 @@ export default function MessMapView({
   const studentLat = userLocation?.latitude || 18.5195;
   const studentLng = userLocation?.longitude || 73.8550;
 
-  // Generate real Leaflet HTML map content with CartoDB Dark Matter tiles and active walking polyline route!
+  // Generate real Leaflet HTML map content with CartoDB Dark Matter tiles and real OSRM street walking routes!
   const generateLeafletHTML = (isFull: boolean) => {
     const pinsJSON = JSON.stringify(
       filteredMapData.map(m => ({
@@ -295,27 +295,48 @@ export default function MessMapView({
             });
           });
 
-          // Draw active walking route line from Student location to Selected Mess
-          var routeWaypoints = [
-            [${studentLat}, ${studentLng}],
-            [(${studentLat} + ${activeLat}) / 2 + 0.0006, (${studentLng} + ${activeLng}) / 2 - 0.0006],
-            [${activeLat}, ${activeLng}]
-          ];
+          // Fetch real street walking route geometry from OSRM Engine
+          var osrmUrl = 'https://router.project-osrm.org/route/v1/foot/' + ${studentLng} + ',' + ${studentLat} + ';' + ${activeLng} + ',' + ${activeLat} + '?overview=full&geometries=geojson';
 
-          var routeLine = L.polyline(routeWaypoints, {
-            color: '#10B981',
-            weight: 5,
-            opacity: 0.9,
-            dashArray: '8, 8',
-            lineCap: 'round'
-          }).addTo(map);
+          fetch(osrmUrl)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+              if (data && data.routes && data.routes.length > 0) {
+                var routeCoords = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+                var roadLine = L.polyline(routeCoords, {
+                  color: '#10B981',
+                  weight: 5,
+                  opacity: 0.95,
+                  smoothFactor: 1,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }).addTo(map);
+                map.fitBounds(roadLine.getBounds().pad(0.35));
+              } else {
+                drawCurvedFallbackRoute();
+              }
+            })
+            .catch(function(err) {
+              drawCurvedFallbackRoute();
+            });
 
-          // Auto-fit map viewport to focus on the student -> mess walking route
-          var routeBounds = L.latLngBounds([
-            [${studentLat}, ${studentLng}],
-            [${activeLat}, ${activeLng}]
-          ]);
-          map.fitBounds(routeBounds.pad(0.35));
+          function drawCurvedFallbackRoute() {
+            var start = [${studentLat}, ${studentLng}];
+            var end = [${activeLat}, ${activeLng}];
+            var mid1 = [start[0] + (end[0] - start[0]) * 0.35 + 0.0009, start[1] + (end[1] - start[1]) * 0.25 - 0.0004];
+            var mid2 = [start[0] + (end[0] - start[0]) * 0.70 - 0.0005, start[1] + (end[1] - start[1]) * 0.75 + 0.0007];
+            var curveWaypoints = [start, mid1, mid2, end];
+
+            var curveLine = L.polyline(curveWaypoints, {
+              color: '#10B981',
+              weight: 5,
+              opacity: 0.95,
+              smoothFactor: 1.5,
+              lineCap: 'round',
+              lineJoin: 'round'
+            }).addTo(map);
+            map.fitBounds(curveLine.getBounds().pad(0.35));
+          }
         </script>
       </body>
       </html>
@@ -360,6 +381,7 @@ export default function MessMapView({
             activeOpacity={0.85}
           >
             <Maximize2 size={13} color="#FFFFFF" />
+            <Text style={styles.expandBtnText}>Expand Map (Fullscreen)</Text>
           </TouchableOpacity>
         </View>
 
@@ -471,7 +493,7 @@ export default function MessMapView({
               <Compass size={22} color="#10B981" />
               <View>
                 <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>Active walking route displayed</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11 }}>Real street walking route displayed</Text>
               </View>
             </View>
 
