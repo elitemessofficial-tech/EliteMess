@@ -197,18 +197,18 @@ export default function WalletLedgerScreen() {
               </Animated.View>
             </View>
 
-            <Text style={styles.planNameText}>{passStats.planName}</Text>
+            <Text style={[styles.planNameText, { color: colors.textMain }]}>{passStats.planName}</Text>
 
             <View style={styles.statGrid}>
-              <View style={styles.statBox}>
-                <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Tokens Balance</Text>
+              <View style={[styles.statBox, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)', borderColor: colors.cardBorder }]}>
+                <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>Tokens Balance</Text>
                 <Text style={styles.statNumber}>
                   {passStats.remainingTokens} <Text style={{ fontSize: 14, color: colors.textSub }}>/ {passStats.totalTokens}</Text>
                 </Text>
               </View>
 
-              <View style={styles.statBox}>
-                <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>Skips Remaining</Text>
+              <View style={[styles.statBox, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)', borderColor: colors.cardBorder }]}>
+                <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>Skips Remaining</Text>
                 <Text style={[styles.statNumber, { color: '#FF6B00' }]}>{passStats.remainingSkips}</Text>
               </View>
             </View>
@@ -216,10 +216,10 @@ export default function WalletLedgerScreen() {
             <TouchableOpacity
               style={{
                 marginTop: 12,
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                borderWidth: 1,
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#10B981',
+                borderWidth: isDark ? 1 : 0,
                 borderColor: 'rgba(16, 185, 129, 0.3)',
-                paddingVertical: 10,
+                paddingVertical: 12,
                 borderRadius: 12,
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -227,7 +227,7 @@ export default function WalletLedgerScreen() {
               onPress={() => router.push('/(customer)/subscription')}
               activeOpacity={0.85}
             >
-              <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900' }}>
+              <Text style={{ color: isDark ? '#10B981' : '#FFFFFF', fontSize: 13, fontWeight: '900' }}>
                 {passStats.remainingTokens === 0 ? 'Get Meal Pass Subscription →' : 'Manage Subscription Plans →'}
               </Text>
             </TouchableOpacity>

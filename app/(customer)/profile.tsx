@@ -25,6 +25,7 @@ import {
   Zap,
   Bell,
   Wallet,
+  Bookmark,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -42,7 +43,7 @@ export default function ProfileScreen() {
   const sdk = useDescope();
   const { session, manageSession } = useSession();
   const { isDark, toggleTheme } = useAppTheme();
-  const { subscriptionPlan, totalTokens, streakDays } = useToken();
+  const { subscriptionPlan, totalTokens, streakDays, shortlist } = useToken();
 
   const [dietaryPref, setDietaryPref] = useState<'Veg Only' | 'Non-Veg & Veg'>('Veg Only');
   const [allowNotifications, setAllowNotifications] = useState(true);
@@ -119,7 +120,7 @@ export default function ProfileScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.userName}>{userDisplayName}</Text>
+                <Text style={[styles.userName, { color: colors.textMain }]}>{userDisplayName}</Text>
                 <ShieldCheck size={16} color="#10B981" />
               </View>
               <Text style={{ color: colors.textSub, fontSize: 12, marginTop: 2 }}>
@@ -169,6 +170,36 @@ export default function ProfileScreen() {
               <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
                 <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '800' }}>MEAL STREAK</Text>
                 <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>🔥 {streakDays} Days</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </AnimatedEntrance>
+
+        {/* Decision Room Section */}
+        <AnimatedEntrance direction="up" delay={120}>
+          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Decision Room</Text>
+          <TouchableOpacity
+            style={[styles.settingGroup, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 16 }]}
+            onPress={() => router.push('/(customer)/shortlist')}
+            activeOpacity={0.85}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(245, 158, 11, 0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Bookmark size={22} color="#F59E0B" />
+                </View>
+                <View>
+                  <Text style={[styles.rowText, { color: colors.textMain, fontWeight: '900' }]}>
+                    Saved Messes ({shortlist.length})
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+                    Compare saved mess menus & pre-book meals
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 11, color: '#F59E0B', fontWeight: '800' }}>Open Room</Text>
+                <ChevronRight size={18} color="#F59E0B" />
               </View>
             </View>
           </TouchableOpacity>
