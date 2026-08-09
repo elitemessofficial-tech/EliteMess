@@ -701,13 +701,16 @@ export default function PhoneLoginScreen() {
             }}>
               <User size={20} color="#10B981" />
               <TextInput
-                style={{
-                  flex: 1,
-                  color: colors.inputText,
-                  fontSize: 16,
-                  fontWeight: '700',
-                  height: '100%',
-                }}
+                style={[
+                  {
+                    flex: 1,
+                    color: colors.inputText,
+                    fontSize: 16,
+                    fontWeight: '700',
+                    height: '100%',
+                  },
+                  Platform.OS === 'web' && ({ outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent' } as any),
+                ]}
                 placeholder="Enter Full Name"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={fullName}
@@ -759,7 +762,8 @@ export default function PhoneLoginScreen() {
                     { 
                       color: colors.inputText,
                       borderBottomColor: phoneFocused ? colors.accentGold : 'transparent'
-                    }
+                    },
+                    Platform.OS === 'web' && ({ outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent' } as any),
                   ]}
                   placeholder="Phone Number"
                   placeholderTextColor={colors.inputPlaceholder}
