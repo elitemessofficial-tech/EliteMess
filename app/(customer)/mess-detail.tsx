@@ -127,21 +127,6 @@ export default function MessDetailScreen() {
     fetchMessDetail();
   }, [fetchMessDetail]);
 
-  const handleGetDirections = () => {
-    if (!mess) return;
-    const encoded = encodeURIComponent(mess.address);
-    const url = Platform.select({
-      ios: `maps:0,0?q=${encoded}`,
-      android: `geo:0,0?q=${encoded}`,
-      web: `https://www.google.com/maps/search/?api=1&query=${encoded}`,
-    });
-    if (url) {
-      Linking.openURL(url).catch(() => {
-        Alert.alert('Directions', `Navigate to: ${mess.address}`);
-      });
-    }
-  };
-
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
     visible: boolean;
