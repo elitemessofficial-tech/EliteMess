@@ -11,8 +11,13 @@ export async function getCurrentUserIdentity(): Promise<UserIdentity> {
   try {
     const isVip = (await AsyncStorage.getItem('vip_session_active')) === 'true';
     const phone = (await AsyncStorage.getItem('user_phone')) || '';
-    const fullName = (await AsyncStorage.getItem('user_full_name')) || '';
     const cleanPhone = phone.replace(/\D/g, '');
+
+    let localPhoneName = '';
+    if (cleanPhone) {
+      localPhoneName = (await AsyncStorage.getItem(`mealhop_user_name_${cleanPhone}`)) || '';
+    }
+    const fullName = localPhoneName || (await AsyncStorage.getItem('user_full_name')) || '';
 
     let userId = 'default_guest_user';
     if (isVip) {

@@ -308,52 +308,58 @@ export default function PhoneLoginScreen() {
         }
       }
 
+      const userPhoneNum = descopeUser.phone || formattedPhone;
+      const cleanPhone = userPhoneNum.replace(/\D/g, '');
+      const localPhoneName = await AsyncStorage.getItem(`mealhop_user_name_${cleanPhone}`);
+
       // Check/create user profile in Supabase database by uid or by phone number
       let profile = null;
       try {
         const { data } = await supabase
           .from('profiles')
           .select('id, full_name, role')
-          .or(`id.eq.${uid},phone_number.eq.${descopeUser.phone || formattedPhone}`)
+          .or(`id.eq.${uid},phone_number.eq.${userPhoneNum}`)
           .maybeSingle();
         profile = data;
       } catch (pErr: any) {
         console.warn('Supabase profile query failed (unreachable/network issue):', pErr?.message || pErr);
       }
       
-      const isOwnerNum = isSpecialOwnerNumber(descopeUser.phone || formattedPhone);
+      const isOwnerNum = isSpecialOwnerNumber(userPhoneNum);
+      const existingName = profile?.full_name || localPhoneName;
+      const hasValidName = existingName && existingName !== 'Guest Customer' && existingName !== 'Guest Guest' && existingName !== 'Pending Rider' && existingName.trim().length >= 2;
 
-      if (profile && profile.full_name && profile.full_name !== 'Guest Customer' && profile.full_name !== 'Guest Guest' && profile.full_name !== 'Pending Rider') {
-        console.log('User profile already exists, role is:', profile.role);
+      // Always save phone number locally
+      await AsyncStorage.setItem('user_phone', userPhoneNum);
+
+      if (hasValidName) {
+        console.log('User profile name found:', existingName, 'role is:', profile?.role || 'customer');
+        await AsyncStorage.setItem('user_full_name', existingName.trim());
+        await AsyncStorage.setItem(`mealhop_user_name_${cleanPhone}`, existingName.trim());
         await AsyncStorage.removeItem('demo_role');
 
-        // If the profile ID is a temporary one, update it to the proper UID
-        if (profile.id !== uid) {
-          try {
-            await supabase.from('profiles').delete().eq('id', profile.id);
-            await supabase.from('profiles').insert({
-              id: uid,
-              phone_number: descopeUser.phone || formattedPhone,
-              full_name: profile.full_name,
-              role: isOwnerNum ? 'owner' : profile.role
-            });
-          } catch (updErr: any) {
-            console.warn('Supabase profile migration failed:', updErr?.message || updErr);
-          }
-        }
+        // Sync with Supabase if needed
+        try {
+          await supabase.from('profiles').upsert({
+            id: uid,
+            phone_number: userPhoneNum,
+            full_name: existingName.trim(),
+            role: isOwnerNum ? 'owner' : (profile?.role || 'customer'),
+          });
+        } catch (sSyncErr) {}
 
         if (isOwnerNum) {
-          setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
+          setDescopeUserData({ uid, phone: userPhoneNum });
           setShowOwnerSelection(true);
-        } else if (profile.role === 'rider') {
+        } else if (profile?.role === 'rider') {
           await AsyncStorage.setItem('user_selected_role', 'rider');
           router.replace('/(rider)/rider_dashboard' as any);
         } else {
           router.replace('/');
         }
       } else {
-        // Show name setup screen!
-        setDescopeUserData({ uid, phone: descopeUser.phone || formattedPhone });
+        // Show name setup screen for BRAND NEW phone numbers only!
+        setDescopeUserData({ uid, phone: userPhoneNum });
         setShowNameForm(true);
       }
     } catch (err: any) {
@@ -424,9 +430,11 @@ export default function PhoneLoginScreen() {
         console.warn('Supabase profile upsert fetch error:', upsertDbErr?.message || upsertDbErr);
       }
 
+      const cleanPhone = phone.replace(/\D/g, '');
       console.log('User signed in with new profile name, role is:', finalRole);
       await AsyncStorage.setItem('user_full_name', fullName.trim());
       await AsyncStorage.setItem('user_phone', phone);
+      await AsyncStorage.setItem(`mealhop_user_name_${cleanPhone}`, fullName.trim());
       await AsyncStorage.removeItem('demo_role');
 
       if (isOwnerNum) {
