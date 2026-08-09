@@ -137,56 +137,6 @@ export default function ProfileScreen() {
           </LinearGradient>
         </AnimatedEntrance>
 
-        {/* Dietary Preference Filter Selection */}
-        <AnimatedEntrance direction="up" delay={100}>
-          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Dietary Preference</Text>
-          <View style={[styles.settingCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Utensils size={20} color="#10B981" />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settingTitle, { color: colors.textMain }]}>Meal Type Filter</Text>
-                <Text style={{ fontSize: 11, color: colors.textSub }}>Filter mess menus by preference</Text>
-              </View>
-            </View>
-
-            <View style={styles.prefToggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.prefChip,
-                  dietaryPref === 'Veg Only' && { backgroundColor: '#10B981', borderColor: '#10B981' },
-                ]}
-                onPress={() => setDietaryPref('Veg Only')}
-              >
-                <Text
-                  style={[
-                    styles.prefChipText,
-                    { color: dietaryPref === 'Veg Only' ? '#FFFFFF' : colors.textMain },
-                  ]}
-                >
-                  Pure Veg Only
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.prefChip,
-                  dietaryPref === 'Non-Veg & Veg' && { backgroundColor: '#10B981', borderColor: '#10B981' },
-                ]}
-                onPress={() => setDietaryPref('Non-Veg & Veg')}
-              >
-                <Text
-                  style={[
-                    styles.prefChipText,
-                    { color: dietaryPref === 'Non-Veg & Veg' ? '#FFFFFF' : colors.textMain },
-                  ]}
-                >
-                  All (Veg & Non-Veg)
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </AnimatedEntrance>
-
         {/* Preferences & App Settings */}
         <AnimatedEntrance direction="up" delay={150}>
           <Text style={[styles.sectionHeading, { color: colors.textMain }]}>App Settings</Text>
