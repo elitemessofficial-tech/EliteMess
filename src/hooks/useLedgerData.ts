@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { useToken, MealHistoryItem, expandHistoryWithRefundPairs } from '../context/TokenContext';
+import { getCurrentUserIdentity } from '../utils/userSession';
 
 export interface LedgerPassStats {
   planName: string;
@@ -45,14 +46,16 @@ export function useLedgerData() {
   const fetchLedgerData = useCallback(async () => {
     try {
       setLoading(true);
+      const user = await getCurrentUserIdentity();
 
-      // 1. Fetch Pass Stats
+      // 1. Fetch Pass Stats for THIS user ONLY
       try {
         const { data: pass } = await supabase
           .from('meal_passes')
           .select('*')
+          .eq('user_id', user.userId)
           .eq('status', 'active')
-          .single();
+          .maybeSingle();
 
         if (pass) {
           setPassStats({
@@ -62,16 +65,23 @@ export function useLedgerData() {
             totalSkips: pass.total_skips || 15,
             remainingSkips: pass.remaining_skips ?? tokenContext.remainingSkips,
           });
+        } else if (!user.isVip && tokenContext.totalTokens === 0) {
+          setPassStats({
+            planName: 'No Active Subscription',
+            totalTokens: 0,
+            remainingTokens: 0,
+            totalSkips: 0,
+            remainingSkips: 0,
+          });
         }
-      } catch (e) {
-        // Fallback silently if meal_passes table missing
-      }
+      } catch (e) {}
 
-      // 2. Fetch Meal History Logs
+      // 2. Fetch Meal History Logs for THIS user ONLY
       try {
         const { data: history } = await supabase
           .from('meal_history')
           .select('*')
+          .eq('user_id', user.userId)
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -90,18 +100,18 @@ export function useLedgerData() {
             }),
           }));
           setHistoryList(expandHistoryWithRefundPairs(mappedHistory));
-        } else {
+        } else if (!user.isVip) {
           setHistoryList(expandHistoryWithRefundPairs(tokenContext.mealHistory));
         }
       } catch (e) {
         setHistoryList(expandHistoryWithRefundPairs(tokenContext.mealHistory));
       }
     } catch (e) {
-      console.warn('Ledger data fetch error (using fallback):', e);
+      console.warn('Ledger data fetch error:', e);
     } finally {
       setLoading(false);
     }
-  }, [tokenContext.remainingTokens, tokenContext.remainingSkips]);
+  }, [tokenContext.remainingTokens, tokenContext.remainingSkips, tokenContext.mealHistory, tokenContext.totalTokens]);
 
   useEffect(() => {
     fetchLedgerData();

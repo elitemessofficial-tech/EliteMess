@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { useToken, BookingDetails } from '../context/TokenContext';
+import { getCurrentUserIdentity } from '../utils/userSession';
 
 export interface PassData {
   totalTokens: number;
@@ -23,7 +24,16 @@ export interface FavoriteMess {
   visitCount: number;
 }
 
-const FALLBACK_PASS_DATA: PassData = {
+const CLEAN_PASS_DATA: PassData = {
+  totalTokens: 0,
+  remainingTokens: 0,
+  totalSkips: 0,
+  remainingSkips: 0,
+  streakDays: 0,
+  subscriptionPlan: 'No Active Subscription',
+};
+
+const VIP_PASS_DATA: PassData = {
   totalTokens: 60,
   remainingTokens: 42,
   totalSkips: 15,
@@ -70,10 +80,10 @@ const FALLBACK_FAVORITE_MESSES: FavoriteMess[] = [
 
 export function useDashboardData() {
   const tokenContext = useToken();
-  const [passData, setPassData] = useState<PassData>(FALLBACK_PASS_DATA);
+  const [passData, setPassData] = useState<PassData>(CLEAN_PASS_DATA);
   const [activeBooking, setActiveBooking] = useState<BookingDetails | null>(tokenContext.activeBooking);
   const [favoriteMesses, setFavoriteMesses] = useState<FavoriteMess[]>(FALLBACK_FAVORITE_MESSES);
-  const [userName, setUserName] = useState<string>('Alex');
+  const [userName, setUserName] = useState<string>('Student');
   const [loadingData, setLoadingData] = useState<boolean>(true);
 
   // Sync tokenContext active booking
@@ -84,53 +94,82 @@ export function useDashboardData() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoadingData(true);
+      const user = await getCurrentUserIdentity();
 
-      // 1. Fetch User Profile
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .single();
-
-        if (profile?.full_name) {
-          const firstName = profile.full_name.split(' ')[0];
-          setUserName(firstName);
-        }
-      } catch (e) {
-        // Fallback silently if profiles table doesn't exist
+      if (user.fullName) {
+        const firstName = user.fullName.split(' ')[0];
+        setUserName(firstName);
+      } else {
+        setUserName(user.isVip ? 'VIP Student' : 'Student');
       }
 
-      // 2. Fetch Active Subscription Pass
+      // 1. Fetch User Profile from Supabase if phone/uid exists
+      if (user.phone) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .or(`id.eq.${user.userId},phone_number.eq.${user.phone}`)
+            .maybeSingle();
+
+          if (profile?.full_name) {
+            const firstName = profile.full_name.split(' ')[0];
+            setUserName(firstName);
+          }
+        } catch (e) {}
+      }
+
+      // 2. Fetch Active Subscription Pass for THIS user ONLY
       try {
         const { data: pass } = await supabase
           .from('meal_passes')
           .select('*')
+          .eq('user_id', user.userId)
           .eq('status', 'active')
-          .single();
+          .maybeSingle();
 
         if (pass) {
           setPassData({
             totalTokens: pass.total_tokens || 60,
-            remainingTokens: pass.remaining_tokens || tokenContext.remainingTokens,
+            remainingTokens: pass.remaining_tokens ?? tokenContext.remainingTokens,
             totalSkips: pass.total_skips || 15,
-            remainingSkips: pass.remaining_skips || tokenContext.remainingSkips,
-            streakDays: pass.streak_days || tokenContext.streakDays,
+            remainingSkips: pass.remaining_skips ?? tokenContext.remainingSkips,
+            streakDays: pass.streak_days ?? tokenContext.streakDays,
             subscriptionPlan: pass.plan_name || 'College Gold Meal Pass',
+          });
+        } else if (user.isVip) {
+          setPassData(VIP_PASS_DATA);
+        } else {
+          setPassData({
+            totalTokens: tokenContext.totalTokens,
+            remainingTokens: tokenContext.remainingTokens,
+            totalSkips: tokenContext.totalSkips,
+            remainingSkips: tokenContext.remainingSkips,
+            streakDays: tokenContext.streakDays,
+            subscriptionPlan: tokenContext.subscriptionPlan,
           });
         }
       } catch (e) {
-        // Fallback silently to Context/Local state
+        setPassData({
+          totalTokens: tokenContext.totalTokens,
+          remainingTokens: tokenContext.remainingTokens,
+          totalSkips: tokenContext.totalSkips,
+          remainingSkips: tokenContext.remainingSkips,
+          streakDays: tokenContext.streakDays,
+          subscriptionPlan: tokenContext.subscriptionPlan,
+        });
       }
 
-      // 3. Fetch Active Booking from Supabase if any
+      // 3. Fetch Active Booking from Supabase for THIS user ONLY
       try {
         const { data: booking } = await supabase
           .from('meal_bookings')
           .select('*, messes(*)')
+          .eq('user_id', user.userId)
           .eq('status', 'booked')
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (booking) {
           const mappedBooking: BookingDetails = {
@@ -147,9 +186,11 @@ export function useDashboardData() {
             cutoffTime: booking.cutoff_time || '2:30 PM',
           };
           setActiveBooking(mappedBooking);
+        } else {
+          setActiveBooking(tokenContext.activeBooking);
         }
       } catch (e) {
-        // Fallback silently to TokenContext booking
+        setActiveBooking(tokenContext.activeBooking);
       }
 
       // 4. Fetch Favorite Messes
@@ -174,15 +215,13 @@ export function useDashboardData() {
           }));
           setFavoriteMesses(mappedMesses);
         }
-      } catch (e) {
-        // Fallback silently to FALLBACK_FAVORITE_MESSES
-      }
+      } catch (e) {}
     } catch (e) {
-      console.warn('Dashboard data fetch error (falling back to local state):', e);
+      console.warn('Dashboard data fetch error:', e);
     } finally {
       setLoadingData(false);
     }
-  }, [tokenContext.remainingTokens, tokenContext.remainingSkips, tokenContext.streakDays]);
+  }, [tokenContext.remainingTokens, tokenContext.remainingSkips, tokenContext.streakDays, tokenContext.activeBooking, tokenContext.totalTokens, tokenContext.subscriptionPlan]);
 
   useEffect(() => {
     fetchDashboardData();

@@ -73,18 +73,8 @@ const INITIAL_TOKEN_STATE = {
 };
 
 const getCurrentUserId = async (): Promise<string> => {
-  try {
-    const isVip = await AsyncStorage.getItem('vip_session_active');
-    if (isVip === 'true') {
-      return 'vip_test_user';
-    }
-    const phone = await AsyncStorage.getItem('user_phone');
-    if (phone && phone.trim()) {
-      const clean = phone.replace(/\D/g, '');
-      if (clean && clean.length >= 5) return clean;
-    }
-  } catch (e) {}
-  return 'default_guest_user';
+  const user = await getCurrentUserIdentity();
+  return user.userId;
 };
 
 const getScopedKey = (baseKey: string, userId: string) => {
