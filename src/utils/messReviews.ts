@@ -78,8 +78,54 @@ const SEED_REVIEWS: MessReview[] = [
 
 export async function getReviewsForMess(messId: string): Promise<MessReview[]> {
   try {
-    const raw = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY);
-    let allReviews: MessReview[] = raw ? JSON.parse(raw) : [];
+    // 1. Query Supabase DB Database first for real-time reviews
+    const { data: dbData, error } = await supabase
+      .from('mess_reviews')
+      .select('*')
+      .eq('mess_id', messId)
+      .order('created_at', { ascending: false });
+
+    if (!error && dbData && dbData.length > 0) {
+      const dbReviews: MessReview[] = dbData.map(row => ({
+        id: row.id,
+        messId: row.mess_id,
+        studentName: row.student_name,
+        studentPhone: row.student_phone || '',
+        rating: row.rating,
+        comment: row.comment,
+        photoUrl: row.photo_url || undefined,
+        mealType: row.meal_type || 'Lunch',
+        createdAt: row.created_at || new Date().toISOString(),
+        isVerifiedDiner: row.is_verified_diner ?? true,
+      }));
+
+      // Merge with seed reviews for comprehensive initial data
+      const seedForMess = SEED_REVIEWS.filter(r => r.messId === messId);
+      const mergedMap = new Map<string, MessReview>();
+      seedForMess.forEach(r => mergedMap.set(r.id, r));
+      dbReviews.forEach(r => mergedMap.set(r.id, r));
+
+      const mergedList = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      // Cache locally
+      await AsyncStorage.setItem(REVIEWS_STORAGE_KEY + '_' + messId, JSON.stringify(mergedList));
+      return mergedList;
+    }
+  } catch (e) {
+    // Fallback to local storage
+  }
+
+  // 2. Fallback to AsyncStorage cache
+  try {
+    const raw = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY + '_' + messId);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+
+    const rawAll = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY);
+    let allReviews: MessReview[] = rawAll ? JSON.parse(rawAll) : [];
     if (allReviews.length === 0) {
       allReviews = SEED_REVIEWS;
       await AsyncStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(SEED_REVIEWS));
@@ -97,31 +143,38 @@ export async function addMessReview(newReview: Omit<MessReview, 'id' | 'createdA
     createdAt: new Date().toISOString(),
   };
 
+  // 1. Save to Supabase DB Database table 'mess_reviews'
   try {
-    const raw = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY);
-    let allReviews: MessReview[] = raw ? JSON.parse(raw) : SEED_REVIEWS;
+    await supabase.from('mess_reviews').insert({
+      id: review.id,
+      mess_id: review.messId,
+      student_name: review.studentName,
+      student_phone: review.studentPhone,
+      rating: review.rating,
+      comment: review.comment,
+      photo_url: review.photoUrl || '',
+      meal_type: review.mealType,
+      is_verified_diner: review.isVerifiedDiner,
+      created_at: review.createdAt,
+    });
+  } catch (e) {
+    console.warn('Supabase DB review insert fallback:', e);
+  }
+
+  // 2. Cache in local AsyncStorage
+  try {
+    const rawAll = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY);
+    let allReviews: MessReview[] = rawAll ? JSON.parse(rawAll) : SEED_REVIEWS;
     allReviews.unshift(review);
     await AsyncStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(allReviews));
 
-    // Also attempt Supabase backup if connected
-    try {
-      await supabase.from('mess_reviews').insert({
-        id: review.id,
-        mess_id: review.messId,
-        student_name: review.studentName,
-        student_phone: review.studentPhone,
-        rating: review.rating,
-        comment: review.comment,
-        photo_url: review.photoUrl || '',
-        meal_type: review.mealType,
-        is_verified_diner: review.isVerifiedDiner,
-      });
-    } catch (e) {}
+    const rawMess = await AsyncStorage.getItem(REVIEWS_STORAGE_KEY + '_' + review.messId);
+    let messReviews: MessReview[] = rawMess ? JSON.parse(rawMess) : [];
+    messReviews.unshift(review);
+    await AsyncStorage.setItem(REVIEWS_STORAGE_KEY + '_' + review.messId, JSON.stringify(messReviews));
+  } catch (e) {}
 
-    return review;
-  } catch (e) {
-    return review;
-  }
+  return review;
 }
 
 export async function getMessReviewCount(messId: string): Promise<number> {
