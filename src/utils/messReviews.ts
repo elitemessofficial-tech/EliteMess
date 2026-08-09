@@ -16,6 +16,14 @@ export interface MessReview {
 
 const REVIEWS_STORAGE_KEY = 'mealhop_mess_reviews_v1';
 
+export const MESS_REVIEWS_BASE_COUNT: Record<string, number> = {
+  m1: 142,
+  m2: 98,
+  m3: 176,
+  m4: 84,
+  m5: 110,
+};
+
 // Initial seed reviews with real photos for messes
 const SEED_REVIEWS: MessReview[] = [
   {
@@ -110,13 +118,11 @@ export async function addMessReview(newReview: Omit<MessReview, 'id' | 'createdA
       });
     } catch (e) {}
 
-export const MESS_REVIEWS_BASE_COUNT: Record<string, number> = {
-  m1: 142,
-  m2: 98,
-  m3: 176,
-  m4: 84,
-  m5: 110,
-};
+    return review;
+  } catch (e) {
+    return review;
+  }
+}
 
 export async function getMessReviewCount(messId: string): Promise<number> {
   const reviews = await getReviewsForMess(messId);
