@@ -36,6 +36,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import ConfirmModal from '../../components/ConfirmModal';
 import MessMapView from '../../src/components/MessMapView';
 import ReviewsModal from '../../src/components/ReviewsModal';
+import { getCurrentStudentLocation, calculateHaversineDistance, formatDistanceAndWalkTime, UserCoordinates } from '../../src/utils/userLocation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -55,6 +56,28 @@ export default function AllMessesScreen() {
     messId: '',
     messName: '',
   });
+
+  const [userLocation, setUserLocation] = useState<UserCoordinates | null>(null);
+
+  useEffect(() => {
+    const fetchStudentLocation = async () => {
+      const loc = await getCurrentStudentLocation();
+      setUserLocation(loc);
+    };
+    fetchStudentLocation();
+  }, []);
+
+  const getMessDistanceAndWalkLabel = (mess: MessRestaurantDB) => {
+    const messLat = mess.id === 'm1' ? 18.5204 : mess.id === 'm2' ? 18.5234 : mess.id === 'm3' ? 18.5185 : mess.id === 'm4' ? 18.5255 : 18.5155;
+    const messLng = mess.id === 'm1' ? 73.8567 : mess.id === 'm2' ? 73.8595 : mess.id === 'm3' ? 73.8542 : mess.id === 'm4' ? 73.8525 : 73.8610;
+
+    if (userLocation) {
+      const meters = calculateHaversineDistance(userLocation.latitude, userLocation.longitude, messLat, messLng);
+      const { formattedLabel } = formatDistanceAndWalkTime(meters);
+      return formattedLabel;
+    }
+    return mess.distance || '240m (3 min walk)';
+  };
 
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -291,9 +314,15 @@ export default function AllMessesScreen() {
           <AnimatedEntrance direction="up">
             <MessMapView
               messes={filteredMesses.map(m => {
-                const distMeter = m.distance.includes('km')
-                  ? Math.round(parseFloat(m.distance.replace(/[^\d.]/g, '')) * 1000) || 1200
-                  : parseInt(m.distance.replace(/\D/g, ''), 10) || 250;
+                const messLat = m.id === 'm1' ? 18.5204 : m.id === 'm2' ? 18.5234 : m.id === 'm3' ? 18.5185 : m.id === 'm4' ? 18.5255 : 18.5155;
+                const messLng = m.id === 'm1' ? 73.8567 : m.id === 'm2' ? 73.8595 : m.id === 'm3' ? 73.8542 : m.id === 'm4' ? 73.8525 : 73.8610;
+
+                const distMeter = userLocation
+                  ? calculateHaversineDistance(userLocation.latitude, userLocation.longitude, messLat, messLng)
+                  : (parseInt(m.distance.replace(/\D/g, ''), 10) || 240);
+
+                const walkMins = Math.max(1, Math.ceil(distMeter / 80));
+
                 return {
                   id: m.id,
                   name: m.name,
@@ -302,13 +331,15 @@ export default function AllMessesScreen() {
                   reviewsCount: 140,
                   address: m.address,
                   distanceMeter: distMeter,
-                  walkTimeMinutes: Math.max(1, Math.ceil(distMeter / 80)),
-                  coords: m.id === 'm1' ? { x: 28, y: 35 } : m.id === 'm2' ? { x: 68, y: 28 } : m.id === 'm3' ? { x: 45, y: 62 } : m.id === 'm4' ? { x: 78, y: 72 } : { x: 18, y: 75 },
+                  walkTimeMinutes: walkMins,
+                  lat: messLat,
+                  lng: messLng,
                   image: m.image_url,
                   todaysSpecial: m.star_dish,
                   isVegOnly: m.type === 'Pure Veg',
                 };
               })}
+              userLocation={userLocation}
               onSelectMess={(mess) => {
                 const target = filteredMesses.find(item => item.id === mess.id);
                 if (target) handleBookMealClick(target);
@@ -386,7 +417,7 @@ export default function AllMessesScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
                           <MapPin size={12} color={colors.textSub} />
                           <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>
-                            {item.address} · {item.distance}
+                            {item.address} · {getMessDistanceAndWalkLabel(item)}
                           </Text>
                         </View>
                       </View>

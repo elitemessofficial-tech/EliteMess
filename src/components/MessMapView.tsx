@@ -19,8 +19,6 @@ import {
   Maximize2,
   X,
   Layers,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -42,6 +40,7 @@ export interface MessMapItem {
 
 interface MessMapViewProps {
   messes: MessMapItem[];
+  userLocation?: { latitude: number; longitude: number } | null;
   onSelectMess: (mess: MessMapItem) => void;
   onOpenReviews: (messId: string, messName: string) => void;
 }
@@ -71,8 +70,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'Near Hostel 4, Main Road',
     distanceMeter: 450,
     walkTimeMinutes: 6,
-    lat: 18.5234,
-    lng: 73.8595,
+    lat: 18.5225,
+    lng: 73.8580,
     image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=500&q=80',
     todaysSpecial: 'Chicken Biryani & Butter Roti',
     isVegOnly: false,
@@ -101,8 +100,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'South Gate, Near Library',
     distanceMeter: 600,
     walkTimeMinutes: 8,
-    lat: 18.5255,
-    lng: 73.8525,
+    lat: 18.5235,
+    lng: 73.8530,
     image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80',
     todaysSpecial: 'Unlimited Gujarati Thali',
     isVegOnly: true,
@@ -116,8 +115,8 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
     address: 'Hostel 7 Circle, West Wing',
     distanceMeter: 350,
     walkTimeMinutes: 4,
-    lat: 18.5155,
-    lng: 73.8610,
+    lat: 18.5165,
+    lng: 73.8590,
     image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&q=80',
     todaysSpecial: 'Amritsari Chole & Stuffed Paratha',
     isVegOnly: false,
@@ -126,6 +125,7 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
 
 export default function MessMapView({
   messes = DEFAULT_MAP_MESSES,
+  userLocation,
   onSelectMess,
   onOpenReviews,
 }: MessMapViewProps) {
@@ -150,7 +150,10 @@ export default function MessMapView({
     emerald: '#10B981',
   };
 
-  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles!
+  const studentLat = userLocation?.latitude || 18.5195;
+  const studentLng = userLocation?.longitude || 73.8550;
+
+  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles and auto fitBounds for ALL 5 messes!
   const generateLeafletHTML = (isFull: boolean) => {
     const pinsJSON = JSON.stringify(
       filteredMapData.map(m => ({
@@ -176,7 +179,7 @@ export default function MessMapView({
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
           html, body, #map { width: 100%; height: 100%; background: #0A120F; }
-          .leaflet-tile-pane { filter: ${isDark ? 'brightness(0.7) invert(0.9) contrast(2.5) hue-rotate(180deg)' : 'none'}; }
+          .leaflet-tile-pane { filter: ${isDark ? 'brightness(0.75) invert(0.9) contrast(2.2) hue-rotate(180deg)' : 'none'}; }
           .custom-pin {
             background: #121A17;
             border: 2px solid #10B981;
@@ -210,7 +213,7 @@ export default function MessMapView({
       <body>
         <div id="map"></div>
         <script>
-          var map = L.map('map', { zoomControl: true, attributionControl: false }).setView([18.5204, 73.8567], 15);
+          var map = L.map('map', { zoomControl: true, attributionControl: false }).setView([${studentLat}, ${studentLng}], 15);
           
           L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
@@ -218,16 +221,18 @@ export default function MessMapView({
           }).addTo(map);
 
           var pins = ${pinsJSON};
-          var markers = {};
+          var boundsGroup = L.featureGroup();
 
-          // User live location blue pulse marker
+          // User live GPS location blue pulse marker
           var userIcon = L.divIcon({
             className: 'user-marker',
-            html: '<div style="width:16px;height:16px;background:#3B82F6;border:2px solid #fff;border-radius:50%;box-shadow:0 0 12px #3B82F6;"></div>',
-            iconSize: [16, 16]
+            html: '<div style="width:18px;height:18px;background:#3B82F6;border:2.5px solid #fff;border-radius:50%;box-shadow:0 0 14px #3B82F6;"></div>',
+            iconSize: [18, 18]
           });
-          L.marker([18.5195, 73.8550], { icon: userIcon }).addTo(map).bindTooltip("You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
+          var userM = L.marker([${studentLat}, ${studentLng}], { icon: userIcon }).addTo(map).bindTooltip("You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
+          boundsGroup.addLayer(userM);
 
+          // Add ALL 5 Mess markers & add to boundsGroup
           pins.forEach(function(p) {
             var iconClass = p.isSelected ? 'custom-pin selected' : 'custom-pin';
             var icon = L.divIcon({
@@ -237,13 +242,13 @@ export default function MessMapView({
             });
             var m = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
             m.bindPopup('<b>' + p.name + '</b><br><span style="color:#10B981;font-weight:700;">' + p.rating + ' ★</span> · ' + p.address + '<br><small>🔥 ' + p.special + '</small>');
-            
-            m.on('click', function() {
-              if (window.ReactNativeWebView) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_MESS', id: p.id }));
-              }
-            });
+            boundsGroup.addLayer(m);
           });
+
+          // Auto-fit map viewport so ALL 5 messes + student location are visible!
+          if (pins.length > 0) {
+            map.fitBounds(boundsGroup.getBounds().pad(0.3));
+          }
         </script>
       </body>
       </html>
@@ -269,7 +274,7 @@ export default function MessMapView({
           <View style={[styles.fallbackMap, { backgroundColor: isDark ? '#0A120F' : '#E2E8F0' }]}>
             <Compass size={32} color="#10B981" />
             <Text style={{ color: colors.textMain, fontWeight: '800', marginTop: 8 }}>
-              OpenStreetMap Campus Layer Active
+              OpenStreetMap Campus Layer Active ({mapData.length} Messes Pinned)
             </Text>
           </View>
         )}
@@ -277,7 +282,7 @@ export default function MessMapView({
         {/* Top Controls Overlay */}
         <View style={styles.topControlsOverlay}>
           <View style={styles.mapLegend}>
-            <Text style={styles.legendText}>📍 OpenStreetMap • Campus Tiles</Text>
+            <Text style={styles.legendText}>📍 OpenStreetMap • All {mapData.length} Messes Pinned</Text>
           </View>
 
           <TouchableOpacity
@@ -374,7 +379,7 @@ export default function MessMapView({
               <Compass size={22} color="#10B981" />
               <View>
                 <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>Real interactive map tiles, drag & zoom</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11 }}>All {mapData.length} messes displayed with live bounds</Text>
               </View>
             </View>
 
@@ -399,7 +404,7 @@ export default function MessMapView({
                 onPress={() => setActiveFilter(f)}
               >
                 <Text style={[styles.filterPillText, { color: activeFilter === f ? '#FFFFFF' : colors.textMain }]}>
-                  {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : '🗺️ All Messes'}
+                  {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : `🗺️ All (${mapData.length} Messes)`}
                 </Text>
               </TouchableOpacity>
             ))}
