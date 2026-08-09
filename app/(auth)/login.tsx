@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronDown } from 'lucide-react-native';
+import { ChevronDown, User } from 'lucide-react-native';
 import LottieView from 'lottie-react-native';
 import { supabase } from '../../src/services/supabase';
 import envBypass from '../../src/config/env_bypass.json';
@@ -678,21 +678,42 @@ export default function PhoneLoginScreen() {
           </View>
         ) : showNameForm ? (
           <View style={styles.formContainer}>
-            <Text style={[styles.subtitle, { color: colors.textSub, marginBottom: 16, textAlign: 'left', marginTop: 0 }]}>
+            <Text style={[styles.subtitle, { color: colors.textSub, marginBottom: 16, textAlign: 'left', marginTop: 0, fontSize: 13, fontWeight: '700' }]}>
               Enter your name to complete your registration:
             </Text>
             
-            <View style={[styles.phoneInputContainer, { backgroundColor: colors.inputBg, width: '100%', marginBottom: 16, height: 48, borderRadius: 10, paddingHorizontal: 12, justifyContent: 'center' }]}>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: isDark ? 'rgba(18, 26, 23, 0.85)' : 'rgba(255, 255, 255, 0.95)',
+              borderWidth: 1.5,
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              borderRadius: 14,
+              height: 56,
+              paddingHorizontal: 14,
+              marginBottom: 20,
+              gap: 10,
+              shadowColor: '#10B981',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.15,
+              shadowRadius: 10,
+              elevation: 4,
+            }}>
+              <User size={20} color="#10B981" />
               <TextInput
                 style={{
+                  flex: 1,
                   color: colors.inputText,
-                  fontSize: 14,
+                  fontSize: 16,
+                  fontWeight: '700',
                   height: '100%',
                 }}
-                placeholder="Full Name"
+                placeholder="Enter Full Name"
                 placeholderTextColor={colors.inputPlaceholder}
                 value={fullName}
                 onChangeText={setFullName}
+                autoCapitalize="words"
+                autoFocus={true}
               />
             </View>
 
