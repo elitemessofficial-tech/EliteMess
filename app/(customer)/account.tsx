@@ -25,6 +25,8 @@ import LocationPickerModal from '../../src/components/LocationPickerModal';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import { getFavoriteDishIds } from '../../src/utils/favorites';
 import { useDescope, useSession } from '@descope/react-native-sdk';
+import { getCurrentUserIdentity } from '../../src/utils/userSession';
+
 export default function AccountScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useAppTheme();
@@ -119,60 +121,31 @@ export default function AccountScreen() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      let currentUserId = null;
-      
-      const { data: sbSessionData } = await supabase.auth.getSession();
-      currentUserId = sbSessionData?.session?.user?.id;
+      const user = await getCurrentUserIdentity();
 
-      if (!currentUserId) {
-        try {
-          const { data } = await supabase.auth.signInAnonymously();
-          currentUserId = data?.user?.id;
-        } catch (e) {
-          console.warn('Anonymous auth failed/disabled, using fallback customer ID', e);
-        }
-        if (!currentUserId) {
-          currentUserId = 'mock-customer-uid-999';
-        }
+      if (user.fullName) {
+        setFullName(user.fullName);
+      }
+      if (user.phone) {
+        setPhoneNumber(`+91${user.phone}`);
       }
 
-      if (currentUserId) {
-        setUserId(currentUserId);
-        
-        // Fetch profile
-        const { data: profile, error } = await supabase
+      setUserId(user.userId);
+
+      // Fetch profile from Supabase to sync role or any additional fields
+      try {
+        const { data: profile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', currentUserId)
-          .single();
+          .or(`id.eq.${user.userId},phone_number.eq.+91${user.phone},phone_number.eq.${user.phone}`)
+          .maybeSingle();
 
-        if (error || !profile) {
-          // If profile does not exist in DB yet, seed with real session data
-          const realPhone = descopeSession?.user?.phone || '';
-          const realName = descopeSession?.user?.name || 'Customer';
-          
-          const { data: newProfile } = await supabase
-            .from('profiles')
-            .insert({
-              id: currentUserId,
-              phone_number: realPhone,
-              full_name: realName,
-              role: 'customer'
-            })
-            .select()
-            .single();
-
-          if (newProfile) {
-            setFullName(newProfile.full_name || '');
-            setPhoneNumber(newProfile.phone_number || '');
-            setRole(newProfile.role || 'customer');
-          }
-        } else {
-          setFullName(profile.full_name || '');
-          setPhoneNumber(profile.phone_number || '');
-          setRole(profile.role || 'customer');
+        if (profile) {
+          if (profile.full_name) setFullName(profile.full_name);
+          if (profile.phone_number) setPhoneNumber(profile.phone_number);
+          if (profile.role) setRole(profile.role);
         }
-      }
+      } catch (e) {}
     } catch (e) {
       console.error('Error fetching user profile:', e);
     } finally {

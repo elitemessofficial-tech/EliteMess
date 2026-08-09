@@ -34,6 +34,7 @@ import { useToken } from '../../src/context/TokenContext';
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
+import { getCurrentUserIdentity } from '../../src/utils/userSession';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -45,6 +46,30 @@ export default function ProfileScreen() {
   const [dietaryPref, setDietaryPref] = useState<'Veg Only' | 'Non-Veg & Veg'>('Veg Only');
   const [allowNotifications, setAllowNotifications] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [userDisplayName, setUserDisplayName] = useState<string>('Student');
+  const [userPhoneDisplay, setUserPhoneDisplay] = useState<string>('');
+
+  useEffect(() => {
+    const loadUserIdentity = async () => {
+      const user = await getCurrentUserIdentity();
+      if (user.fullName) {
+        setUserDisplayName(user.fullName);
+      } else if (session?.user?.name) {
+        setUserDisplayName(session.user.name);
+      } else {
+        setUserDisplayName(user.isVip ? 'VIP Student' : 'Student');
+      }
+
+      if (user.phone) {
+        setUserPhoneDisplay(`+91${user.phone}`);
+      } else if (session?.user?.phone) {
+        setUserPhoneDisplay(session.user.phone);
+      } else {
+        setUserPhoneDisplay('+91 VIP-ADMIN');
+      }
+    };
+    loadUserIdentity();
+  }, [session]);
 
   const doLogout = async () => {
     try {
@@ -93,11 +118,11 @@ export default function ProfileScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.userName}>{session?.user?.name || 'Alex Student'}</Text>
+                <Text style={styles.userName}>{userDisplayName}</Text>
                 <ShieldCheck size={16} color="#10B981" />
               </View>
               <Text style={{ color: colors.textSub, fontSize: 12, marginTop: 2 }}>
-                Phone: <Text style={{ color: colors.textMain, fontWeight: '700' }}>{session?.user?.phone || '+91 98765 43210'}</Text>
+                Phone: <Text style={{ color: colors.textMain, fontWeight: '700' }}>{userPhoneDisplay}</Text>
               </Text>
               <Text style={{ color: colors.textSub, fontSize: 11, marginTop: 1 }}>
                 College ID: 2026-CS-409
