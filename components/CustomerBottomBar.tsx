@@ -8,11 +8,11 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home, CalendarCheck2, UtensilsCrossed, Wallet, User } from 'lucide-react-native';
+import { Home, CalendarCheck2, UtensilsCrossed, Wallet, User, Store } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAppTheme } from '../src/context/ThemeContext';
 
-export type CustomerTabType = 'dashboard' | 'discover' | 'shortlist' | 'bookings' | 'wallet' | 'profile' | 'home' | 'menu' | 'cart' | 'account' | 'favorites';
+export type CustomerTabType = 'dashboard' | 'discover' | 'shortlist' | 'bookings' | 'wallet' | 'profile' | 'all-messes' | 'messes' | 'home' | 'menu' | 'cart' | 'account' | 'favorites';
 
 interface CustomerBottomBarProps {
   activeTab: CustomerTabType;
@@ -41,6 +41,10 @@ export default function CustomerBottomBar({ activeTab }: CustomerBottomBarProps)
         break;
       case 'discover':
         router.replace('/(customer)/discover');
+        break;
+      case 'all-messes':
+      case 'messes':
+        router.replace('/(customer)/all-messes');
         break;
       case 'wallet':
         router.replace('/(customer)/wallet');
@@ -129,25 +133,25 @@ export default function CustomerBottomBar({ activeTab }: CustomerBottomBarProps)
             </View>
           </View>
 
-          {/* 4. Wallet / Ledger Tab */}
+          {/* 4. Messes Tab (all-messes) */}
           <TouchableOpacity
             style={styles.tabItem}
-            onPress={() => handleNavigation('wallet')}
+            onPress={() => handleNavigation('all-messes')}
             activeOpacity={0.7}
           >
-            <Wallet
+            <Store
               size={22}
-              color={activeTab === 'wallet' ? navColors.active : navColors.inactive}
-              strokeWidth={activeTab === 'wallet' ? 2.5 : 1.8}
+              color={(activeTab === 'all-messes' || activeTab === 'messes') ? navColors.active : navColors.inactive}
+              strokeWidth={(activeTab === 'all-messes' || activeTab === 'messes') ? 2.5 : 1.8}
             />
             <Text
               style={[
                 styles.tabLabel,
-                { color: activeTab === 'wallet' ? navColors.active : navColors.inactive },
-                activeTab === 'wallet' && styles.tabLabelActive,
+                { color: (activeTab === 'all-messes' || activeTab === 'messes') ? navColors.active : navColors.inactive },
+                (activeTab === 'all-messes' || activeTab === 'messes') && styles.tabLabelActive,
               ]}
             >
-              Ledger
+              Messes
             </Text>
           </TouchableOpacity>
 

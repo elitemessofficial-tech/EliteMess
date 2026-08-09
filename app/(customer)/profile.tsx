@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Zap,
   Bell,
+  Wallet,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -135,6 +136,42 @@ export default function ProfileScreen() {
               </View>
             </View>
           </LinearGradient>
+        </AnimatedEntrance>
+
+        {/* Wallet & Token History Ledger Section */}
+        <AnimatedEntrance direction="up" delay={100}>
+          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Wallet & Token Ledger</Text>
+          <TouchableOpacity
+            style={[styles.settingGroup, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 16 }]}
+            onPress={() => router.push('/(customer)/wallet')}
+            activeOpacity={0.85}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(16, 185, 129, 0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Wallet size={22} color="#10B981" />
+                </View>
+                <View>
+                  <Text style={[styles.rowText, { color: colors.textMain, fontWeight: '900' }]}>Flexi Wallet & Pass Ledger</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>View token history, refunds, & logs</Text>
+                </View>
+              </View>
+              <ChevronRight size={20} color="#10B981" />
+            </View>
+
+            {/* Quick Balance Summary Pills */}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
+                <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '800' }}>REMAINING TOKENS</Text>
+                <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>{totalTokens} Tokens</Text>
+              </View>
+
+              <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
+                <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '800' }}>MEAL STREAK</Text>
+                <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>🔥 {streakDays} Days</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
         </AnimatedEntrance>
 
         {/* Preferences & App Settings */}

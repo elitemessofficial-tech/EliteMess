@@ -480,7 +480,7 @@ export default function AllMessesScreen() {
         onClose={() => setReviewsModal({ visible: false, messId: '', messName: '' })}
       />
 
-      <CustomerBottomBar activeTab="dashboard" />
+      <CustomerBottomBar activeTab="all-messes" />
     </View>
   );
 }

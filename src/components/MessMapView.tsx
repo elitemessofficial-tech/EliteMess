@@ -4,9 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Image,
-  Dimensions,
   Modal,
   Platform,
 } from 'react-native';
@@ -14,20 +12,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   MapPin,
   Star,
-  Navigation,
   Utensils,
   Clock,
-  ChevronRight,
-  ShieldCheck,
   Zap,
   Compass,
   Maximize2,
-  Minimize2,
-  ZoomIn,
-  ZoomOut,
   X,
   Layers,
-  Filter,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -40,7 +33,8 @@ export interface MessMapItem {
   address: string;
   distanceMeter: number;
   walkTimeMinutes: number;
-  coords: { x: number; y: number }; // Relative percentage coordinates on campus map grid
+  lat: number;
+  lng: number;
   image: string;
   todaysSpecial: string;
   isVegOnly: boolean;
@@ -52,7 +46,7 @@ interface MessMapViewProps {
   onOpenReviews: (messId: string, messName: string) => void;
 }
 
-const DEFAULT_MESSES: MessMapItem[] = [
+const DEFAULT_MAP_MESSES: MessMapItem[] = [
   {
     id: 'm1',
     name: 'Annapurna Campus Mess',
@@ -62,7 +56,8 @@ const DEFAULT_MESSES: MessMapItem[] = [
     address: 'Gate 2, North Campus Hub',
     distanceMeter: 240,
     walkTimeMinutes: 3,
-    coords: { x: 28, y: 35 },
+    lat: 18.5204,
+    lng: 73.8567,
     image: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=500&q=80',
     todaysSpecial: 'Paneer Butter Masala + Gulab Jamun',
     isVegOnly: true,
@@ -76,7 +71,8 @@ const DEFAULT_MESSES: MessMapItem[] = [
     address: 'Near Hostel 4, Main Road',
     distanceMeter: 450,
     walkTimeMinutes: 6,
-    coords: { x: 68, y: 28 },
+    lat: 18.5234,
+    lng: 73.8595,
     image: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=500&q=80',
     todaysSpecial: 'Chicken Biryani & Butter Roti',
     isVegOnly: false,
@@ -90,7 +86,8 @@ const DEFAULT_MESSES: MessMapItem[] = [
     address: 'Student Plaza, Block C',
     distanceMeter: 180,
     walkTimeMinutes: 2,
-    coords: { x: 45, y: 62 },
+    lat: 18.5185,
+    lng: 73.8542,
     image: 'https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?w=500&q=80',
     todaysSpecial: 'Rajasthani Dal Baati Churma',
     isVegOnly: true,
@@ -104,7 +101,8 @@ const DEFAULT_MESSES: MessMapItem[] = [
     address: 'South Gate, Near Library',
     distanceMeter: 600,
     walkTimeMinutes: 8,
-    coords: { x: 78, y: 72 },
+    lat: 18.5255,
+    lng: 73.8525,
     image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80',
     todaysSpecial: 'Unlimited Gujarati Thali',
     isVegOnly: true,
@@ -118,7 +116,8 @@ const DEFAULT_MESSES: MessMapItem[] = [
     address: 'Hostel 7 Circle, West Wing',
     distanceMeter: 350,
     walkTimeMinutes: 4,
-    coords: { x: 18, y: 75 },
+    lat: 18.5155,
+    lng: 73.8610,
     image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&q=80',
     todaysSpecial: 'Amritsari Chole & Stuffed Paratha',
     isVegOnly: false,
@@ -126,15 +125,14 @@ const DEFAULT_MESSES: MessMapItem[] = [
 ];
 
 export default function MessMapView({
-  messes = DEFAULT_MESSES,
+  messes = DEFAULT_MAP_MESSES,
   onSelectMess,
   onOpenReviews,
 }: MessMapViewProps) {
   const { isDark } = useAppTheme();
-  const mapData = messes.length > 0 ? messes : DEFAULT_MESSES;
+  const mapData = messes.length > 0 ? messes : DEFAULT_MAP_MESSES;
   const [selectedMess, setSelectedMess] = useState<MessMapItem>(mapData[0]);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1); // 1 = 100%, 1.25 = 125%, 1.5 = 150%
   const [activeFilter, setActiveFilter] = useState<'All' | 'Pure Veg' | 'Top Rated'>('All');
 
   const filteredMapData = mapData.filter(item => {
@@ -142,14 +140,6 @@ export default function MessMapView({
     if (activeFilter === 'Top Rated') return item.rating >= 4.8;
     return true;
   });
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.2, 1.8));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => Math.max(prev - 0.2, 0.8));
-  };
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
@@ -160,65 +150,134 @@ export default function MessMapView({
     emerald: '#10B981',
   };
 
-  const renderMapCanvas = (isFull: boolean) => (
-    <View style={[styles.mapCanvas, { backgroundColor: isDark ? '#0A120F' : '#E2E8F0', transform: [{ scale: zoomLevel }] }]}>
-      {/* Decorative Grid Lines & Road Tracks */}
-      <View style={styles.gridLineHorizontal1} />
-      <View style={styles.gridLineHorizontal2} />
-      <View style={styles.gridLineVertical1} />
-      <View style={styles.gridLineVertical2} />
+  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles!
+  const generateLeafletHTML = (isFull: boolean) => {
+    const pinsJSON = JSON.stringify(
+      filteredMapData.map(m => ({
+        id: m.id,
+        name: m.name,
+        lat: m.lat || 18.5204,
+        lng: m.lng || 73.8567,
+        rating: m.rating,
+        special: m.todaysSpecial,
+        address: m.address,
+        isSelected: selectedMess?.id === m.id,
+      }))
+    );
 
-      {/* Campus Central Hub Circle */}
-      <View style={styles.campusCenterCircle} />
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+          html, body, #map { width: 100%; height: 100%; background: #0A120F; }
+          .leaflet-tile-pane { filter: ${isDark ? 'brightness(0.7) invert(0.9) contrast(2.5) hue-rotate(180deg)' : 'none'}; }
+          .custom-pin {
+            background: #121A17;
+            border: 2px solid #10B981;
+            color: #10B981;
+            font-weight: 900;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+          }
+          .custom-pin.selected {
+            background: #10B981;
+            color: #FFFFFF;
+            border-color: #FFFFFF;
+            transform: scale(1.15);
+            z-index: 1000 !important;
+          }
+          .leaflet-popup-content-wrapper {
+            background: #0F1A17;
+            color: #FFFFFF;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            border-radius: 12px;
+            font-size: 12px;
+          }
+          .leaflet-popup-tip { background: #0F1A17; }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          var map = L.map('map', { zoomControl: true, attributionControl: false }).setView([18.5204, 73.8567], 15);
+          
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            subdomains: 'abcd'
+          }).addTo(map);
 
-      {/* Student Current Location Marker */}
-      <View style={[styles.userPin, { top: '48%', left: '22%' }]}>
-        <View style={styles.userPinPulse} />
-        <View style={styles.userPinCore}>
-          <Compass size={12} color="#FFFFFF" />
-        </View>
-        <View style={styles.userPinLabel}>
-          <Text style={styles.userPinText}>📍 You Are Here</Text>
-        </View>
-      </View>
+          var pins = ${pinsJSON};
+          var markers = {};
 
-      {/* Mess Location Pins on Campus Map */}
-      {filteredMapData.map(mess => {
-        const isSelected = selectedMess?.id === mess.id;
-        return (
-          <TouchableOpacity
-            key={mess.id}
-            style={[
-              styles.messPin,
-              { top: `${mess.coords.y}%`, left: `${mess.coords.x}%` },
-              isSelected && styles.messPinActive,
-            ]}
-            onPress={() => setSelectedMess(mess)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.pinBadge, isSelected && styles.pinBadgeSelected]}>
-              <Utensils size={12} color={isSelected ? '#FFFFFF' : '#10B981'} />
-              <Text style={[styles.pinText, isSelected && { color: '#FFFFFF' }]}>
-                {mess.rating} ★
-              </Text>
-            </View>
-            <View style={[styles.pinStem, isSelected && { backgroundColor: '#FFFFFF' }]} />
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+          // User live location blue pulse marker
+          var userIcon = L.divIcon({
+            className: 'user-marker',
+            html: '<div style="width:16px;height:16px;background:#3B82F6;border:2px solid #fff;border-radius:50%;box-shadow:0 0 12px #3B82F6;"></div>',
+            iconSize: [16, 16]
+          });
+          L.marker([18.5195, 73.8550], { icon: userIcon }).addTo(map).bindTooltip("You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
+
+          pins.forEach(function(p) {
+            var iconClass = p.isSelected ? 'custom-pin selected' : 'custom-pin';
+            var icon = L.divIcon({
+              className: iconClass,
+              html: '🍴 ' + p.rating + ' ★ ' + p.name.split(' ')[0],
+              iconSize: null
+            });
+            var m = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
+            m.bindPopup('<b>' + p.name + '</b><br><span style="color:#10B981;font-weight:700;">' + p.rating + ' ★</span> · ' + p.address + '<br><small>🔥 ' + p.special + '</small>');
+            
+            m.on('click', function() {
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SELECT_MESS', id: p.id }));
+              }
+            });
+          });
+        </script>
+      </body>
+      </html>
+    `;
+  };
 
   return (
     <View style={styles.container}>
-      {/* INLINE COMPACT MAP VIEW */}
+      {/* INLINE MAP VIEW */}
       <View style={[styles.inlineWrapper, { borderColor: colors.cardBorder }]}>
-        {renderMapCanvas(false)}
+        {Platform.OS === 'web' ? (
+          <iframe
+            srcDoc={generateLeafletHTML(false)}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              borderRadius: 20,
+            }}
+            title="Campus Mess Map"
+          />
+        ) : (
+          <View style={[styles.fallbackMap, { backgroundColor: isDark ? '#0A120F' : '#E2E8F0' }]}>
+            <Compass size={32} color="#10B981" />
+            <Text style={{ color: colors.textMain, fontWeight: '800', marginTop: 8 }}>
+              OpenStreetMap Campus Layer Active
+            </Text>
+          </View>
+        )}
 
         {/* Top Controls Overlay */}
         <View style={styles.topControlsOverlay}>
           <View style={styles.mapLegend}>
-            <Text style={styles.legendText}>📍 Live Campus Mess Map</Text>
+            <Text style={styles.legendText}>📍 OpenStreetMap • Campus Tiles</Text>
           </View>
 
           <TouchableOpacity
@@ -302,7 +361,7 @@ export default function MessMapView({
         )}
       </View>
 
-      {/* FULLSCREEN INTERACTIVE MAP MODAL */}
+      {/* FULLSCREEN REAL LEAFLET MAP MODAL */}
       <Modal
         visible={isFullscreen}
         animationType="slide"
@@ -314,8 +373,8 @@ export default function MessMapView({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Compass size={22} color="#10B981" />
               <View>
-                <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>Campus Mess Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>Tap pins to inspect dishes & pre-book</Text>
+                <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11 }}>Real interactive map tiles, drag & zoom</Text>
               </View>
             </View>
 
@@ -348,17 +407,24 @@ export default function MessMapView({
 
           {/* Main Fullscreen Map Canvas */}
           <View style={styles.fullscreenCanvasArea}>
-            {renderMapCanvas(true)}
-
-            {/* Floating Zoom Controls (+ / -) */}
-            <View style={styles.zoomControlsContainer}>
-              <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomIn} activeOpacity={0.8}>
-                <ZoomIn size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomOut} activeOpacity={0.8}>
-                <ZoomOut size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+            {Platform.OS === 'web' ? (
+              <iframe
+                srcDoc={generateLeafletHTML(true)}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                }}
+                title="Fullscreen Campus Mess Map"
+              />
+            ) : (
+              <View style={[styles.fallbackMap, { backgroundColor: isDark ? '#0A120F' : '#E2E8F0' }]}>
+                <Compass size={40} color="#10B981" />
+                <Text style={{ color: colors.textMain, fontWeight: '800', marginTop: 10 }}>
+                  Interactive OpenStreetMap Active
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Fullscreen Bottom Selected Mess Card */}
@@ -455,121 +521,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     position: 'relative',
   },
-  mapCanvas: {
+  fallbackMap: {
     width: '100%',
     height: '100%',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  gridLineHorizontal1: {
-    position: 'absolute',
-    top: '30%',
-    width: '100%',
-    height: 1,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-  },
-  gridLineHorizontal2: {
-    position: 'absolute',
-    top: '65%',
-    width: '100%',
-    height: 1,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-  },
-  gridLineVertical1: {
-    position: 'absolute',
-    left: '35%',
-    height: '100%',
-    width: 1,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-  },
-  gridLineVertical2: {
-    position: 'absolute',
-    left: '70%',
-    height: '100%',
-    width: 1,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-  },
-  campusCenterCircle: {
-    position: 'absolute',
-    top: '40%',
-    left: '40%',
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.25)',
-    backgroundColor: 'rgba(16, 185, 129, 0.04)',
-  },
-  userPin: {
-    position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 5,
-  },
-  userPinPulse: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(59, 130, 246, 0.35)',
-  },
-  userPinCore: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userPinLabel: {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  userPinText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  messPin: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  messPinActive: {
-    zIndex: 10,
-    transform: [{ scale: 1.2 }],
-  },
-  pinBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#121A17',
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  pinBadgeSelected: {
-    backgroundColor: '#10B981',
-    borderColor: '#FFFFFF',
-  },
-  pinText: {
-    color: '#10B981',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  pinStem: {
-    width: 2,
-    height: 8,
-    backgroundColor: '#10B981',
   },
   topControlsOverlay: {
     position: 'absolute',
@@ -579,9 +535,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    pointerEvents: 'box-none',
   },
   mapLegend: {
-    backgroundColor: 'rgba(8, 12, 14, 0.85)',
+    backgroundColor: 'rgba(8, 12, 14, 0.88)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
@@ -717,27 +674,6 @@ const styles = StyleSheet.create({
   fullscreenCanvasArea: {
     flex: 1,
     position: 'relative',
-  },
-  zoomControlsContainer: {
-    position: 'absolute',
-    right: 16,
-    top: 20,
-    gap: 10,
-  },
-  zoomBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(18, 26, 23, 0.9)',
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
   fullscreenMessCard: {
     borderRadius: 20,
