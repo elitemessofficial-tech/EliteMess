@@ -474,7 +474,7 @@ export default function DashboardScreen() {
         <AnimatedEntrance direction="up" delay={180}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Quick Book (Your Favorites)</Text>
-            <TouchableOpacity onPress={() => router.push('/(customer)/discover')}>
+            <TouchableOpacity onPress={() => router.push('/(customer)/all-messes')}>
               <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '800' }}>View All</Text>
             </TouchableOpacity>
           </View>
