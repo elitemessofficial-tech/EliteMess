@@ -81,15 +81,9 @@ const FALLBACK_FAVORITE_MESSES: FavoriteMess[] = [
 export function useDashboardData() {
   const tokenContext = useToken();
   const [passData, setPassData] = useState<PassData>(CLEAN_PASS_DATA);
-  const [activeBooking, setActiveBooking] = useState<BookingDetails | null>(tokenContext.activeBooking);
   const [favoriteMesses, setFavoriteMesses] = useState<FavoriteMess[]>(FALLBACK_FAVORITE_MESSES);
   const [userName, setUserName] = useState<string>('Student');
   const [loadingData, setLoadingData] = useState<boolean>(true);
-
-  // Sync tokenContext active booking
-  useEffect(() => {
-    setActiveBooking(tokenContext.activeBooking);
-  }, [tokenContext.activeBooking]);
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -160,40 +154,7 @@ export function useDashboardData() {
         });
       }
 
-      // 3. Fetch Active Booking from Supabase for THIS user ONLY
-      try {
-        const { data: booking } = await supabase
-          .from('meal_bookings')
-          .select('*, messes(*)')
-          .eq('user_id', user.userId)
-          .eq('status', 'booked')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (booking) {
-          const mappedBooking: BookingDetails = {
-            bookingId: booking.id,
-            messId: booking.mess_id,
-            messName: booking.messes?.name || 'Partner Mess',
-            messAddress: booking.messes?.address || 'Campus Hub',
-            mealType: booking.meal_type || 'Lunch',
-            menuHighlights: booking.messes?.highlights || ['Daily Special'],
-            otp: booking.otp || '8492',
-            otpExpiresAt: booking.expires_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-            status: 'booked',
-            bookedAt: booking.created_at,
-            cutoffTime: booking.cutoff_time || '2:30 PM',
-          };
-          setActiveBooking(mappedBooking);
-        } else {
-          setActiveBooking(tokenContext.activeBooking);
-        }
-      } catch (e) {
-        setActiveBooking(tokenContext.activeBooking);
-      }
-
-      // 4. Fetch Favorite Messes
+      // 3. Fetch Favorite Messes
       try {
         const { data: messes } = await supabase
           .from('messes')
@@ -221,7 +182,7 @@ export function useDashboardData() {
     } finally {
       setLoadingData(false);
     }
-  }, [tokenContext.remainingTokens, tokenContext.remainingSkips, tokenContext.streakDays, tokenContext.activeBooking, tokenContext.totalTokens, tokenContext.subscriptionPlan]);
+  }, [tokenContext.remainingTokens, tokenContext.remainingSkips, tokenContext.streakDays, tokenContext.totalTokens, tokenContext.subscriptionPlan]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -229,7 +190,7 @@ export function useDashboardData() {
 
   return {
     passData,
-    activeBooking: activeBooking || tokenContext.activeBooking,
+    activeBooking: tokenContext.activeBooking,
     favoriteMesses,
     userName,
     loadingData,
