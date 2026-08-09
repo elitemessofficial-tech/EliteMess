@@ -290,20 +290,25 @@ export default function AllMessesScreen() {
         {viewMode === 'map' ? (
           <AnimatedEntrance direction="up">
             <MessMapView
-              messes={filteredMesses.map(m => ({
-                id: m.id,
-                name: m.name,
-                category: m.type,
-                rating: m.rating,
-                reviewsCount: 140,
-                address: m.address,
-                distanceMeter: parseInt(m.distance.replace(/\D/g, '')) * 100 || 250,
-                walkTimeMinutes: Math.ceil((parseInt(m.distance.replace(/\D/g, '')) * 100 || 250) / 80),
-                coords: m.id === 'm1' ? { x: 30, y: 35 } : m.id === 'm2' ? { x: 65, y: 25 } : m.id === 'm3' ? { x: 45, y: 60 } : { x: 75, y: 70 },
-                image: m.image_url,
-                todaysSpecial: m.star_dish,
-                isVegOnly: m.type === 'Pure Veg',
-              }))}
+              messes={filteredMesses.map(m => {
+                const distMeter = m.distance.includes('km')
+                  ? Math.round(parseFloat(m.distance.replace(/[^\d.]/g, '')) * 1000) || 1200
+                  : parseInt(m.distance.replace(/\D/g, ''), 10) || 250;
+                return {
+                  id: m.id,
+                  name: m.name,
+                  category: m.type,
+                  rating: m.rating,
+                  reviewsCount: 140,
+                  address: m.address,
+                  distanceMeter: distMeter,
+                  walkTimeMinutes: Math.max(1, Math.ceil(distMeter / 80)),
+                  coords: m.id === 'm1' ? { x: 28, y: 35 } : m.id === 'm2' ? { x: 68, y: 28 } : m.id === 'm3' ? { x: 45, y: 62 } : m.id === 'm4' ? { x: 78, y: 72 } : { x: 18, y: 75 },
+                  image: m.image_url,
+                  todaysSpecial: m.star_dish,
+                  isVegOnly: m.type === 'Pure Veg',
+                };
+              })}
               onSelectMess={(mess) => {
                 const target = filteredMesses.find(item => item.id === mess.id);
                 if (target) handleBookMealClick(target);
