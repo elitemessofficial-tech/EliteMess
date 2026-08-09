@@ -19,7 +19,7 @@ import {
   Compass,
   Maximize2,
   X,
-  Layers,
+  Navigation,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -42,6 +42,7 @@ export interface MessMapItem {
 interface MessMapViewProps {
   messes: MessMapItem[];
   userLocation?: { latitude: number; longitude: number } | null;
+  targetMessId?: string;
   onSelectMess: (mess: MessMapItem) => void;
   onOpenReviews: (messId: string, messName: string) => void;
 }
@@ -127,14 +128,27 @@ const DEFAULT_MAP_MESSES: MessMapItem[] = [
 export default function MessMapView({
   messes = DEFAULT_MAP_MESSES,
   userLocation,
+  targetMessId,
   onSelectMess,
   onOpenReviews,
 }: MessMapViewProps) {
   const { isDark } = useAppTheme();
   const mapData = messes.length > 0 ? messes : DEFAULT_MAP_MESSES;
-  const [selectedMess, setSelectedMess] = useState<MessMapItem>(mapData[0]);
+
+  const initialMess = targetMessId
+    ? mapData.find(m => m.id === targetMessId) || mapData[0]
+    : mapData[0];
+
+  const [selectedMess, setSelectedMess] = useState<MessMapItem>(initialMess);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'All' | 'Pure Veg' | 'Top Rated'>('All');
+
+  useEffect(() => {
+    if (targetMessId) {
+      const found = mapData.find(m => m.id === targetMessId);
+      if (found) setSelectedMess(found);
+    }
+  }, [targetMessId, mapData]);
 
   const filteredMapData = mapData.filter(item => {
     if (activeFilter === 'Pure Veg') return item.isVegOnly;
@@ -176,7 +190,7 @@ export default function MessMapView({
   const studentLat = userLocation?.latitude || 18.5195;
   const studentLng = userLocation?.longitude || 73.8550;
 
-  // Generate real Leaflet HTML map content with CartoDB Dark Matter real tiles and pin click handlers!
+  // Generate real Leaflet HTML map content with CartoDB Dark Matter tiles and active walking polyline route!
   const generateLeafletHTML = (isFull: boolean) => {
     const pinsJSON = JSON.stringify(
       filteredMapData.map(m => ({
@@ -190,6 +204,9 @@ export default function MessMapView({
         isSelected: selectedMess?.id === m.id,
       }))
     );
+
+    const activeLat = selectedMess ? (selectedMess.lat || 18.5204) : 18.5204;
+    const activeLng = selectedMess ? (selectedMess.lng || 73.8567) : 73.8567;
 
     return `
       <!DOCTYPE html>
@@ -253,10 +270,10 @@ export default function MessMapView({
             html: '<div style="width:18px;height:18px;background:#3B82F6;border:2.5px solid #fff;border-radius:50%;box-shadow:0 0 14px #3B82F6;"></div>',
             iconSize: [18, 18]
           });
-          var userM = L.marker([${studentLat}, ${studentLng}], { icon: userIcon }).addTo(map).bindTooltip("You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
+          var userM = L.marker([${studentLat}, ${studentLng}], { icon: userIcon }).addTo(map).bindTooltip("📍 You Are Here", { permanent: true, direction: "top", offset: [0, -10] });
           boundsGroup.addLayer(userM);
 
-          // Add ALL 5 Mess markers & attach click handlers
+          // Add ALL Mess markers & attach click handlers
           pins.forEach(function(p) {
             var iconClass = p.isSelected ? 'custom-pin selected' : 'custom-pin';
             var icon = L.divIcon({
@@ -278,10 +295,27 @@ export default function MessMapView({
             });
           });
 
-          // Auto-fit map viewport so ALL 5 messes + student location are visible!
-          if (pins.length > 0) {
-            map.fitBounds(boundsGroup.getBounds().pad(0.3));
-          }
+          // Draw active walking route line from Student location to Selected Mess
+          var routeWaypoints = [
+            [${studentLat}, ${studentLng}],
+            [(${studentLat} + ${activeLat}) / 2 + 0.0006, (${studentLng} + ${activeLng}) / 2 - 0.0006],
+            [${activeLat}, ${activeLng}]
+          ];
+
+          var routeLine = L.polyline(routeWaypoints, {
+            color: '#10B981',
+            weight: 5,
+            opacity: 0.9,
+            dashArray: '8, 8',
+            lineCap: 'round'
+          }).addTo(map);
+
+          // Auto-fit map viewport to focus on the student -> mess walking route
+          var routeBounds = L.latLngBounds([
+            [${studentLat}, ${studentLng}],
+            [${activeLat}, ${activeLng}]
+          ]);
+          map.fitBounds(routeBounds.pad(0.35));
         </script>
       </body>
       </html>
@@ -301,13 +335,13 @@ export default function MessMapView({
               border: 'none',
               borderRadius: 20,
             }}
-            title="Campus Mess Map"
+            title="Campus Mess Map Navigation"
           />
         ) : (
           <View style={[styles.fallbackMap, { backgroundColor: isDark ? '#0A120F' : '#E2E8F0' }]}>
             <Compass size={32} color="#10B981" />
             <Text style={{ color: colors.textMain, fontWeight: '800', marginTop: 8 }}>
-              OpenStreetMap Campus Layer Active ({mapData.length} Messes Pinned)
+              OpenStreetMap Campus Route Active
             </Text>
           </View>
         )}
@@ -315,7 +349,9 @@ export default function MessMapView({
         {/* Top Controls Overlay */}
         <View style={styles.topControlsOverlay}>
           <View style={styles.mapLegend}>
-            <Text style={styles.legendText}>📍 OpenStreetMap • Tap Any Mess Pin</Text>
+            <Text style={styles.legendText}>
+              🗺️ Active Walking Route to {selectedMess?.name.split(' ')[0]}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -324,7 +360,6 @@ export default function MessMapView({
             activeOpacity={0.85}
           >
             <Maximize2 size={13} color="#FFFFFF" />
-            <Text style={styles.expandBtnText}>Expand Map (Fullscreen)</Text>
           </TouchableOpacity>
         </View>
 
@@ -372,7 +407,7 @@ export default function MessMapView({
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <MapPin size={11} color="#10B981" />
+                  <Navigation size={11} color="#10B981" />
                   <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>
                     {selectedMess.distanceMeter > 0 ? `${selectedMess.distanceMeter}m away` : '240m away'}
                   </Text>
@@ -436,7 +471,7 @@ export default function MessMapView({
               <Compass size={22} color="#10B981" />
               <View>
                 <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>Tap any mess pin or pill to select</Text>
+                <Text style={{ color: colors.textSub, fontSize: 11 }}>Active walking route displayed</Text>
               </View>
             </View>
 

@@ -10,7 +10,7 @@ import {
   RefreshControl,
   Dimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -42,6 +42,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function AllMessesScreen() {
   const router = useRouter();
+  const { view, targetMessId } = useLocalSearchParams<{ view?: string; targetMessId?: string }>();
   const { isDark } = useAppTheme();
   const { addToShortlist, removeFromShortlist, isShortlisted, bookMeal, activeBooking } = useToken();
 
@@ -50,7 +51,13 @@ export default function AllMessesScreen() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'map'>(view === 'map' ? 'map' : 'list');
+
+  useEffect(() => {
+    if (view === 'map') {
+      setViewMode('map');
+    }
+  }, [view]);
   const [reviewsModal, setReviewsModal] = useState<{ visible: boolean; messId: string; messName: string }>({
     visible: false,
     messId: '',
@@ -356,6 +363,7 @@ export default function AllMessesScreen() {
                 };
               })}
               userLocation={userLocation}
+              targetMessId={targetMessId}
               onSelectMess={(mess) => {
                 const target = filteredMesses.find(item => item.id === mess.id);
                 if (target) handleBookMealClick(target);

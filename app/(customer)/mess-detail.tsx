@@ -209,6 +209,14 @@ export default function MessDetailScreen() {
     });
   };
 
+  const handleGetDirections = () => {
+    if (!mess) return;
+    router.push({
+      pathname: '/(customer)/all-messes',
+      params: { view: 'map', targetMessId: mess.id },
+    });
+  };
+
   const handleToggleShortlist = () => {
     if (!mess) return;
     if (isShortlisted(mess.id)) {
@@ -231,7 +239,7 @@ export default function MessDetailScreen() {
   if (loading || !mess) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        <FloatingHeader title="Loading..." showBackButton={true} />
+        <FloatingHeader showBackButton={true} />
         <View style={styles.loadingCenter}>
           <Loader color={colors.emerald} />
           <Text style={{ color: colors.textSub, fontSize: 14, marginTop: 16 }}>Loading mess details...</Text>
@@ -339,7 +347,7 @@ export default function MessDetailScreen() {
                 activeOpacity={0.85}
               >
                 <Star size={16} color="#F59E0B" fill="#F59E0B" />
-                <Text style={{ color: '#F59E0B', fontSize: 13, fontWeight: '900' }}>⭐ Reviews</Text>
+                <Text style={{ color: '#F59E0B', fontSize: 13, fontWeight: '900' }}>Reviews</Text>
               </TouchableOpacity>
             </View>
           </AnimatedEntrance>
@@ -431,7 +439,7 @@ export default function MessDetailScreen() {
             <View style={styles.trustBadge}>
               <ShieldCheck size={14} color="#10B981" />
               <Text style={[styles.trustText, { color: colors.textSub }]}>
-                FSSAI Licensed -- Verified Mess Partner
+                Verified Campus Dining Partner -- Quality Checked
               </Text>
             </View>
           </AnimatedEntrance>
