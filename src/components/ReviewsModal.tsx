@@ -249,7 +249,10 @@ export default function ReviewsModal({
 
             {/* Verified Diner Reviews List */}
             <View style={styles.sectionWrap}>
-              <Text style={[styles.sectionTitle, { color: colors.textMain }]}>💬 Student Reviews</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <MessageSquare size={18} color="#10B981" />
+                <Text style={[styles.sectionTitle, { color: colors.textMain, marginBottom: 0 }]}>Student Reviews</Text>
+              </View>
               {loading ? (
                 <ActivityIndicator color="#10B981" style={{ marginVertical: 20 }} />
               ) : reviews.length === 0 ? (
