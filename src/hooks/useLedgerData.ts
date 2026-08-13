@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../services/supabase';
 import { useToken, MealHistoryItem, expandHistoryWithRefundPairs } from '../context/TokenContext';
 import { getCurrentUserIdentity } from '../utils/userSession';
+import { getMealPassFromNeon, getMealHistoryFromNeon } from '../services/neon';
 
 export interface LedgerPassStats {
   planName: string;
@@ -48,14 +48,9 @@ export function useLedgerData() {
       setLoading(true);
       const user = await getCurrentUserIdentity();
 
-      // 1. Fetch Pass Stats for THIS user ONLY
+      // 1. Fetch Pass Stats from Neon DB
       try {
-        const { data: pass } = await supabase
-          .from('meal_passes')
-          .select('*')
-          .eq('user_id', user.userId)
-          .eq('status', 'active')
-          .maybeSingle();
+        const pass = await getMealPassFromNeon(user.userId);
 
         if (pass) {
           setPassStats({
@@ -76,21 +71,16 @@ export function useLedgerData() {
         }
       } catch (e) {}
 
-      // 2. Fetch Meal History Logs for THIS user ONLY
+      // 2. Fetch Meal History Logs from Neon DB
       try {
-        const { data: history } = await supabase
-          .from('meal_history')
-          .select('*')
-          .eq('user_id', user.userId)
-          .order('created_at', { ascending: false })
-          .limit(20);
+        const history = await getMealHistoryFromNeon(user.userId);
 
         if (history && history.length > 0) {
-          const mappedHistory: MealHistoryItem[] = history.map((h: any) => ({
+          const mappedHistory: MealHistoryItem[] = history.map((h) => ({
             id: h.id,
             messName: h.mess_name || 'Partner Mess',
-            mealType: h.meal_type || 'Lunch',
-            status: h.status || 'completed',
+            mealType: (h.meal_type as any) || 'Lunch',
+            status: (h.status as any) || 'completed',
             tokensUsed: h.tokens_used ?? (h.status === 'cancelled' || h.status === 'refunded' ? -1 : h.status === 'skipped' ? 0 : 1),
             date: new Date(h.created_at).toLocaleDateString([], {
               month: 'short',

@@ -168,27 +168,27 @@ export default function SubscriptionScreen() {
           >
             <View style={styles.cardHeader}>
               <View style={styles.passLabelRow}>
-                <Wallet size={18} color="#10B981" />
-                <Text style={styles.passLabelText}>YOUR ACTIVE SUBSCRIPTION PASS</Text>
+                <Wallet size={16} color="#10B981" />
+                <Text style={styles.passLabelText} numberOfLines={1}>ACTIVE PASS</Text>
               </View>
               <View style={styles.liveBadge}>
                 <Text style={styles.liveBadgeText}>
-                  {remainingTokens > 0 ? '● ACTIVE PASS' : '○ NO ACTIVE PASS'}
+                  {remainingTokens > 0 ? '● ACTIVE' : '○ NO PASS'}
                 </Text>
               </View>
             </View>
 
-            <Text style={styles.planNameText}>{subscriptionPlan}</Text>
+            <Text style={[styles.planNameText, { color: colors.textMain }]} numberOfLines={1}>{subscriptionPlan}</Text>
 
             <View style={styles.metricsRow}>
-              <View style={styles.metricBox}>
+              <View style={[styles.metricBox, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(16, 185, 129, 0.25)' }]}>
                 <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>Tokens Available</Text>
                 <Text style={[styles.metricNumber, { color: '#10B981' }]}>
                   {remainingTokens} <Text style={{ fontSize: 14, color: colors.textSub }}>/ {totalTokens}</Text>
                 </Text>
               </View>
 
-              <View style={styles.metricBox}>
+              <View style={[styles.metricBox, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.85)', borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(16, 185, 129, 0.25)' }]}>
                 <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>Skips Remaining</Text>
                 <Text style={[styles.metricNumber, { color: '#FF6B00' }]}>{remainingSkips}</Text>
               </View>
@@ -349,6 +349,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    marginRight: 8,
   },
   passLabelText: {
     color: '#10B981',
@@ -361,6 +363,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    flexShrink: 0,
   },
   liveBadgeText: {
     color: '#10B981',
@@ -368,7 +371,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   planNameText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -0.3,
@@ -380,9 +383,9 @@ const styles = StyleSheet.create({
   },
   metricBox: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
     borderRadius: 14,
     padding: 12,
+    borderWidth: 1,
   },
   metricNumber: {
     fontSize: 20,

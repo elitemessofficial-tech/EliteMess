@@ -172,7 +172,7 @@ export default function WalletLedgerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <FloatingHeader title="Pass & Ledger" titleAlign="center" showBackButton={false} />
+      <FloatingHeader title="Pass & Ledger" titleAlign="center" showBackButton={true} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* ACTIVE SUBSCRIPTION PASS CARD WITH PULSING BADGE */}

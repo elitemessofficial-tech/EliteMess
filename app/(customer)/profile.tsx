@@ -26,6 +26,9 @@ import {
   Bell,
   Wallet,
   Bookmark,
+  Gift,
+  Copy,
+  Share2,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,7 +46,7 @@ export default function ProfileScreen() {
   const sdk = useDescope();
   const { session, manageSession } = useSession();
   const { isDark, toggleTheme } = useAppTheme();
-  const { subscriptionPlan, totalTokens, streakDays, shortlist = [] } = useToken();
+  const { subscriptionPlan, totalTokens, remainingTokens, streakDays, highestStreakDays, shortlistedMessIds = [] } = useToken();
 
   const [dietaryPref, setDietaryPref] = useState<'Veg Only' | 'Non-Veg & Veg'>('Veg Only');
   const [allowNotifications, setAllowNotifications] = useState(true);
@@ -164,12 +167,12 @@ export default function ProfileScreen() {
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
                 <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '800' }}>REMAINING TOKENS</Text>
-                <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>{totalTokens} Tokens</Text>
+                <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>{remainingTokens} Tokens</Text>
               </View>
 
               <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.05)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' }}>
                 <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '800' }}>MEAL STREAK</Text>
-                <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900', marginTop: 2 }}>🔥 {streakDays} Days</Text>
+                <Text style={{ fontSize: 14, color: '#10B981', fontWeight: '900', marginTop: 2 }}>🔥 {streakDays} Days <Text style={{ fontSize: 10, color: colors.textSub }}>| 🏆 Max {highestStreakDays}d</Text></Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -179,30 +182,109 @@ export default function ProfileScreen() {
         <AnimatedEntrance direction="up" delay={120}>
           <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Decision Room</Text>
           <TouchableOpacity
-            style={[styles.settingGroup, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 16 }]}
+            style={[styles.settingGroup, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, padding: 14 }]}
             onPress={() => router.push('/(customer)/shortlist')}
             activeOpacity={0.85}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(245, 158, 11, 0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Bookmark size={22} color="#F59E0B" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, overflow: 'hidden' }}>
+                <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(245, 158, 11, 0.15)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Bookmark size={20} color="#F59E0B" />
                 </View>
-                <View>
-                  <Text style={[styles.rowText, { color: colors.textMain, fontWeight: '900' }]}>
-                    Saved Messes ({(shortlist || []).length})
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowText, { color: colors.textMain, fontWeight: '900' }]} numberOfLines={1}>
+                    Saved Messes ({(shortlistedMessIds || []).length})
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
-                    Compare saved mess menus & pre-book meals
+                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }} numberOfLines={1}>
+                    Compare menus & book shortlist
                   </Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 }}>
                 <Text style={{ fontSize: 11, color: '#F59E0B', fontWeight: '800' }}>Open Room</Text>
-                <ChevronRight size={18} color="#F59E0B" />
+                <ChevronRight size={16} color="#F59E0B" />
               </View>
             </View>
           </TouchableOpacity>
+        </AnimatedEntrance>
+
+        {/* Refer & Earn Section */}
+        <AnimatedEntrance direction="up" delay={140}>
+          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Refer & Earn Free Meals</Text>
+          <LinearGradient
+            colors={isDark ? ['#1B261D', '#0F1A12'] : ['#ECFDF5', '#D1FAE5']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              borderRadius: 20,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(16, 185, 129, 0.35)',
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(16, 185, 129, 0.2)', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Gift size={22} color="#10B981" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textMain }}>
+                  Invite Campus Friends 
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }} numberOfLines={1}>
+                  Get 1 Free Meal Token per friend who joins
+                </Text>
+              </View>
+            </View>
+
+            {/* Referral Code Box & Share Action */}
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(255, 255, 255, 0.9)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: '#10B981', letterSpacing: 0.8 }}>
+                  FLEXI-{userDisplayName.toUpperCase().replace(/\s+/g, '').slice(0, 5)}409
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const code = `FLEXI-${userDisplayName.toUpperCase().replace(/\s+/g, '').slice(0, 5)}409`;
+                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                      navigator.clipboard?.writeText(code);
+                      Alert.alert('Code Copied!', `Referral code ${code} copied.`);
+                    } else {
+                      Alert.alert('Code Copied!', `Referral code ${code} copied.`);
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Copy size={16} color="#10B981" />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#10B981',
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+                onPress={() => {
+                  const code = `FLEXI-${userDisplayName.toUpperCase().replace(/\s+/g, '').slice(0, 5)}409`;
+                  const shareMsg = `Join Flexi Meal using my referral code ${code} and get 1 Free Meal Skip! Download now: https://elite-mess.vercel.app`;
+                  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(shareMsg)}`, '_blank');
+                  } else {
+                    Alert.alert('Share Referral', shareMsg);
+                  }
+                }}
+                activeOpacity={0.85}
+              >
+                <Share2 size={15} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }}>Share</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
         </AnimatedEntrance>
 
         {/* Preferences & App Settings */}

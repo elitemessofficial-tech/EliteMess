@@ -40,6 +40,7 @@ import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import ReviewsModal from '../../src/components/ReviewsModal';
 import ConfirmModal from '../../components/ConfirmModal';
+import MessDirectionsModal from '../../src/components/MessDirectionsModal';
 
 const modalStyles = StyleSheet.create({
   overlay: {
@@ -183,20 +184,18 @@ export default function DashboardScreen() {
     return () => clearInterval(interval);
   }, [activeBooking]);
 
-  // Open Native Maps for Get Directions
-  const handleGetDirections = (address: string) => {
-    const encoded = encodeURIComponent(address || 'North Campus Mess');
-    const url = Platform.select({
-      ios: `maps:0,0?q=${encoded}`,
-      android: `geo:0,0?q=${encoded}`,
-      web: `https://www.google.com/maps/search/?api=1&query=${encoded}`,
-    });
+// Open Interactive Directions Map Modal
+  const [showDirectionsModal, setShowDirectionsModal] = useState(false);
+  const [directionsMess, setDirectionsMess] = useState<{ name: string; address: string; lat: number; lng: number } | null>(null);
 
-    if (url) {
-      Linking.openURL(url).catch(() => {
-        Alert.alert('Directions', `Navigate to: ${address}`);
-      });
-    }
+  const handleGetDirections = (address: string, messName?: string, lat?: number, lng?: number) => {
+    setDirectionsMess({
+      name: messName || activeBooking?.messName || 'Annapurna Campus Mess',
+      address: address || activeBooking?.messAddress || 'Gate 2, North Campus, Pune',
+      lat: lat || 18.5204,
+      lng: lng || 73.8567,
+    });
+    setShowDirectionsModal(true);
   };
 
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -653,6 +652,17 @@ export default function DashboardScreen() {
         messName={reviewsModal.messName}
         onClose={() => setReviewsModal({ visible: false, messId: '', messName: '' })}
       />
+
+      {directionsMess && (
+        <MessDirectionsModal
+          visible={showDirectionsModal}
+          onClose={() => setShowDirectionsModal(false)}
+          messName={directionsMess.name}
+          messAddress={directionsMess.address}
+          messLat={directionsMess.lat}
+          messLng={directionsMess.lng}
+        />
+      )}
 
       <CustomerBottomBar activeTab="dashboard" />
     </View>

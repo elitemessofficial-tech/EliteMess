@@ -20,6 +20,7 @@ import {
   Maximize2,
   X,
   Navigation,
+  LocateFixed,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -142,6 +143,7 @@ export default function MessMapView({
   const [selectedMess, setSelectedMess] = useState<MessMapItem>(initialMess);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<'All' | 'Pure Veg' | 'Top Rated'>('All');
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
 
   useEffect(() => {
     if (targetMessId) {
@@ -350,12 +352,13 @@ export default function MessMapView({
       <View style={[styles.inlineWrapper, { borderColor: colors.cardBorder }]}>
         {Platform.OS === 'web' ? (
           <iframe
+            key={`inline-map-${recenterTrigger}`}
             srcDoc={generateLeafletHTML(false)}
             style={{
               width: '100%',
               height: '100%',
               border: 'none',
-              borderRadius: 20,
+              borderRadius: 22,
             }}
             title="Campus Mess Map Navigation"
           />
@@ -372,7 +375,7 @@ export default function MessMapView({
         <View style={styles.topControlsOverlay}>
           <View style={styles.mapLegend}>
             <Text style={styles.legendText}>
-              🗺️ Active Walking Route to {selectedMess?.name.split(' ')[0]}
+              🗺️ Route to {selectedMess?.name.split(' ')[0]}
             </Text>
           </View>
 
@@ -384,6 +387,15 @@ export default function MessMapView({
             <Maximize2 size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
+
+        {/* Relocate Recenter Floating Button */}
+        <TouchableOpacity
+          style={styles.relocateBtnInline}
+          onPress={() => setRecenterTrigger(prev => prev + 1)}
+          activeOpacity={0.85}
+        >
+          <LocateFixed size={18} color="#FFFFFF" />
+        </TouchableOpacity>
 
         {/* HORIZONTAL MESS SELECTOR CHIPS */}
         <View style={styles.messSelectorBar}>
@@ -447,14 +459,14 @@ export default function MessMapView({
               </Text>
 
               {/* Action Buttons Row */}
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, alignItems: 'center' }}>
                 <TouchableOpacity
                   style={styles.reviewsBtn}
                   onPress={() => onOpenReviews(selectedMess.id, selectedMess.name)}
                   activeOpacity={0.8}
                 >
                   <Star size={12} color="#10B981" />
-                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }} numberOfLines={1}>
                     Reviews ({selectedMess.reviewsCount})
                   </Text>
                 </TouchableOpacity>
@@ -471,7 +483,9 @@ export default function MessMapView({
                     style={styles.bookBtnGrad}
                   >
                     <Zap size={12} color="#FFFFFF" />
-                    <Text style={styles.bookBtnText}>Pre-Book Meal</Text>
+                    <Text style={styles.bookBtnText} numberOfLines={1}>
+                      Book (1 Token)
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -480,34 +494,24 @@ export default function MessMapView({
         )}
       </View>
 
-      {/* FULLSCREEN REAL LEAFLET MAP MODAL */}
+      {/* FULLSCREEN REAL LEAFLET MAP MODAL (NO TOP NAVBAR) */}
       <Modal
         visible={isFullscreen}
         animationType="slide"
         onRequestClose={() => setIsFullscreen(false)}
       >
         <View style={[styles.fullscreenContainer, { backgroundColor: colors.bg }]}>
-          {/* Fullscreen Top Header Bar */}
-          <View style={[styles.fullscreenHeader, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Compass size={22} color="#10B981" />
-              <View>
-                <Text style={[styles.fullscreenTitle, { color: colors.textMain }]}>OpenStreetMap Campus Navigation</Text>
-                <Text style={{ color: colors.textSub, fontSize: 11 }}>Real street walking route displayed</Text>
-              </View>
-            </View>
+          {/* Floating Rounded Close Button */}
+          <TouchableOpacity
+            style={styles.floatingCloseBtn}
+            onPress={() => setIsFullscreen(false)}
+            activeOpacity={0.85}
+          >
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.closeModalBtn}
-              onPress={() => setIsFullscreen(false)}
-              activeOpacity={0.8}
-            >
-              <X size={20} color={colors.textMain} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Filter Pills Bar */}
-          <View style={[styles.fullscreenFilterBar, { backgroundColor: isDark ? '#0F1A17' : '#F1F5F9' }]}>
+          {/* Filter Pills Bar Floating */}
+          <View style={styles.fullscreenFilterBarFloating}>
             {(['All', 'Pure Veg', 'Top Rated'] as const).map(f => (
               <TouchableOpacity
                 key={f}
@@ -518,7 +522,7 @@ export default function MessMapView({
                 onPress={() => setActiveFilter(f)}
               >
                 <Text style={[styles.filterPillText, { color: activeFilter === f ? '#FFFFFF' : colors.textMain }]}>
-                  {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : `🗺️ All (${mapData.length} Messes)`}
+                  {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : `🗺️ All (${mapData.length})`}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -528,6 +532,7 @@ export default function MessMapView({
           <View style={styles.fullscreenCanvasArea}>
             {Platform.OS === 'web' ? (
               <iframe
+                key={`fullscreen-map-${recenterTrigger}`}
                 srcDoc={generateLeafletHTML(true)}
                 style={{
                   width: '100%',
@@ -545,6 +550,15 @@ export default function MessMapView({
               </View>
             )}
           </View>
+
+          {/* Relocate Recenter Floating Button in Fullscreen */}
+          <TouchableOpacity
+            style={styles.relocateBtnFull}
+            onPress={() => setRecenterTrigger(prev => prev + 1)}
+            activeOpacity={0.85}
+          >
+            <LocateFixed size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
           {/* Fullscreen Bottom Selected Mess Card */}
           {selectedMess && (
@@ -655,6 +669,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     pointerEvents: 'box-none',
+    zIndex: 10,
   },
   mapLegend: {
     backgroundColor: 'rgba(8, 12, 14, 0.88)',
@@ -682,10 +697,22 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  expandBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
+  relocateBtnInline: {
+    position: 'absolute',
+    bottom: 200,
+    right: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 15,
   },
   messSelectorBar: {
     position: 'absolute',
@@ -756,7 +783,7 @@ const styles = StyleSheet.create({
   },
   bookBtn: {
     flex: 1,
-    height: 30,
+    height: 34,
     borderRadius: 8,
     overflow: 'hidden',
   },
@@ -767,51 +794,77 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
+    paddingHorizontal: 6,
   },
   bookBtnText: {
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '900',
   },
-  // FULLSCREEN STYLES
+  // FULLSCREEN STYLES (NO TOP NAVBAR)
   fullscreenContainer: {
     flex: 1,
+    position: 'relative',
   },
-  fullscreenHeader: {
-    flexDirection: 'row',
+  floatingCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(15, 26, 23, 0.92)',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    justifyContent: 'center',
+    zIndex: 100,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  fullscreenTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  closeModalBtn: {
-    padding: 6,
-  },
-  fullscreenFilterBar: {
+  fullscreenFilterBarFloating: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
+    gap: 8,
+    zIndex: 90,
   },
   filterPill: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15, 26, 23, 0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
   },
   filterPillText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   fullscreenCanvasArea: {
     flex: 1,
     position: 'relative',
+  },
+  relocateBtnFull: {
+    position: 'absolute',
+    bottom: 220,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 100,
   },
   fullscreenMessCard: {
     borderRadius: 20,
@@ -821,6 +874,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    position: 'absolute',
+    bottom: 10,
+    left: 0,
+    right: 0,
+    zIndex: 100,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,

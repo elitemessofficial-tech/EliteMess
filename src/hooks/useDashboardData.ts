@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../services/supabase';
 import { useToken, BookingDetails } from '../context/TokenContext';
 import { getCurrentUserIdentity } from '../utils/userSession';
+import { getMealPassFromNeon, getMessesFromNeon } from '../services/neon';
 
 export interface PassData {
   totalTokens: number;
@@ -44,7 +44,7 @@ const VIP_PASS_DATA: PassData = {
 
 const FALLBACK_FAVORITE_MESSES: FavoriteMess[] = [
   {
-    id: 'mess_1',
+    id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
     name: 'Annapurna Campus Mess',
     address: 'Gate 2, North Campus',
     rating: 4.9,
@@ -55,7 +55,7 @@ const FALLBACK_FAVORITE_MESSES: FavoriteMess[] = [
     visitCount: 18,
   },
   {
-    id: 'mess_2',
+    id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
     name: 'Royal Spice Dining Hall',
     address: 'Hostel Block B Road',
     rating: 4.8,
@@ -66,7 +66,7 @@ const FALLBACK_FAVORITE_MESSES: FavoriteMess[] = [
     visitCount: 14,
   },
   {
-    id: 'mess_3',
+    id: 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f',
     name: 'Green Leaf Premium Mess',
     address: 'University Circle, West Campus',
     rating: 4.7,
@@ -97,30 +97,9 @@ export function useDashboardData() {
         setUserName(user.isVip ? 'VIP Student' : 'Student');
       }
 
-      // 1. Fetch User Profile from Supabase if phone/uid exists
-      if (user.phone) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .or(`id.eq.${user.userId},phone_number.eq.${user.phone}`)
-            .maybeSingle();
-
-          if (profile?.full_name) {
-            const firstName = profile.full_name.split(' ')[0];
-            setUserName(firstName);
-          }
-        } catch (e) {}
-      }
-
-      // 2. Fetch Active Subscription Pass for THIS user ONLY
+      // 1. Fetch Active Subscription Pass from Neon DB
       try {
-        const { data: pass } = await supabase
-          .from('meal_passes')
-          .select('*')
-          .eq('user_id', user.userId)
-          .eq('status', 'active')
-          .maybeSingle();
+        const pass = await getMealPassFromNeon(user.userId);
 
         if (pass) {
           setPassData({
@@ -154,25 +133,21 @@ export function useDashboardData() {
         });
       }
 
-      // 3. Fetch Favorite Messes
+      // 2. Fetch Favorite Messes from Neon DB
       try {
-        const { data: messes } = await supabase
-          .from('messes')
-          .select('*')
-          .order('rating', { ascending: false })
-          .limit(3);
+        const messes = await getMessesFromNeon();
 
         if (messes && messes.length > 0) {
-          const mappedMesses: FavoriteMess[] = messes.map((m: any) => ({
+          const mappedMesses: FavoriteMess[] = messes.slice(0, 3).map((m) => ({
             id: m.id,
             name: m.name,
             address: m.address,
-            rating: parseFloat(m.rating || '4.8'),
+            rating: Number(m.rating || 4.8),
             image: m.image_url || FALLBACK_FAVORITE_MESSES[0].image,
             starDish: m.star_dish || 'Daily Special Thali',
             distance: m.distance || '300m (4 min walk)',
             cutoffTime: m.cutoff_time || '2:15 PM',
-            visitCount: m.visit_count || 12,
+            visitCount: 15,
           }));
           setFavoriteMesses(mappedMesses);
         }

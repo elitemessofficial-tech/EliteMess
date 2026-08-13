@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../services/supabase';
 import { useToken } from '../context/TokenContext';
 import { SEED_RESTAURANT_MESSES } from '../services/dbSeedSync';
+import { getMessesFromNeon } from '../services/neon';
 
 export interface MessSwiperCard {
   id: string;
@@ -39,29 +39,23 @@ export function useMessSwiper() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from('messes')
-        .select('*')
-        .eq('is_active', true);
+      const data = await getMessesFromNeon();
 
-      if (error || !data || data.length === 0) {
+      if (!data || data.length === 0) {
         setDeck(FALLBACK_MES_DECK);
       } else {
-        const mappedDeck: MessSwiperCard[] = data.map((m: any) => ({
+        const mappedDeck: MessSwiperCard[] = data.map((m) => ({
           id: m.id,
           name: m.name,
           address: m.address,
           distance: m.distance || '300m (4 min walk)',
-          rating: parseFloat(m.rating || '4.8'),
+          rating: Number(m.rating || 4.8),
           cutoffTime: m.cutoff_time || '2:15 PM',
           image: m.image_url || FALLBACK_MES_DECK[0].image,
           starDish: m.star_dish || 'Daily Special Thali',
           highlights: m.highlights || ['Daily Special', 'Rice', 'Roti'],
-          type: (m.highlights && m.highlights.some((h: string) => h.toLowerCase().includes('chicken') || h.toLowerCase().includes('biryani')))
-            ? 'Non-Veg & Veg'
-            : 'Veg',
+          type: m.type.includes('Non-Veg') ? 'Non-Veg & Veg' : 'Veg',
         }));
-
         setDeck(mappedDeck);
       }
     } catch (e) {

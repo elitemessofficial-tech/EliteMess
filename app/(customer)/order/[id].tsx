@@ -103,7 +103,7 @@ function FoodDeliveryOrderDetailsScreen({ id }: { id?: string }) {
       'Re-Order Added! 🛒',
       `Added ${addedCount} item${addedCount > 1 ? 's' : ''} to your cart.`,
       [
-        { text: 'View Cart & Checkout', onPress: () => router.push('/(customer)/cart') },
+        { text: 'Explore Messes', onPress: () => router.push('/(customer)/discover') },
         { text: 'OK', style: 'cancel' }
       ]
     );

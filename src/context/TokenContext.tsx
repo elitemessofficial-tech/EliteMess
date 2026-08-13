@@ -3,6 +3,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { ensureDatabaseInitialized } from '../services/dbSeedSync';
 import { getCurrentUserIdentity } from '../utils/userSession';
+import {
+  getMealPassFromNeon,
+  upsertMealPassInNeon,
+  getActiveBookingFromNeon,
+  createBookingInNeon,
+  updateBookingStatusInNeon,
+  getMealHistoryFromNeon,
+  insertMealHistoryItemInNeon,
+} from '../services/neon';
 
 export interface BookingDetails {
   bookingId: string;
@@ -33,6 +42,7 @@ interface TokenContextType {
   totalSkips: number;
   remainingSkips: number;
   streakDays: number;
+  highestStreakDays: number;
   subscriptionPlan: string;
   activeBooking: BookingDetails | null;
   shortlistedMessIds: string[];
@@ -70,6 +80,7 @@ const INITIAL_TOKEN_STATE = {
   totalSkips: 0,
   remainingSkips: 0,
   streakDays: 0,
+  highestStreakDays: 0,
   subscriptionPlan: 'No Active Subscription',
 };
 
@@ -122,6 +133,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [totalSkips, setTotalSkips] = useState<number>(INITIAL_TOKEN_STATE.totalSkips);
   const [remainingSkips, setRemainingSkips] = useState<number>(INITIAL_TOKEN_STATE.remainingSkips);
   const [streakDays, setStreakDays] = useState<number>(INITIAL_TOKEN_STATE.streakDays);
+  const [highestStreakDays, setHighestStreakDays] = useState<number>(INITIAL_TOKEN_STATE.highestStreakDays);
   const [subscriptionPlan, setSubscriptionPlan] = useState<string>(INITIAL_TOKEN_STATE.subscriptionPlan);
 
   const [activeBooking, setActiveBooking] = useState<BookingDetails | null>(null);
@@ -171,43 +183,44 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setInvalidatedOTPs([]);
       }
 
-      // 1. Fetch Real Pass Stats from Supabase or Local Storage
+      // 1. Fetch Real Pass Stats from Neon DB or Local Storage
       try {
-        const { data: pass } = await supabase
-          .from('meal_passes')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
+        const pass = await getMealPassFromNeon(userId);
 
         if (pass) {
-          setTotalTokens(pass.total_tokens || 60);
+          setTotalTokens(pass.total_tokens ?? 0);
           setRemainingTokens(pass.remaining_tokens ?? 0);
-          setTotalSkips(pass.total_skips || 15);
+          setTotalSkips(pass.total_skips ?? 0);
           setRemainingSkips(pass.remaining_skips ?? 0);
-          setStreakDays(pass.streak_days || 0);
-          setSubscriptionPlan(pass.plan_name || 'College Gold Meal Pass');
-        } else if (isVipUser) {
-          setTotalTokens(60);
-          setRemainingTokens(42);
-          setTotalSkips(15);
-          setRemainingSkips(12);
-          setStreakDays(7);
-          setSubscriptionPlan('College Gold Meal Pass');
+          setStreakDays(pass.streak_days ?? 0);
+          setHighestStreakDays(pass.streak_days ?? 0);
+          setSubscriptionPlan(pass.plan_name || 'No Active Subscription');
         } else {
           const savedStateStr = await AsyncStorage.getItem(getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId));
           if (savedStateStr) {
             const parsed = JSON.parse(savedStateStr);
-            setTotalTokens(parsed.totalTokens || 0);
-            setRemainingTokens(parsed.remainingTokens || 0);
-            setTotalSkips(parsed.totalSkips || 0);
-            setRemainingSkips(parsed.remainingSkips || 0);
-            setStreakDays(parsed.streakDays || 0);
+            setTotalTokens(parsed.totalTokens ?? 0);
+            setRemainingTokens(parsed.remainingTokens ?? 0);
+            setTotalSkips(parsed.totalSkips ?? 0);
+            setRemainingSkips(parsed.remainingSkips ?? 0);
+            setStreakDays(parsed.streakDays ?? 0);
+            setHighestStreakDays(parsed.highestStreakDays ?? parsed.streakDays ?? 0);
+            setSubscriptionPlan(parsed.subscriptionPlan || 'No Active Subscription');
+          } else if (isVipUser) {
+            setTotalTokens(60);
+            setRemainingTokens(42);
+            setTotalSkips(15);
+            setRemainingSkips(12);
+            setStreakDays(7);
+            setHighestStreakDays(14);
+            setSubscriptionPlan('College Gold Meal Pass');
           } else {
             setTotalTokens(0);
             setRemainingTokens(0);
             setTotalSkips(0);
             setRemainingSkips(0);
             setStreakDays(0);
+            setHighestStreakDays(0);
             setSubscriptionPlan('No Active Subscription');
           }
         }
@@ -353,29 +366,32 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     loadTokenState();
   }, []);
 
-  // Save Token State to AsyncStorage & Supabase
-  const saveStateToStorage = async (remTokens: number, remSkips: number, streak: number) => {
+  // Save Token State to AsyncStorage & Neon DB
+  const saveStateToStorage = async (remTokens: number, remSkips: number, streak: number, customPlan?: string, customHighest?: number) => {
     const userId = await getCurrentUserId();
+    const activePlan = customPlan || subscriptionPlan;
+    const currentHighest = customHighest !== undefined ? customHighest : Math.max(highestStreakDays, streak);
     const stateObj = {
       totalTokens,
       remainingTokens: remTokens,
       totalSkips,
       remainingSkips: remSkips,
       streakDays: streak,
+      highestStreakDays: currentHighest,
+      subscriptionPlan: activePlan,
     };
     await AsyncStorage.setItem(getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId), JSON.stringify(stateObj));
 
     try {
-      await supabase.from('meal_passes').upsert({
-        user_id: userId,
-        plan_name: subscriptionPlan,
-        total_tokens: totalTokens,
-        remaining_tokens: remTokens,
-        total_skips: totalSkips,
-        remaining_skips: remSkips,
-        streak_days: streak,
-        status: 'active',
-      });
+      await upsertMealPassInNeon(
+        userId,
+        activePlan,
+        totalTokens,
+        remTokens,
+        totalSkips,
+        remSkips,
+        streak
+      );
     } catch (e) {}
   };
 
@@ -418,12 +434,14 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const newRemTokens = remainingTokens - 1;
     const newStreak = streakDays + 1;
+    const newHighest = Math.max(highestStreakDays, newStreak);
 
     setRemainingTokens(newRemTokens);
     setStreakDays(newStreak);
+    setHighestStreakDays(newHighest);
     setActiveBooking(newBooking);
 
-    await saveStateToStorage(newRemTokens, remainingSkips, newStreak);
+    await saveStateToStorage(newRemTokens, remainingSkips, newStreak, undefined, newHighest);
     await AsyncStorage.setItem(activeKey, JSON.stringify(newBooking));
     await AsyncStorage.setItem('mealhop_active_booking', JSON.stringify(newBooking));
 
@@ -440,26 +458,11 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setMealHistory(updatedHistory);
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
 
-    // Real Supabase Insertions
+    // Real Neon DB Insertions
     try {
-      await supabase.from('meal_bookings').insert({
-        user_id: userId,
-        mess_id: messId.length > 20 ? messId : 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-        meal_type: mealType,
-        otp: otpCode,
-        status: 'booked',
-        cutoff_time: newBooking.cutoffTime,
-        expires_at: expiryTime,
-      });
-
-      await supabase.from('meal_history').insert({
-        user_id: userId,
-        mess_id: messId.length > 20 ? messId : 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-        mess_name: messName,
-        meal_type: mealType,
-        status: 'completed',
-        tokens_used: 1,
-      });
+      const validMessId = messId.length > 20 ? messId : 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+      await createBookingInNeon(userId, validMessId, mealType, otpCode, expiryTime, newBooking.cutoffTime);
+      await insertMealHistoryItemInNeon(userId, messName, mealType, 'completed', 1);
     } catch (e) {
       console.warn('Real Supabase booking sync notice:', e);
     }
@@ -467,7 +470,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Cancel Active Booking
+  // Cancel Active Booking (Reduces streak back)
   const cancelBooking = async () => {
     if (!activeBooking) return;
 
@@ -478,10 +481,13 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const currentBooking = activeBooking;
     const restoredTokens = remainingTokens + 1;
+    const reducedStreak = Math.max(0, streakDays - 1);
+
     setRemainingTokens(restoredTokens);
+    setStreakDays(reducedStreak);
     setActiveBooking(null);
 
-    await saveStateToStorage(restoredTokens, remainingSkips, streakDays);
+    await saveStateToStorage(restoredTokens, remainingSkips, reducedStreak, undefined, highestStreakDays);
     await AsyncStorage.setItem(activeKey, 'CANCELLED');
     await AsyncStorage.setItem('mealhop_active_booking', 'CANCELLED');
 
@@ -523,23 +529,14 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
 
     try {
-      await supabase
-        .from('meal_bookings')
-        .update({ status: 'cancelled' })
-        .eq('otp', currentBooking.otp);
-
-      await supabase.from('meal_history').insert({
-        user_id: userId,
-        mess_id: currentBooking.messId || 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-        mess_name: currentBooking.messName,
-        meal_type: currentBooking.mealType,
-        status: 'cancelled',
-        tokens_used: -1,
-      });
+      if (currentBooking.bookingId && currentBooking.bookingId.length > 20) {
+        await updateBookingStatusInNeon(currentBooking.bookingId, 'cancelled');
+      }
+      await insertMealHistoryItemInNeon(userId, currentBooking.messName, currentBooking.mealType, 'cancelled', -1);
     } catch (e) {}
   };
 
-  // Expire Active Booking (when time slot is over without redemption)
+  // Expire Active Booking (when missed - resets current streak to 0)
   const expireBooking = async () => {
     if (!activeBooking) return;
 
@@ -549,6 +546,8 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const currentBooking = activeBooking;
     setActiveBooking(null);
+    setStreakDays(0); // Missed day resets current streak to 0!
+    await saveStateToStorage(remainingTokens, remainingSkips, 0, undefined, highestStreakDays);
     await AsyncStorage.setItem(activeKey, 'EXPIRED');
     await AsyncStorage.setItem('mealhop_active_booking', 'EXPIRED');
 
@@ -746,6 +745,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         totalSkips,
         remainingSkips,
         streakDays,
+        highestStreakDays,
         subscriptionPlan,
         activeBooking,
         shortlistedMessIds,

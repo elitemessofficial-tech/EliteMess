@@ -215,7 +215,7 @@ export default function ShortlistScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <FloatingHeader title="Decision Room" titleAlign="center" showBackButton={false} />
+      <FloatingHeader title="Decision Room" titleAlign="center" showBackButton={true} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header Notice */}
