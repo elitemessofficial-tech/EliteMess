@@ -51,8 +51,81 @@ export default function MessDirectionsModal({
     emerald: '#10B981',
   };
 
-  // Official Free Google Maps Directions Embed URL (Requires no API Key!)
-  const googleMapsEmbedUrl = `https://maps.google.com/maps?saddr=${studentLat},${studentLng}&daddr=${messLat},${messLng}&t=m&z=15&output=embed`;
+  // Full Interactive Google Maps Tile Engine with Road Routing & Drag/Pan support
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <style>
+        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background: ${isDark ? '#080C0E' : '#F8FAFC'}; touch-action: none; }
+        .custom-mess-pin { background: #10B981; border: 3px solid #FFF; border-radius: 50%; width: 28px; height: 28px; box-shadow: 0 0 16px rgba(16, 185, 129, 0.9); }
+        .custom-student-pin { background: #3B82F6; border: 3px solid #FFF; border-radius: 50%; width: 24px; height: 24px; box-shadow: 0 0 16px rgba(59, 130, 246, 0.9); }
+        .leaflet-container { width: 100%; height: 100%; }
+      </style>
+    </head>
+    <body>
+      <div id="map"></div>
+      <script>
+        var map = L.map('map', {
+          zoomControl: false,
+          dragging: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          touchZoom: true
+        }).setView([${(studentLat + messLat) / 2}, ${(studentLng + messLng) / 2}], 15);
+
+        // Official Google Maps Tile Layer (100% Free & Fully Interactive!)
+        L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+          maxZoom: 20,
+          subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: 'Map data © Google'
+        }).addTo(map);
+
+        // Student Icon Pin
+        var studentIcon = L.divIcon({
+          className: 'custom-student-pin',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        L.marker([${studentLat}, ${studentLng}], { icon: studentIcon }).addTo(map).bindPopup("<b>Your Location</b>").openPopup();
+
+        // Mess Icon Pin
+        var messIcon = L.divIcon({
+          className: 'custom-mess-pin',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        L.marker([${messLat}, ${messLng}], { icon: messIcon }).addTo(map).bindPopup("<b>${messName.replace(/'/g, "\\'")}</b>");
+
+        // Fetch OSRM Turn-by-Turn Road Route along Google Maps streets
+        var osrmUrl = 'https://router.project-osrm.org/route/v1/foot/${studentLng},${studentLat};${messLng},${messLat}?overview=full&geometries=geojson';
+
+        fetch(osrmUrl)
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.routes && data.routes.length > 0) {
+              var coords = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
+              var polyline = L.polyline(coords, { color: '#10B981', weight: 6, opacity: 0.95 }).addTo(map);
+              map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
+            } else {
+              var fallback = [[${studentLat}, ${studentLng}], [${messLat}, ${messLng}]];
+              var polyline = L.polyline(fallback, { color: '#10B981', weight: 5, opacity: 0.85, dashArray: '8, 8' }).addTo(map);
+              map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
+            }
+          })
+          .catch(function() {
+            var fallback = [[${studentLat}, ${studentLng}], [${messLat}, ${messLng}]];
+            var polyline = L.polyline(fallback, { color: '#10B981', weight: 5, opacity: 0.85, dashArray: '8, 8' }).addTo(map);
+            map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
+          });
+      </script>
+    </body>
+    </html>
+  `;
 
   const handleOpenExternalMaps = () => {
     const encoded = encodeURIComponent(`${messName}, ${messAddress}`);
@@ -75,16 +148,16 @@ export default function MessDirectionsModal({
             </TouchableOpacity>
           </View>
 
-          {/* Official Free Google Maps Embedded Iframe */}
+          {/* Fully Interactive Google Maps Container */}
           <View style={styles.mapContainer}>
             <iframe
               ref={iframeRef}
-              src={googleMapsEmbedUrl}
-              style={{ width: '100%', height: '100%', border: 'none' }}
+              srcDoc={htmlContent}
+              style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'auto' }}
               onLoad={() => setLoading(false)}
             />
             {loading && (
-              <View style={styles.loadingOverlay}>
+              <View style={styles.loadingOverlay} pointerEvents="none">
                 <ActivityIndicator size="large" color="#10B981" />
                 <Text style={{ color: colors.textMain, marginTop: 8, fontSize: 12, fontWeight: '700' }}>
                   Loading Google Maps...
