@@ -51,68 +51,8 @@ export default function MessDirectionsModal({
     emerald: '#10B981',
   };
 
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background: ${isDark ? '#080C0E' : '#F8FAFC'}; }
-        .custom-mess-pin { background: #10B981; border: 3px solid #FFF; border-radius: 50%; width: 26px; height: 26px; box-shadow: 0 0 14px rgba(16, 185, 129, 0.8); }
-        .custom-student-pin { background: #3B82F6; border: 3px solid #FFF; border-radius: 50%; width: 22px; height: 22px; box-shadow: 0 0 14px rgba(59, 130, 246, 0.8); }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        var map = L.map('map', { zoomControl: false }).setView([${(studentLat + messLat) / 2}, ${(studentLng + messLng) / 2}], 15);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap'
-        }).addTo(map);
-
-        var studentIcon = L.divIcon({
-          className: 'custom-student-pin',
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
-        });
-        L.marker([${studentLat}, ${studentLng}], { icon: studentIcon }).addTo(map).bindPopup("<b>Your Location</b>").openPopup();
-
-        var messIcon = L.divIcon({
-          className: 'custom-mess-pin',
-          iconSize: [26, 26],
-          iconAnchor: [13, 13]
-        });
-        L.marker([${messLat}, ${messLng}], { icon: messIcon }).addTo(map).bindPopup("<b>${messName.replace(/'/g, "\\'")}</b>");
-
-        var osrmUrl = 'https://router.project-osrm.org/route/v1/foot/${studentLng},${studentLat};${messLng},${messLat}?overview=full&geometries=geojson';
-
-        fetch(osrmUrl)
-          .then(function(res) { return res.json(); })
-          .then(function(data) {
-            if (data.routes && data.routes.length > 0) {
-              var coords = data.routes[0].geometry.coordinates.map(function(c) { return [c[1], c[0]]; });
-              var polyline = L.polyline(coords, { color: '#10B981', weight: 6, opacity: 0.95 }).addTo(map);
-              map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
-            } else {
-              var fallback = [[${studentLat}, ${studentLng}], [${messLat}, ${messLng}]];
-              var polyline = L.polyline(fallback, { color: '#10B981', weight: 5, opacity: 0.85, dashArray: '8, 8' }).addTo(map);
-              map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
-            }
-          })
-          .catch(function() {
-            var fallback = [[${studentLat}, ${studentLng}], [${messLat}, ${messLng}]];
-            var polyline = L.polyline(fallback, { color: '#10B981', weight: 5, opacity: 0.85, dashArray: '8, 8' }).addTo(map);
-            map.fitBounds(polyline.getBounds(), { padding: [45, 45] });
-          });
-      </script>
-    </body>
-    </html>
-  `;
+  // Official Free Google Maps Directions Embed URL
+  const googleMapsEmbedUrl = `https://maps.google.com/maps?saddr=${studentLat},${studentLng}&daddr=${messLat},${messLng}&t=m&z=15&output=embed`;
 
   const handleOpenExternalMaps = () => {
     const encoded = encodeURIComponent(`${messName}, ${messAddress}`);
@@ -132,18 +72,18 @@ export default function MessDirectionsModal({
           <View style={[styles.header, { borderColor: colors.cardBorder }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Compass size={20} color="#10B981" />
-              <Text style={[styles.headerTitle, { color: colors.textMain }]}>Live Directions Map</Text>
+              <Text style={[styles.headerTitle, { color: colors.textMain }]}>Google Maps Live Directions</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.8}>
               <X size={18} color={colors.textMain} />
             </TouchableOpacity>
           </View>
 
-          {/* Interactive Native WebView Map */}
+          {/* Interactive Native WebView Google Maps */}
           <View style={styles.mapContainer}>
             <WebView
               originWhitelist={['*']}
-              source={{ html: htmlContent }}
+              source={{ uri: googleMapsEmbedUrl }}
               style={{ flex: 1, backgroundColor: 'transparent' }}
               onLoadEnd={() => setLoading(false)}
             />
@@ -151,7 +91,7 @@ export default function MessDirectionsModal({
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color="#10B981" />
                 <Text style={{ color: colors.textMain, marginTop: 8, fontSize: 12, fontWeight: '700' }}>
-                  Loading Road Route...
+                  Loading Google Maps...
                 </Text>
               </View>
             )}
