@@ -33,6 +33,7 @@ import LottieView from 'lottie-react-native';
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
+import MessDirectionsModal from '../../src/components/MessDirectionsModal';
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -198,22 +199,37 @@ export default function BookingsScreen() {
     }
   };
 
-  const handleGetDirections = (address: string) => {
-    const encoded = encodeURIComponent(address || 'Campus Mess');
-    const url = Platform.select({
-      ios: `maps:0,0?q=${encoded}`,
-      android: `geo:0,0?q=${encoded}`,
-      web: `https://www.google.com/maps/search/?api=1&query=${encoded}`,
+  const [showDirectionsModal, setShowDirectionsModal] = useState(false);
+  const [directionsMess, setDirectionsMess] = useState<{ name: string; address: string; lat: number; lng: number } | null>(null);
+
+  const getMessCoords = (messId?: string, messName?: string): { lat: number; lng: number } => {
+    const nameLower = (messName || '').toLowerCase();
+    if (nameLower.includes('green leaf')) return { lat: 18.5114, lng: 73.8347 };
+    if (nameLower.includes('royal')) return { lat: 18.5314, lng: 73.8447 };
+    if (nameLower.includes('cloud')) return { lat: 18.5414, lng: 73.8247 };
+    if (nameLower.includes('punjabi') || nameLower.includes('spice')) return { lat: 18.5014, lng: 73.8647 };
+    if (nameLower.includes('annapurna')) return { lat: 18.5204, lng: 73.8567 };
+
+    if (messId === 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e') return { lat: 18.5314, lng: 73.8447 };
+    if (messId === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') return { lat: 18.5114, lng: 73.8347 };
+    if (messId === 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a') return { lat: 18.5414, lng: 73.8247 };
+    if (messId === 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b') return { lat: 18.5014, lng: 73.8647 };
+
+    return { lat: 18.5204, lng: 73.8567 };
+  };
+
+  const handleGetDirections = (address?: string, messName?: string, lat?: number, lng?: number) => {
+    const targetName = messName || activeBooking?.messName || 'Campus Partner Mess';
+    const targetAddress = address || activeBooking?.messAddress || 'Campus Hub, Pune';
+    const coords = (lat && lng) ? { lat, lng } : getMessCoords(activeBooking?.messId, targetName);
+
+    setDirectionsMess({
+      name: targetName,
+      address: targetAddress,
+      lat: coords.lat,
+      lng: coords.lng,
     });
-    if (url) {
-      Linking.openURL(url).catch(() => {
-        if (Platform.OS === 'web') {
-          window.alert(`Navigate to: ${address}`);
-        } else {
-          Alert.alert('Directions', `Navigate to: ${address}`);
-        }
-      });
-    }
+    setShowDirectionsModal(true);
   };
 
   const getStatusIcon = (status: string) => {
@@ -366,7 +382,7 @@ export default function BookingsScreen() {
                 <View style={styles.activeActionsRow}>
                   <TouchableOpacity
                     style={styles.directionsBtn}
-                    onPress={() => handleGetDirections(activeBooking.messAddress)}
+                    onPress={() => handleGetDirections(activeBooking.messAddress, activeBooking.messName)}
                     activeOpacity={0.85}
                   >
                     <Navigation size={16} color="#10B981" />
@@ -553,6 +569,15 @@ export default function BookingsScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <MessDirectionsModal
+        visible={showDirectionsModal}
+        onClose={() => setShowDirectionsModal(false)}
+        messName={directionsMess?.name || 'Mess Location'}
+        messAddress={directionsMess?.address || ''}
+        messLat={directionsMess?.lat}
+        messLng={directionsMess?.lng}
+      />
 
       <CustomerBottomBar activeTab="bookings" />
     </View>
