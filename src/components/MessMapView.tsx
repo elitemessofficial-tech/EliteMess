@@ -485,7 +485,7 @@ export default function MessMapView({
                   >
                     <Zap size={12} color="#FFFFFF" />
                     <Text style={styles.bookBtnText} numberOfLines={1}>
-                      Book (1 Token)
+                      Book 1 Token
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -502,31 +502,47 @@ export default function MessMapView({
         onRequestClose={() => setIsFullscreen(false)}
       >
         <View style={[styles.fullscreenContainer, { backgroundColor: colors.bg }]}>
-          {/* Floating Rounded Close Button */}
           <TouchableOpacity
-            style={styles.floatingCloseBtn}
+            style={[
+              styles.floatingCloseBtn,
+              {
+                backgroundColor: isDark ? 'rgba(15, 26, 23, 0.92)' : 'rgba(255, 255, 255, 0.95)',
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.3)',
+              }
+            ]}
             onPress={() => setIsFullscreen(false)}
             activeOpacity={0.85}
           >
-            <X size={20} color="#FFFFFF" />
+            <X size={20} color={colors.textMain} />
           </TouchableOpacity>
 
           {/* Filter Pills Bar Floating */}
           <View style={styles.fullscreenFilterBarFloating}>
-            {(['All', 'Pure Veg', 'Top Rated'] as const).map(f => (
-              <TouchableOpacity
-                key={f}
-                style={[
-                  styles.filterPill,
-                  activeFilter === f && { backgroundColor: '#10B981', borderColor: '#10B981' }
-                ]}
-                onPress={() => setActiveFilter(f)}
-              >
-                <Text style={[styles.filterPillText, { color: activeFilter === f ? '#FFFFFF' : colors.textMain }]}>
-                  {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : `🗺️ All (${mapData.length})`}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(['All', 'Pure Veg', 'Top Rated'] as const).map(f => {
+              const isActive = activeFilter === f;
+              return (
+                <TouchableOpacity
+                  key={f}
+                  style={[
+                    styles.filterPill,
+                    {
+                      backgroundColor: isActive
+                        ? '#10B981'
+                        : (isDark ? 'rgba(15, 26, 23, 0.92)' : 'rgba(255, 255, 255, 0.95)'),
+                      borderColor: isActive
+                        ? '#10B981'
+                        : (isDark ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.3)'),
+                    }
+                  ]}
+                  onPress={() => setActiveFilter(f)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.filterPillText, { color: isActive ? '#FFFFFF' : colors.textMain }]}>
+                    {f === 'Pure Veg' ? '🥗 Pure Veg' : f === 'Top Rated' ? '⭐ Top Rated' : `🍱 All (${mapData.length})`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Main Fullscreen Map Canvas */}
@@ -597,7 +613,7 @@ export default function MessMapView({
                 </Text>
 
                 {/* Fullscreen Action Buttons */}
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'center' }}>
                   <TouchableOpacity
                     style={styles.fullReviewsBtn}
                     onPress={() => {
@@ -606,9 +622,9 @@ export default function MessMapView({
                     }}
                     activeOpacity={0.8}
                   >
-                    <Star size={14} color="#10B981" />
-                    <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '800' }}>
-                      Verified Reviews ({selectedMess.reviewsCount})
+                    <Star size={13} color="#10B981" />
+                    <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>
+                      Reviews ({selectedMess.reviewsCount})
                     </Text>
                   </TouchableOpacity>
 
@@ -626,9 +642,9 @@ export default function MessMapView({
                       end={{ x: 1, y: 0 }}
                       style={styles.bookBtnGrad}
                     >
-                      <Zap size={14} color="#FFFFFF" />
-                      <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '900' }}>
-                        Pre-Book (1 Token)
+                      <Zap size={13} color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '900' }} numberOfLines={1}>
+                        Book 1 Token
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>
