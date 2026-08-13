@@ -60,6 +60,8 @@ export default function MessDirectionsModal({
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <style>
+        .leaflet-container { width: 100%; height: 100%; }
+        .leaflet-tile-pane { filter: ${isDark ? 'invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%)' : 'none'}; }
         html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; background: ${isDark ? '#080C0E' : '#F8FAFC'}; touch-action: none; }
         .custom-mess-pin { background: #10B981; border: 3px solid #FFF; border-radius: 50%; width: 28px; height: 28px; box-shadow: 0 0 16px rgba(16, 185, 129, 0.9); }
         .custom-student-pin { background: #3B82F6; border: 3px solid #FFF; border-radius: 50%; width: 24px; height: 24px; box-shadow: 0 0 16px rgba(59, 130, 246, 0.9); }

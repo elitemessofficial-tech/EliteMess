@@ -220,8 +220,8 @@ export default function MessMapView({
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-          html, body, #map { width: 100%; height: 100%; background: #0A120F; }
-          .leaflet-tile-pane { filter: ${isDark ? 'brightness(0.75) invert(0.9) contrast(2.2) hue-rotate(180deg)' : 'none'}; }
+          html, body, #map { width: 100%; height: 100%; background: ${isDark ? '#080C0E' : '#F8FAFC'}; }
+          .leaflet-tile-pane { filter: ${isDark ? 'invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%)' : 'none'}; }
           .custom-pin {
             background: #121A17;
             border: 2px solid #10B981;
@@ -259,9 +259,10 @@ export default function MessMapView({
         <script>
           var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([${studentLat}, ${studentLng}], 15);
           
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19,
-            subdomains: 'abcd'
+          L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+            attribution: 'Map data © Google'
           }).addTo(map);
 
           var pins = ${pinsJSON};

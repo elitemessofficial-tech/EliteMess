@@ -65,6 +65,7 @@ export default function MessDirectionsModal({
         .custom-mess-pin { background: #10B981; border: 3px solid #FFF; border-radius: 50%; width: 28px; height: 28px; box-shadow: 0 0 16px rgba(16, 185, 129, 0.9); }
         .custom-student-pin { background: #3B82F6; border: 3px solid #FFF; border-radius: 50%; width: 24px; height: 24px; box-shadow: 0 0 16px rgba(59, 130, 246, 0.9); }
         .leaflet-container { width: 100%; height: 100%; }
+        .leaflet-tile-pane { filter: ${isDark ? 'invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%)' : 'none'}; }
       </style>
     </head>
     <body>
