@@ -42,6 +42,29 @@ export default function MessDirectionsModal({
   const studentLat = DEFAULT_STUDENT_LAT;
   const studentLng = DEFAULT_STUDENT_LNG;
 
+  // Calculate real walking distance and duration
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3;
+    const phi1 = (lat1 * Math.PI) / 180;
+    const phi2 = (lat2 * Math.PI) / 180;
+    const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+    const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const d = Math.round(R * c);
+    const walkMins = Math.max(1, Math.round(d / 80));
+    return {
+      distance: d > 1000 ? `${(d / 1000).toFixed(1)}km` : `${d}m`,
+      walkTime: `${walkMins} min walk`,
+    };
+  };
+
+  const distInfo = calculateDistance(studentLat, studentLng, messLat, messLng);
+
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
     cardBg: isDark ? 'rgba(13, 20, 18, 0.95)' : 'rgba(255, 255, 255, 0.95)',
@@ -179,7 +202,7 @@ export default function MessDirectionsModal({
               </View>
               <View style={styles.distPill}>
                 <Navigation size={12} color="#10B981" />
-                <Text style={styles.distPillText}>350m (4 min walk)</Text>
+                <Text style={styles.distPillText}>{distInfo.distance} ({distInfo.walkTime})</Text>
               </View>
             </View>
 

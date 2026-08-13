@@ -188,12 +188,33 @@ export default function DashboardScreen() {
   const [showDirectionsModal, setShowDirectionsModal] = useState(false);
   const [directionsMess, setDirectionsMess] = useState<{ name: string; address: string; lat: number; lng: number } | null>(null);
 
+  const getMessCoords = (messId?: string, messName?: string): { lat: number; lng: number } => {
+    const nameLower = (messName || '').toLowerCase();
+    if (nameLower.includes('green leaf')) return { lat: 18.5114, lng: 73.8347 };
+    if (nameLower.includes('royal')) return { lat: 18.5314, lng: 73.8447 };
+    if (nameLower.includes('cloud')) return { lat: 18.5414, lng: 73.8247 };
+    if (nameLower.includes('punjabi') || nameLower.includes('spice')) return { lat: 18.5014, lng: 73.8647 };
+    if (nameLower.includes('annapurna')) return { lat: 18.5204, lng: 73.8567 };
+
+    // Fallback coordinates by mess ID
+    if (messId === 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e') return { lat: 18.5314, lng: 73.8447 };
+    if (messId === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') return { lat: 18.5114, lng: 73.8347 };
+    if (messId === 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a') return { lat: 18.5414, lng: 73.8247 };
+    if (messId === 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b') return { lat: 18.5014, lng: 73.8647 };
+
+    return { lat: 18.5204, lng: 73.8567 };
+  };
+
   const handleGetDirections = (address: string, messName?: string, lat?: number, lng?: number) => {
+    const targetName = messName || activeBooking?.messName || 'Annapurna Campus Mess';
+    const targetAddress = address || activeBooking?.messAddress || 'Gate 2, North Campus, Pune';
+    const coords = (lat && lng) ? { lat, lng } : getMessCoords(activeBooking?.messId, targetName);
+
     setDirectionsMess({
-      name: messName || activeBooking?.messName || 'Annapurna Campus Mess',
-      address: address || activeBooking?.messAddress || 'Gate 2, North Campus, Pune',
-      lat: lat || 18.5204,
-      lng: lng || 73.8567,
+      name: targetName,
+      address: targetAddress,
+      lat: coords.lat,
+      lng: coords.lng,
     });
     setShowDirectionsModal(true);
   };
