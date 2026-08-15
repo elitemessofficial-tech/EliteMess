@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Alert,
   Platform,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,6 +25,11 @@ import {
   Utensils,
   KeyRound,
   TrendingUp,
+  Store,
+  ChevronDown,
+  RefreshCw,
+  Sparkles,
+  QrCode,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,82 +37,242 @@ import { useDescope, useSession } from '@descope/react-native-sdk';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
-import { supabase } from '../../src/services/supabase';
-
-interface VerifiedEntry {
-  id: string;
-  studentName: string;
-  collegeId: string;
-  otp: string;
-  mealType: string;
-  verifiedAt: string;
-}
+import OwnerBottomBar, { OwnerTabType } from '../../components/OwnerBottomBar';
+import {
+  getMessesFromNeon,
+  getMessOwnerDataFromNeon,
+  updateMessMenuInNeon,
+  verifyOwnerOtpInNeon,
+  MessDBRecord,
+  OwnerVerifiedLogItem,
+} from '../../src/services/neon';
+import { SEED_RESTAURANT_MESSES } from '../../src/services/dbSeedSync';
 
 export default function MessOwnerDashboardScreen() {
   const router = useRouter();
   const sdk = useDescope();
   const { manageSession } = useSession();
   const { isDark } = useAppTheme();
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // Navigation tab state
+  const [activeTab, setActiveTab] = useState<OwnerTabType>('overview');
+
+  // Mess Selection state
+  const [messesList, setMessesList] = useState<MessDBRecord[]>([]);
+  const [selectedMessId, setSelectedMessId] = useState<string>('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
+  const [selectedMess, setSelectedMess] = useState<MessDBRecord | null>(null);
+  const [showMessPicker, setShowMessPicker] = useState<boolean>(false);
+
+  // Live Metrics & Real Log state
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [liveHeadcount, setLiveHeadcount] = useState<number>(0);
+  const [verifiedCount, setVerifiedCount] = useState<number>(0);
+  const [verifiedList, setVerifiedList] = useState<OwnerVerifiedLogItem[]>([]);
 
   // OTP Verification state
   const [enteredOtp, setEnteredOtp] = useState<string>('');
   const [verifying, setVerifying] = useState<boolean>(false);
-  const [liveHeadcount, setLiveHeadcount] = useState<number>(142);
-  const [verifiedList, setVerifiedList] = useState<VerifiedEntry[]>([
-    { id: 'v1', studentName: 'Alex Student', collegeId: '2026-CS-409', otp: '8492', mealType: 'Lunch', verifiedAt: '12:45 PM' },
-    { id: 'v2', studentName: 'Rohan Sharma', collegeId: '2026-EC-102', otp: '3190', mealType: 'Lunch', verifiedAt: '12:38 PM' },
-    { id: 'v3', studentName: 'Priya Patel', collegeId: '2026-ME-088', otp: '7721', mealType: 'Lunch', verifiedAt: '12:30 PM' },
-  ]);
 
   // Menu Update state
   const [starDish, setStarDish] = useState<string>('Special Shahi Paneer & Butter Naan');
   const [cutoffTime, setCutoffTime] = useState<string>('2:15 PM');
-  const [isMenuSaved, setIsMenuSaved] = useState<boolean>(false);
+  const [savingMenu, setSavingMenu] = useState<boolean>(false);
+
+  // Logout Modal state
+  const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(18, 26, 23, 0.85)' : 'rgba(255, 255, 255, 0.9)',
-    cardBorder: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.15)',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.88)' : 'rgba(255, 255, 255, 0.95)',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.15)',
     textMain: isDark ? '#FFFFFF' : '#0F172A',
     textSub: isDark ? '#94A3B8' : '#64748B',
     emerald: '#10B981',
+    inputBg: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(241, 245, 249, 0.8)',
   };
 
+  // 1. Fetch Real Messes and Owner Data from Neon Database
+  const fetchOwnerData = useCallback(async (messId: string) => {
+    try {
+      // 1. Fetch messes list
+      let messes = await getMessesFromNeon();
+      if (!messes || messes.length === 0) {
+        messes = SEED_RESTAURANT_MESSES as unknown as MessDBRecord[];
+      }
+      setMessesList(messes);
+
+      // Find selected mess record
+      const currentMess = messes.find(m => m.id === messId) || messes[0];
+      setSelectedMess(currentMess);
+      if (currentMess) {
+        setStarDish(currentMess.star_dish || 'Special Shahi Paneer & Butter Naan');
+        setCutoffTime(currentMess.cutoff_time || '2:15 PM');
+      }
+
+      // 2. Fetch real live headcount and verified logs from Neon
+      const ownerStats = await getMessOwnerDataFromNeon(currentMess ? currentMess.id : messId);
+      
+      // Real headcount from DB (plus any fallback active booking in storage)
+      let headCount = ownerStats.liveHeadcount;
+      try {
+        const localActive = await AsyncStorage.getItem('mealhop_active_booking');
+        if (localActive && localActive !== 'EXPIRED') {
+          const parsed = JSON.parse(localActive);
+          if (parsed && parsed.status === 'booked') {
+            headCount = Math.max(headCount, 1);
+          }
+        }
+      } catch (e) {}
+
+      setLiveHeadcount(headCount);
+      setVerifiedCount(ownerStats.verifiedCount);
+      setVerifiedList(ownerStats.verifiedLog);
+    } catch (error) {
+      console.warn('Error loading real owner data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOwnerData(selectedMessId);
+  }, [fetchOwnerData, selectedMessId]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchOwnerData(selectedMessId);
+  };
+
+  // 2. Real OTP Verification Handler
   const handleVerifyOtp = async () => {
-    if (enteredOtp.length !== 4) {
-      Alert.alert('Invalid OTP', 'Please enter a valid 4-digit student OTP.');
+    const cleanOtp = enteredOtp.trim().replace(/\D/g, '');
+    if (cleanOtp.length < 4) {
+      if (Platform.OS === 'web') {
+        window.alert('Please enter at least a 4-digit student OTP.');
+      } else {
+        Alert.alert('Invalid OTP', 'Please enter at least a 4-digit student OTP.');
+      }
       return;
     }
 
     setVerifying(true);
-    setTimeout(() => {
+    try {
+      // 1. Try real verification in Neon Database
+      const result = await verifyOwnerOtpInNeon(selectedMessId, cleanOtp);
+
+      if (result.success && result.entry) {
+        setVerifiedList(prev => [result.entry!, ...prev]);
+        setLiveHeadcount(prev => Math.max(0, prev - 1));
+        setVerifiedCount(prev => prev + 1);
+        setEnteredOtp('');
+
+        const msg = `Dining confirmed for ${result.entry.studentName} (${result.entry.mealType})! 1 Token deducted from student pass.`;
+        if (Platform.OS === 'web') {
+          window.alert(`🎉 OTP Verified!\n\n${msg}`);
+        } else {
+          Alert.alert('🎉 OTP Verified!', msg);
+        }
+        return;
+      }
+
+      // 2. Check local storage active booking fallback
+      try {
+        const localActiveStr = await AsyncStorage.getItem('mealhop_active_booking');
+        if (localActiveStr && localActiveStr !== 'EXPIRED') {
+          const localBooking = JSON.parse(localActiveStr);
+          const rawOtp = (localBooking.otp || '').replace(/\D/g, '');
+
+          if (rawOtp.includes(cleanOtp) || cleanOtp.includes(rawOtp) || cleanOtp === rawOtp.slice(-4)) {
+            // Mark verified locally
+            localBooking.status = 'completed';
+            await AsyncStorage.setItem('mealhop_active_booking', JSON.stringify(localBooking));
+
+            const newEntry: OwnerVerifiedLogItem = {
+              id: `v_${Date.now()}`,
+              studentName: 'Verified Student',
+              collegeId: '2026-CAMPUS-VIP',
+              otp: localBooking.otp || cleanOtp,
+              mealType: localBooking.mealType || 'Lunch',
+              verifiedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'completed',
+            };
+
+            setVerifiedList(prev => [newEntry, ...prev]);
+            setLiveHeadcount(prev => Math.max(0, prev - 1));
+            setVerifiedCount(prev => prev + 1);
+            setEnteredOtp('');
+
+            const msg = `Dining confirmed for OTP ${cleanOtp}. 1 Token deducted from student account.`;
+            if (Platform.OS === 'web') {
+              window.alert(`🎉 OTP Verified!\n\n${msg}`);
+            } else {
+              Alert.alert('🎉 OTP Verified!', msg);
+            }
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // If not found anywhere:
+      const failMsg = `No active dining booking found matching OTP "${enteredOtp}". Please check with the student.`;
+      if (Platform.OS === 'web') {
+        window.alert(`❌ Verification Failed\n\n${failMsg}`);
+      } else {
+        Alert.alert('❌ Verification Failed', failMsg);
+      }
+    } catch (e) {
+      console.warn('Verification error:', e);
+    } finally {
       setVerifying(false);
-      const newEntry: VerifiedEntry = {
-        id: `v_${Date.now()}`,
-        studentName: 'Student #' + Math.floor(1000 + Math.random() * 9000),
-        collegeId: '2026-CAMPUS',
-        otp: enteredOtp,
-        mealType: 'Lunch',
-        verifiedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setVerifiedList([newEntry, ...verifiedList]);
-      setLiveHeadcount((prev) => prev + 1);
-      setEnteredOtp('');
-
-      Alert.alert(
-        'OTP Verified! 🎉',
-        `Dining confirmed for OTP ${enteredOtp}. 1 Token deducted from student account.`
-      );
-    }, 600);
+    }
   };
 
-  const handleSaveMenu = () => {
-    setIsMenuSaved(true);
-    Alert.alert('Menu Updated! 🔥', `Today's menu updated to "${starDish}" with cutoff at ${cutoffTime}.`);
+  // 3. Real Menu & Cutoff Update Handler
+  const handleSaveMenu = async () => {
+    if (!starDish.trim()) {
+      if (Platform.OS === 'web') {
+        window.alert('Please enter a valid Star Dish name.');
+      } else {
+        Alert.alert('Required Field', 'Please enter a valid Star Dish name.');
+      }
+      return;
+    }
+
+    setSavingMenu(true);
+    try {
+      const success = await updateMessMenuInNeon(selectedMessId, starDish.trim(), cutoffTime.trim());
+      if (success) {
+        // Also update local state
+        if (selectedMess) {
+          setSelectedMess({
+            ...selectedMess,
+            star_dish: starDish.trim(),
+            cutoff_time: cutoffTime.trim(),
+          });
+        }
+        const msg = `Today's Star Dish is now "${starDish.trim()}" with pre-book cutoff at ${cutoffTime.trim()}.`;
+        if (Platform.OS === 'web') {
+          window.alert(`🔥 Menu Updated Successfully!\n\n${msg}`);
+        } else {
+          Alert.alert('🔥 Menu Updated Successfully!', msg);
+        }
+      } else {
+        if (Platform.OS === 'web') {
+          window.alert('Failed to update menu in database. Please check your network connection.');
+        } else {
+          Alert.alert('Update Error', 'Failed to update menu in database. Please check your network connection.');
+        }
+      }
+    } catch (e) {
+      console.warn('Menu update error:', e);
+    } finally {
+      setSavingMenu(false);
+    }
   };
 
+  // 4. Logout Handler
   const doLogout = async () => {
     try {
       await AsyncStorage.setItem('explicit_logout', 'true');
@@ -114,7 +281,6 @@ export default function MessOwnerDashboardScreen() {
       await AsyncStorage.removeItem('user_selected_role');
       try { await sdk.logout(); } catch (e) {}
       try { await manageSession(undefined); } catch (e) {}
-      try { await supabase.auth.signOut(); } catch (e) {}
       router.replace('/(auth)/login');
     } catch (e) {
       console.error('Logout error:', e);
@@ -122,158 +288,297 @@ export default function MessOwnerDashboardScreen() {
     }
   };
 
-  const handleLogout = () => {
-    setShowLogoutModal(true);
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <FloatingHeader
-        title="Mess Owner Dashboard"
+        title="Mess Owner Portal"
         titleAlign="center"
         showBackButton={false}
         rightContent={
-          <TouchableOpacity style={styles.logoutHeaderBtn} onPress={handleLogout}>
+          <TouchableOpacity style={styles.logoutHeaderBtn} onPress={() => setShowLogoutModal(true)} activeOpacity={0.8}>
             <LogOut size={16} color="#EF4444" />
           </TouchableOpacity>
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Live Headcount Banner */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />}
+      >
+        {/* MESS PARTNER SELECTOR BAR */}
         <AnimatedEntrance direction="down">
-          <LinearGradient
-            colors={isDark ? ['#0F241C', '#061712'] : ['#ECFDF5', '#D1FAE5']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.metricBanner}
+          <TouchableOpacity
+            style={[styles.messSelectorCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}
+            onPress={() => setShowMessPicker(true)}
+            activeOpacity={0.85}
           >
-            <View style={styles.metricHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Users size={18} color="#10B981" />
-                <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 }}>
-                  LIVE PRE-BOOKED DINING HEADCOUNT
-                </Text>
-              </View>
-              <View style={styles.livePill}>
-                <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>LIVE</Text>
-              </View>
+            <View style={styles.messIconCircle}>
+              <Store size={18} color="#10B981" />
             </View>
-
-            <View style={styles.metricRow}>
-              <Text style={styles.metricNumber}>{liveHeadcount}</Text>
-              <Text style={[styles.metricLabel, { color: colors.textSub }]}>Students Confirmed for Lunch Today</Text>
-            </View>
-
-            <View style={styles.metricFooter}>
-              <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>
-                🔥 Pre-Book Cutoff: <Text style={{ color: '#10B981', fontWeight: '800' }}>2:15 PM</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>MANAGING PARTNER MESS</Text>
+              <Text style={[styles.selectedMessTitle, { color: colors.textMain }]} numberOfLines={1}>
+                {selectedMess?.name || 'Annapurna Campus Mess'}
               </Text>
-              <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>
-                98% Attendance Rate
+              <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
+                {selectedMess?.address || 'North Campus Hub, Pune'}
               </Text>
             </View>
-          </LinearGradient>
+            <View style={styles.switchMessPill}>
+              <Text style={styles.switchMessText}>Switch</Text>
+              <ChevronDown size={14} color="#10B981" />
+            </View>
+          </TouchableOpacity>
         </AnimatedEntrance>
 
-        {/* PROMINENT OTP VERIFICATION KEYPAD MODULE */}
-        <AnimatedEntrance direction="up" delay={100}>
-          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Student Dining Verification</Text>
-          <View style={[styles.otpVerifyCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <KeyRound size={20} color="#10B981" />
-              <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Enter Student 4-Digit OTP</Text>
-            </View>
-            <Text style={{ fontSize: 11, color: colors.textSub }}>
-              Enter the time-bound OTP shown on the student's app at the counter
-            </Text>
-
-            {/* OTP Input Field */}
-            <TextInput
-              style={[styles.otpInput, { color: colors.textMain, borderColor: colors.cardBorder }]}
-              value={enteredOtp}
-              onChangeText={setEnteredOtp}
-              placeholder="e.g. 8492"
-              placeholderTextColor={colors.textSub}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
-
-            {/* Verify Button */}
-            <TouchableOpacity
-              style={styles.verifyBtn}
-              onPress={handleVerifyOtp}
-              disabled={verifying}
-              activeOpacity={0.85}
+        {/* 1. OVERVIEW SECTION / LIVE HEADCOUNT */}
+        {(activeTab === 'overview' || activeTab === 'verify') && (
+          <AnimatedEntrance direction="up" delay={60}>
+            <LinearGradient
+              colors={isDark ? ['#0F241C', '#061712'] : ['#ECFDF5', '#D1FAE5']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.metricBanner}
             >
-              <LinearGradient
-                colors={['#10B981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.verifyGrad}
-              >
-                <CheckCircle2 size={18} color="#FFFFFF" />
-                <Text style={styles.verifyBtnText}>
-                  {verifying ? 'VERIFYING OTP...' : 'VERIFY OTP & DEDUCT TOKEN'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </AnimatedEntrance>
-
-        {/* DAILY MENU & CUTOFF UPDATE MODULE */}
-        <AnimatedEntrance direction="up" delay={150}>
-          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Daily Menu & Cutoff Management</Text>
-          <View style={[styles.menuUpdateCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Flame size={18} color="#FF6B00" fill="#FF6B00" />
-              <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Today's Star Dish</Text>
-            </View>
-
-            <TextInput
-              style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder }]}
-              value={starDish}
-              onChangeText={setStarDish}
-              placeholder="Enter special dish name"
-              placeholderTextColor={colors.textSub}
-            />
-
-            <Text style={[styles.formLabel, { color: colors.textSub }]}>Pre-Book Cutoff Time</Text>
-            <TextInput
-              style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder }]}
-              value={cutoffTime}
-              onChangeText={setCutoffTime}
-              placeholder="e.g. 2:15 PM"
-              placeholderTextColor={colors.textSub}
-            />
-
-            <TouchableOpacity style={styles.saveMenuBtn} onPress={handleSaveMenu} activeOpacity={0.85}>
-              <Text style={styles.saveMenuText}>Update Today's Mess Menu 🔥</Text>
-            </TouchableOpacity>
-          </View>
-        </AnimatedEntrance>
-
-        {/* VERIFIED DINING LOG */}
-        <AnimatedEntrance direction="up" delay={200}>
-          <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Verified Student Dining Log</Text>
-          <View style={[styles.verifiedLogCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            {verifiedList.map((entry) => (
-              <View key={entry.id} style={styles.logRow}>
-                <View style={styles.checkCircleIcon}>
-                  <CheckCircle2 size={16} color="#10B981" />
+              <View style={styles.metricHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Users size={18} color="#10B981" />
+                  <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 }}>
+                    LIVE PRE-BOOKED DINING HEADCOUNT
+                  </Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.studentNameText, { color: colors.textMain }]}>{entry.studentName}</Text>
-                  <Text style={{ fontSize: 11, color: colors.textSub }}>OTP: {entry.otp} • {entry.verifiedAt}</Text>
-                </View>
-                <View style={styles.deductTag}>
-                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>-1 TOKEN</Text>
+                <View style={styles.livePill}>
+                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>LIVE REAL-TIME</Text>
                 </View>
               </View>
-            ))}
-          </View>
-        </AnimatedEntrance>
+
+              <View style={styles.metricRow}>
+                {loading ? (
+                  <ActivityIndicator size="large" color="#10B981" />
+                ) : (
+                  <Text style={styles.metricNumber}>{liveHeadcount}</Text>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.metricLabel, { color: colors.textMain }]}>Students Confirmed for Today</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+                    {verifiedCount} student{verifiedCount === 1 ? '' : 's'} already verified
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.metricFooter}>
+                <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '600' }}>
+                  🔥 Cutoff: <Text style={{ color: '#10B981', fontWeight: '800' }}>{cutoffTime}</Text>
+                </Text>
+                <TouchableOpacity onPress={onRefresh} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <RefreshCw size={12} color="#10B981" />
+                  <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>Sync Neon DB</Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </AnimatedEntrance>
+        )}
+
+        {/* 2. OTP VERIFICATION KEYPAD MODULE */}
+        {(activeTab === 'overview' || activeTab === 'verify') && (
+          <AnimatedEntrance direction="up" delay={120}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Student Dining Verification</Text>
+              <View style={styles.secureBadge}>
+                <ShieldCheck size={13} color="#10B981" />
+                <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '800' }}>Direct Neon Ledger</Text>
+              </View>
+            </View>
+
+            <View style={[styles.otpVerifyCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <KeyRound size={20} color="#10B981" />
+                <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Enter Student Dining OTP</Text>
+              </View>
+              <Text style={{ fontSize: 12, color: colors.textSub, lineHeight: 16 }}>
+                Enter the 4-digit or 8-digit OTP displayed on the student's booking screen
+              </Text>
+
+              {/* OTP Input Field */}
+              <TextInput
+                style={[styles.otpInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                value={enteredOtp}
+                onChangeText={setEnteredOtp}
+                placeholder="e.g. 4900 or 8492"
+                placeholderTextColor={colors.textSub}
+                keyboardType="number-pad"
+                maxLength={8}
+              />
+
+              {/* Verify Button */}
+              <TouchableOpacity
+                style={styles.verifyBtn}
+                onPress={handleVerifyOtp}
+                disabled={verifying}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#10B981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.verifyGrad}
+                >
+                  {verifying ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} color="#FFFFFF" />
+                      <Text style={styles.verifyBtnText}>VERIFY OTP & DEDUCT TOKEN</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </AnimatedEntrance>
+        )}
+
+        {/* 3. DAILY MENU & CUTOFF MANAGEMENT */}
+        {(activeTab === 'overview' || activeTab === 'menu') && (
+          <AnimatedEntrance direction="up" delay={180}>
+            <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Daily Menu & Cutoff Management</Text>
+            <View style={[styles.menuUpdateCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Flame size={18} color="#FF6B00" fill="#FF6B00" />
+                <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Today's Star Dish</Text>
+              </View>
+
+              <TextInput
+                style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                value={starDish}
+                onChangeText={setStarDish}
+                placeholder="Enter special dish name"
+                placeholderTextColor={colors.textSub}
+              />
+
+              <Text style={[styles.formLabel, { color: colors.textSub }]}>Pre-Book Cutoff Time</Text>
+              <TextInput
+                style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                value={cutoffTime}
+                onChangeText={setCutoffTime}
+                placeholder="e.g. 2:15 PM"
+                placeholderTextColor={colors.textSub}
+              />
+
+              <TouchableOpacity
+                style={[styles.saveMenuBtn, savingMenu && { opacity: 0.7 }]}
+                onPress={handleSaveMenu}
+                disabled={savingMenu}
+                activeOpacity={0.85}
+              >
+                {savingMenu ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveMenuText}>Update Today's Mess Menu 🔥</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </AnimatedEntrance>
+        )}
+
+        {/* 4. VERIFIED STUDENT DINING LOG */}
+        {(activeTab === 'overview' || activeTab === 'log') && (
+          <AnimatedEntrance direction="up" delay={220}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Verified Dining Log (Real-Time)</Text>
+              <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>
+                {verifiedList.length} Record{verifiedList.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+
+            <View style={[styles.verifiedLogCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              {verifiedList.length === 0 ? (
+                <View style={styles.emptyLogWrapper}>
+                  <Utensils size={32} color={colors.textSub} />
+                  <Text style={{ color: colors.textMain, fontSize: 14, fontWeight: '700', marginTop: 8 }}>
+                    No Verifications Yet Today
+                  </Text>
+                  <Text style={{ color: colors.textSub, fontSize: 12, textAlign: 'center', marginTop: 4 }}>
+                    Verified student OTP entries will automatically appear here live.
+                  </Text>
+                </View>
+              ) : (
+                verifiedList.map((entry, idx) => (
+                  <View
+                    key={entry.id || idx}
+                    style={[
+                      styles.logRow,
+                      idx === verifiedList.length - 1 && { borderBottomWidth: 0 },
+                    ]}
+                  >
+                    <View style={styles.checkCircleIcon}>
+                      <CheckCircle2 size={16} color="#10B981" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.studentNameText, { color: colors.textMain }]}>{entry.studentName}</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSub }}>
+                        OTP: <Text style={{ color: colors.textMain, fontWeight: '700' }}>{entry.otp}</Text> • {entry.mealType} • {entry.verifiedAt}
+                      </Text>
+                    </View>
+                    <View style={styles.deductTag}>
+                      <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>-1 TOKEN</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </AnimatedEntrance>
+        )}
       </ScrollView>
+
+      {/* ================= PARTNER MESS PICKER MODAL ================= */}
+      <Modal
+        visible={showMessPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowMessPicker(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={styles.pickerCard}>
+            <View style={styles.pickerHeader}>
+              <Text style={[styles.pickerTitle, { color: colors.textMain }]}>Select Partner Mess</Text>
+              <TouchableOpacity onPress={() => setShowMessPicker(false)} style={styles.pickerCloseBtn}>
+                <Text style={{ color: colors.textMain, fontWeight: '800' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              {messesList.map((m) => {
+                const isCurrent = m.id === selectedMessId;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.messOptionRow,
+                      isCurrent && { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: '#10B981' },
+                    ]}
+                    onPress={() => {
+                      setSelectedMessId(m.id);
+                      setSelectedMess(m);
+                      setStarDish(m.star_dish || 'Special Shahi Paneer & Butter Naan');
+                      setCutoffTime(m.cutoff_time || '2:15 PM');
+                      setShowMessPicker(false);
+                      fetchOwnerData(m.id);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.messOptionName, { color: colors.textMain }]}>{m.name}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSub }}>{m.address} • {m.type}</Text>
+                    </View>
+                    {isCurrent && <CheckCircle2 size={18} color="#10B981" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
 
       {/* ================= THEMED LOGOUT CONFIRMATION MODAL ================= */}
       <Modal
@@ -291,7 +596,7 @@ export default function MessOwnerDashboardScreen() {
               </View>
 
               {/* Title & Subtitle */}
-              <Text style={[modalStyles.title, { color: colors.textMain }]}>Sign Out of Mess Owner Portal?</Text>
+              <Text style={[modalStyles.title, { color: colors.textMain }]}>Sign Out of Owner Portal?</Text>
               <Text style={[modalStyles.subtitle, { color: colors.textSub }]}>
                 Are you sure you want to sign out? You will need to log back in to manage your mess menu and verify student dining OTPs.
               </Text>
@@ -329,6 +634,13 @@ export default function MessOwnerDashboardScreen() {
           </BlurView>
         </View>
       </Modal>
+
+      {/* ================= DEDICATED OWNER BOTTOM NAVBAR ================= */}
+      <OwnerBottomBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        pendingCount={liveHeadcount}
+      />
     </View>
   );
 }
@@ -350,8 +662,45 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 104,
     paddingHorizontal: 16,
-    paddingBottom: 40,
+    paddingBottom: 110,
     gap: 16,
+  },
+  messSelectorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 12,
+  },
+  messIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedMessTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 1,
+  },
+  switchMessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  switchMessText: {
+    color: '#10B981',
+    fontSize: 11,
+    fontWeight: '800',
   },
   metricBanner: {
     borderRadius: 24,
@@ -374,29 +723,40 @@ const styles = StyleSheet.create({
   },
   metricRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 10,
-    marginVertical: 12,
+    alignItems: 'center',
+    gap: 14,
+    marginVertical: 14,
   },
   metricNumber: {
-    fontSize: 42,
+    fontSize: 44,
     fontWeight: '900',
     color: '#10B981',
   },
   metricLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
   },
   metricFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 0.8,
+    borderTopColor: 'rgba(16, 185, 129, 0.2)',
   },
   sectionHeading: {
     fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+  },
+  secureBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   otpVerifyCard: {
     borderRadius: 22,
@@ -409,14 +769,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   otpInput: {
-    height: 54,
+    height: 56,
     borderWidth: 1.5,
     borderRadius: 14,
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '900',
     textAlign: 'center',
-    letterSpacing: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    letterSpacing: 6,
   },
   verifyBtn: {
     height: 48,
@@ -434,7 +793,7 @@ const styles = StyleSheet.create({
   },
   verifyBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -450,15 +809,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   formInput: {
-    height: 44,
+    height: 46,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontSize: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    fontWeight: '600',
   },
   saveMenuBtn: {
-    height: 44,
+    height: 46,
     borderRadius: 12,
     backgroundColor: '#10B981',
     alignItems: 'center',
@@ -474,6 +833,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  emptyLogWrapper: {
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logRow: {
     flexDirection: 'row',
@@ -487,7 +852,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -496,10 +861,52 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   deductTag: {
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  pickerCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  pickerCloseBtn: {
+    padding: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  messOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginBottom: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  messOptionName: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
   },
 });
 

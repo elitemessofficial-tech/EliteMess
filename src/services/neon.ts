@@ -202,7 +202,6 @@ export async function getMealHistoryFromNeon(userId: string): Promise<MealHistor
     return [];
   }
 }
-
 export async function insertMealHistoryItemInNeon(
   userId: string,
   messName: string,
@@ -219,3 +218,183 @@ export async function insertMealHistoryItemInNeon(
     console.warn('[Neon DB] Insert meal history error:', error);
   }
 }
+
+// ----------------------------------------------------------------------
+// 5. MESS OWNER OPERATIONS
+// ----------------------------------------------------------------------
+export interface OwnerVerifiedLogItem {
+  id: string;
+  studentName: string;
+  collegeId: string;
+  otp: string;
+  mealType: string;
+  verifiedAt: string;
+  status?: string;
+}
+
+export async function updateMessMenuInNeon(
+  messId: string,
+  starDish: string,
+  cutoffTime: string,
+  highlights?: string[]
+): Promise<boolean> {
+  try {
+    if (highlights && highlights.length > 0) {
+      await sql`
+        UPDATE public.messes
+        SET star_dish = ${starDish}, cutoff_time = ${cutoffTime}, highlights = ${highlights}
+        WHERE id = ${messId};
+      `;
+    } else {
+      await sql`
+        UPDATE public.messes
+        SET star_dish = ${starDish}, cutoff_time = ${cutoffTime}
+        WHERE id = ${messId};
+      `;
+    }
+    return true;
+  } catch (error) {
+    console.warn('[Neon DB] Update mess menu error:', error);
+    return false;
+  }
+}
+
+export async function getMessOwnerDataFromNeon(messId: string): Promise<{
+  mess: MessDBRecord | null;
+  liveHeadcount: number;
+  verifiedCount: number;
+  verifiedLog: OwnerVerifiedLogItem[];
+}> {
+  try {
+    // 1. Get Mess Record
+    const messRows = await sql`
+      SELECT id, name, address, latitude, longitude, rating, distance, star_dish, image_url, highlights, cutoff_time, type, is_active
+      FROM public.messes
+      WHERE id = ${messId}
+      LIMIT 1
+    `;
+    const mess = messRows.length > 0 ? (messRows[0] as MessDBRecord) : null;
+
+    // 2. Get Live Booked Headcount (Active bookings today)
+    const headcountRows = await sql`
+      SELECT COUNT(*) as count
+      FROM public.meal_bookings
+      WHERE mess_id = ${messId} AND status = 'booked'
+    `;
+    const liveHeadcount = headcountRows.length > 0 ? Number(headcountRows[0].count) : 0;
+
+    // 3. Get Verified Headcount & Log
+    const verifiedRows = await sql`
+      SELECT b.id, b.user_id, b.otp, b.meal_type, b.status, b.created_at, p.full_name, p.phone_number
+      FROM public.meal_bookings b
+      LEFT JOIN public.profiles p ON b.user_id = p.id
+      WHERE b.mess_id = ${messId} AND (b.status = 'verified' OR b.status = 'completed')
+      ORDER BY b.created_at DESC
+      LIMIT 25
+    `;
+
+    const verifiedCount = verifiedRows.length;
+    const verifiedLog: OwnerVerifiedLogItem[] = verifiedRows.map((r: any) => {
+      const studentNum = (r.user_id || '').slice(-4) || '409';
+      return {
+        id: r.id,
+        studentName: r.full_name || `Student #${studentNum}`,
+        collegeId: r.phone_number ? `+91 ${r.phone_number.slice(-10)}` : `2026-CAMPUS-${studentNum}`,
+        otp: r.otp || '****',
+        mealType: r.meal_type || 'Lunch',
+        verifiedAt: new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        status: r.status,
+      };
+    });
+
+    return {
+      mess,
+      liveHeadcount,
+      verifiedCount,
+      verifiedLog,
+    };
+  } catch (error) {
+    console.warn('[Neon DB] getMessOwnerData error:', error);
+    return {
+      mess: null,
+      liveHeadcount: 0,
+      verifiedCount: 0,
+      verifiedLog: [],
+    };
+  }
+}
+
+export async function verifyOwnerOtpInNeon(
+  messId: string,
+  enteredOtp: string
+): Promise<{
+  success: boolean;
+  message: string;
+  entry?: OwnerVerifiedLogItem;
+}> {
+  try {
+    const cleanOtp = enteredOtp.trim().replace(/\D/g, '');
+    if (!cleanOtp) {
+      return { success: false, message: 'Please enter a valid numeric OTP.' };
+    }
+
+    // Match OTP (full 8 digits, 4 digits, or suffix/prefix match)
+    const bookingRows = await sql`
+      SELECT b.id, b.user_id, b.mess_id, b.meal_type, b.otp, b.status, b.created_at, p.full_name, p.phone_number, m.name as mess_name
+      FROM public.meal_bookings b
+      LEFT JOIN public.profiles p ON b.user_id = p.id
+      LEFT JOIN public.messes m ON b.mess_id = m.id
+      WHERE (b.mess_id = ${messId} OR ${messId} = '') 
+        AND b.status = 'booked'
+        AND (b.otp = ${cleanOtp} OR b.otp LIKE ${'%' + cleanOtp} OR ${cleanOtp} LIKE b.otp || '%')
+      ORDER BY b.created_at DESC
+      LIMIT 1
+    `;
+
+    if (bookingRows.length === 0) {
+      return {
+        success: false,
+        message: `No active booking found for OTP "${enteredOtp}". Please ensure the student has booked and the OTP is active.`,
+      };
+    }
+
+    const booking = bookingRows[0] as any;
+
+    // Mark as completed in Neon
+    await sql`
+      UPDATE public.meal_bookings
+      SET status = 'completed'
+      WHERE id = ${booking.id};
+    `;
+
+    // Insert into meal history
+    await sql`
+      INSERT INTO public.meal_history (user_id, mess_name, meal_type, status, tokens_used)
+      VALUES (${booking.user_id}, ${booking.mess_name || 'Campus Mess'}, ${booking.meal_type}, 'completed', 1);
+    `;
+
+    const studentNum = (booking.user_id || '').slice(-4) || '849';
+    const entry: OwnerVerifiedLogItem = {
+      id: booking.id,
+      studentName: booking.full_name || `Student #${studentNum}`,
+      collegeId: booking.phone_number ? `+91 ${booking.phone_number.slice(-10)}` : `2026-CAMPUS-${studentNum}`,
+      otp: booking.otp,
+      mealType: booking.meal_type || 'Lunch',
+      verifiedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'completed',
+    };
+
+    return {
+      success: true,
+      message: `Verified! 1 Token redeemed for ${entry.studentName} (${entry.mealType}).`,
+      entry,
+    };
+  } catch (error) {
+    console.warn('[Neon DB] verifyOwnerOtp error:', error);
+    return {
+      success: false,
+      message: 'Database error while verifying OTP. Please try again.',
+    };
+  }
+}
+

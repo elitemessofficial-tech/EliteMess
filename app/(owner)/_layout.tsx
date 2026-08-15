@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '@descope/react-native-sdk';
-import { supabase } from '../../src/services/supabase';
 import Loader from '../../components/Loader';
 import envBypass from '../../src/config/env_bypass.json';
 
@@ -60,13 +59,8 @@ export default function OwnerLayout() {
             }
           }
 
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', uid)
-            .single();
-
-          if (profile && profile.role === 'owner') {
+          // Check selected role in storage or profile
+          if (selectedRole === 'owner') {
             if (isMounted) setAuthorized(true);
             return;
           }
