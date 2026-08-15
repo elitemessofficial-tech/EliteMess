@@ -112,22 +112,13 @@ export default function MessOwnerDashboardScreen() {
 
       // 2. Fetch real live headcount and verified logs from Neon
       const ownerStats = await getMessOwnerDataFromNeon(currentMess ? currentMess.id : messId);
-      
-      // Real headcount from DB (plus any fallback active booking in storage)
-      let headCount = ownerStats.liveHeadcount;
-      try {
-        const localActive = await AsyncStorage.getItem('mealhop_active_booking');
-        if (localActive && localActive !== 'EXPIRED') {
-          const parsed = JSON.parse(localActive);
-          if (parsed && parsed.status === 'booked') {
-            headCount = Math.max(headCount, 1);
-          }
-        }
-      } catch (e) {}
+
+      // Strictly real headcount from DB (0 if no active un-redeemed bookings exist)
+      const headCount = Number(ownerStats.liveHeadcount) || 0;
 
       setLiveHeadcount(headCount);
-      setVerifiedCount(ownerStats.verifiedCount);
-      setVerifiedList(ownerStats.verifiedLog);
+      setVerifiedCount(ownerStats.verifiedCount || 0);
+      setVerifiedList(ownerStats.verifiedLog || []);
     } catch (error) {
       console.warn('Error loading real owner data:', error);
     } finally {
@@ -342,14 +333,15 @@ export default function MessOwnerDashboardScreen() {
               style={styles.metricBanner}
             >
               <View style={styles.metricHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Users size={18} color="#10B981" />
-                  <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 }}>
-                    LIVE PRE-BOOKED DINING HEADCOUNT
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                  <Users size={16} color="#10B981" />
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 0.3 }} numberOfLines={1}>
+                    DINING HEADCOUNT
                   </Text>
                 </View>
                 <View style={styles.livePill}>
-                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>LIVE REAL-TIME</Text>
+                  <View style={styles.liveDot} />
+                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>LIVE</Text>
                 </View>
               </View>
 
@@ -714,12 +706,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 0.8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
   },
   metricRow: {
     flexDirection: 'row',

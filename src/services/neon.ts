@@ -279,7 +279,9 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
     const headcountRows = await sql`
       SELECT COUNT(*) as count
       FROM public.meal_bookings
-      WHERE mess_id = ${messId} AND status = 'booked'
+      WHERE mess_id = ${messId} 
+        AND status = 'booked'
+        AND created_at >= NOW() - INTERVAL '24 HOURS'
     `;
     const liveHeadcount = headcountRows.length > 0 ? Number(headcountRows[0].count) : 0;
 
@@ -288,7 +290,9 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
       SELECT b.id, b.user_id, b.otp, b.meal_type, b.status, b.created_at, p.full_name, p.phone_number
       FROM public.meal_bookings b
       LEFT JOIN public.profiles p ON b.user_id = p.id
-      WHERE b.mess_id = ${messId} AND (b.status = 'verified' OR b.status = 'completed')
+      WHERE b.mess_id = ${messId} 
+        AND (b.status = 'verified' OR b.status = 'completed')
+        AND b.created_at >= NOW() - INTERVAL '24 HOURS'
       ORDER BY b.created_at DESC
       LIMIT 25
     `;
