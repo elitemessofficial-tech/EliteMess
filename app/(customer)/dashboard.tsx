@@ -42,6 +42,7 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import ReviewsModal from '../../src/components/ReviewsModal';
 import ConfirmModal from '../../components/ConfirmModal';
 import MessDirectionsModal from '../../src/components/MessDirectionsModal';
+import RefundVerificationModal from '../../src/components/RefundVerificationModal';
 
 const modalStyles = StyleSheet.create({
   overlay: {
@@ -584,77 +585,12 @@ export default function DashboardScreen() {
       </ScrollView>
 
       {/* =============== CANCEL & REFUND THEMED MODAL CARD =============== */}
-      <Modal
+      <RefundVerificationModal
         visible={showCancelModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowCancelModal(false)}
-      >
-        <TouchableOpacity
-          style={modalStyles.overlay}
-          activeOpacity={1}
-          onPress={() => setShowCancelModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={modalStyles.cardWrapper}>
-            <View style={[modalStyles.card, { backgroundColor: isDark ? '#0F1A17' : '#FFFFFF', borderColor: 'rgba(239, 68, 68, 0.35)' }]}>
-              {/* Lottie Wrong Animation */}
-              <LottieView
-                source={require('../../assets/images/wrong.lottie')}
-                autoPlay
-                loop
-                style={{ width: 80, height: 80, marginBottom: 8 }}
-              />
-
-              {/* Title & Subtitle */}
-              <Text style={[modalStyles.title, { color: colors.textMain }]}>Cancel Meal Booking?</Text>
-              <Text style={[modalStyles.subtitle, { color: colors.textSub }]}>
-                Your 1 meal token will be refunded immediately back to your pass balance.
-              </Text>
-
-              {/* Booking Summary Box */}
-              {activeBooking && (
-                <View style={modalStyles.summaryBox}>
-                  <View style={modalStyles.summaryRow}>
-                    <Utensils size={14} color="#10B981" />
-                    <Text style={[modalStyles.summaryText, { color: colors.textMain }]}>{activeBooking.messName}</Text>
-                  </View>
-                  <View style={modalStyles.summaryRow}>
-                    <ShieldCheck size={14} color="#10B981" />
-                    <Text style={[modalStyles.summaryText, { color: colors.textSub }]}>OTP: {activeBooking.otp}</Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Action Buttons */}
-              <TouchableOpacity
-                style={[modalStyles.confirmBtn, cancelling && { opacity: 0.6 }]}
-                onPress={confirmCancelBooking}
-                activeOpacity={0.88}
-                disabled={cancelling}
-              >
-                <LinearGradient
-                  colors={['#EF4444', '#DC2626']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={modalStyles.confirmBtnGrad}
-                >
-                  <Text style={modalStyles.confirmBtnText}>
-                    {cancelling ? 'Refunding...' : 'Confirm & Refund 1 Token'}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={modalStyles.keepBtn}
-                onPress={() => setShowCancelModal(false)}
-                activeOpacity={0.85}
-              >
-                <Text style={[modalStyles.keepBtnText, { color: colors.textMain }]}>Keep My Booking</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        activeBooking={activeBooking}
+        onClose={() => setShowCancelModal(false)}
+        onConfirmRefund={cancelBooking}
+      />
 
       <ConfirmModal
         visible={confirmModal.visible}

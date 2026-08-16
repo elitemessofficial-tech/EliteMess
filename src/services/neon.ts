@@ -186,6 +186,70 @@ export async function updateBookingStatusInNeon(bookingId: string, status: strin
   }
 }
 
+export async function attemptAtomicRefundInNeon(
+  bookingId: string,
+  otp: string,
+  userId: string
+): Promise<{ success: boolean; reason?: 'already_completed' | 'not_found' | 'db_error'; message: string }> {
+  try {
+    const cleanOtp = (otp || '').trim().replace(/\D/g, '');
+
+    // 1. Check current status in Neon
+    const existing = await sql`
+      SELECT id, status, otp, mess_id, meal_type FROM public.meal_bookings
+      WHERE (id = ${bookingId} OR otp = ${cleanOtp} OR otp = ${otp})
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    if (existing.length === 0) {
+      return {
+        success: false,
+        reason: 'not_found',
+        message: 'No active booking record found to refund.',
+      };
+    }
+
+    const currentStatus = existing[0].status;
+    if (currentStatus === 'completed' || currentStatus === 'verified') {
+      return {
+        success: false,
+        reason: 'already_completed',
+        message: 'This OTP has already been redeemed and verified by the Mess Owner.',
+      };
+    }
+
+    // 2. Atomic update: only succeeds if status IS STILL 'booked'
+    const updateResult = await sql`
+      UPDATE public.meal_bookings
+      SET status = 'cancelled'
+      WHERE id = ${existing[0].id} AND status = 'booked'
+      RETURNING id, status;
+    `;
+
+    if (updateResult.length > 0) {
+      return {
+        success: true,
+        message: '1 Meal Token refunded successfully.',
+      };
+    } else {
+      // Concurrently marked completed
+      return {
+        success: false,
+        reason: 'already_completed',
+        message: 'This OTP was just redeemed and verified by the Mess Owner.',
+      };
+    }
+  } catch (error) {
+    console.warn('[Neon DB] Atomic refund error:', error);
+    return {
+      success: false,
+      reason: 'db_error',
+      message: 'Database check failed. Please try again.',
+    };
+  }
+}
+
 // ----------------------------------------------------------------------
 // 4. MEAL HISTORY OPERATIONS
 // ----------------------------------------------------------------------

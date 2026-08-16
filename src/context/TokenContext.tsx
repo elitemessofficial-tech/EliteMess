@@ -10,6 +10,7 @@ import {
   getActiveBookingFromNeon,
   createBookingInNeon,
   updateBookingStatusInNeon,
+  attemptAtomicRefundInNeon,
   getMealHistoryFromNeon,
   insertMealHistoryItemInNeon,
 } from '../services/neon';
@@ -67,7 +68,7 @@ interface TokenContextType {
     mealType: 'Lunch' | 'Dinner',
     menuHighlights: string[]
   ) => Promise<{ success: boolean; message?: string }>;
-  cancelBooking: () => Promise<void>;
+  cancelBooking: () => Promise<{ success: boolean; message: string; reason?: string }>;
   expireBooking: () => Promise<void>;
   completeBooking: () => Promise<void>;
   skipMeal: () => Promise<{ success: boolean; message?: string }>;
@@ -850,9 +851,11 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { success: true };
   };
 
-  // Cancel Active Booking
-  const cancelBooking = async () => {
-    if (!activeBooking) return;
+  // Cancel Active Booking with Atomic Ledger Verification
+  const cancelBooking = async (): Promise<{ success: boolean; message: string; reason?: string }> => {
+    if (!activeBooking) {
+      return { success: false, message: 'No active booking to cancel.' };
+    }
 
     const userId = await getCurrentUserId();
     const activeKey = getScopedKey(STORAGE_KEYS.ACTIVE_BOOKING, userId);
@@ -862,6 +865,24 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const currentBooking = activeBooking;
     const cleanOtp = currentBooking.otp.replace(/[\s-]/g, '');
 
+    // 1. Atomically verify & mark cancelled on Neon DB
+    const neonRes = await attemptAtomicRefundInNeon(currentBooking.bookingId, cleanOtp, userId);
+
+    if (!neonRes.success && neonRes.reason === 'already_completed') {
+      // OTP was already redeemed by the Mess Owner!
+      // Do NOT refund token. Clear active booking locally since it's already consumed.
+      setActiveBooking(null);
+      await AsyncStorage.setItem(activeKey, 'COMPLETED');
+      await AsyncStorage.setItem('mealhop_active_booking', 'COMPLETED');
+
+      return {
+        success: false,
+        reason: 'already_completed',
+        message: 'This OTP has already been redeemed and verified by the Mess Owner.',
+      };
+    }
+
+    // 2. Verified active -> proceed with local token refund
     const newInvOTPs = [...invalidatedOTPs, cleanOtp];
     setInvalidatedOTPs(newInvOTPs);
     await AsyncStorage.setItem(invKey, JSON.stringify(newInvOTPs));
@@ -883,12 +904,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       mealType: currentBooking.mealType,
       status: 'cancelled',
       tokensUsed: -1,
-      date: new Date().toLocaleDateString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      date: formatToIST(new Date()),
     };
 
     const rawHistory = [refundItem, ...mealHistory];
@@ -896,9 +912,10 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setMealHistory(expanded);
     await AsyncStorage.setItem(historyKey, JSON.stringify(expanded));
 
-    try {
-      await updateBookingStatusInNeon(currentBooking.otp, 'cancelled');
-    } catch (e) {}
+    return {
+      success: true,
+      message: '1 Meal Token has been credited back to your balance.',
+    };
   };
 
   // Expire Booking (No-show)
