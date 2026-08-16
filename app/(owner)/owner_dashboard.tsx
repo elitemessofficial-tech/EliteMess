@@ -41,6 +41,12 @@ import {
   Phone,
   CreditCard,
   Settings,
+  Wallet,
+  Landmark,
+  ArrowUpRight,
+  Receipt,
+  Banknote,
+  IndianRupee,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -66,8 +72,8 @@ export default function MessOwnerDashboardScreen() {
   const { manageSession } = useSession();
   const { isDark, toggleTheme } = useAppTheme();
 
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<OwnerTabType>('overview');
+  // Navigation tab state (defaults to Dining Log)
+  const [activeTab, setActiveTab] = useState<OwnerTabType>('log');
 
   // Mess Selection state
   const [messesList, setMessesList] = useState<MessDBRecord[]>([]);
@@ -355,8 +361,8 @@ export default function MessOwnerDashboardScreen() {
           </TouchableOpacity>
         </AnimatedEntrance>
 
-        {/* 1. OVERVIEW SECTION / LIVE HEADCOUNT */}
-        {(activeTab === 'overview' || activeTab === 'verify') && (
+        {/* 1. DINING HEADCOUNT BANNER */}
+        {(activeTab === 'log' || activeTab === 'verify') && (
           <AnimatedEntrance direction="up" delay={60}>
             <LinearGradient
               colors={isDark ? ['#0F241C', '#061712'] : ['#ECFDF5', '#D1FAE5']}
@@ -411,7 +417,7 @@ export default function MessOwnerDashboardScreen() {
         )}
 
         {/* 2. OTP VERIFICATION KEYPAD MODULE */}
-        {(activeTab === 'overview' || activeTab === 'verify') && (
+        {(activeTab === 'log' || activeTab === 'verify') && (
           <AnimatedEntrance direction="up" delay={120}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
               <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Student Dining Verification</Text>
@@ -499,7 +505,7 @@ export default function MessOwnerDashboardScreen() {
         )}
 
         {/* 3. DAILY MENU & CUTOFF MANAGEMENT */}
-        {(activeTab === 'overview' || activeTab === 'menu') && (
+        {activeTab === 'menu' && (
           <AnimatedEntrance direction="up" delay={180}>
             <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Daily Menu & Cutoff Management</Text>
             <View style={[styles.menuUpdateCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
@@ -578,7 +584,7 @@ export default function MessOwnerDashboardScreen() {
         )}
 
         {/* 4. VERIFIED STUDENT DINING LOG */}
-        {(activeTab === 'overview' || activeTab === 'log') && (
+        {(activeTab === 'log' || activeTab === 'verify') && (
           <AnimatedEntrance direction="up" delay={220}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Verified Dining Log (Real-Time)</Text>
@@ -626,7 +632,154 @@ export default function MessOwnerDashboardScreen() {
           </AnimatedEntrance>
         )}
 
-        {/* 5. OWNER PROFILE & BUSINESS SETTINGS SECTION */}
+        {/* 5. SETTLEMENTS & PAYOUTS SECTION */}
+        {activeTab === 'payouts' && (
+          <AnimatedEntrance direction="up" delay={60}>
+            {/* Payout Hero Card */}
+            <LinearGradient
+              colors={isDark ? ['#0F241C', '#061712', '#0C2B20'] : ['#ECFDF5', '#D1FAE5', '#A7F3D0']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.payoutHeroCard}
+            >
+              <View style={styles.payoutHeroHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Wallet size={16} color="#10B981" />
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
+                    AVAILABLE SETTLEMENT BALANCE
+                  </Text>
+                </View>
+                <View style={styles.settlePill}>
+                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>AUTO-DEPOSIT ACTIVE</Text>
+                </View>
+              </View>
+
+              <Text style={[styles.payoutAmountBig, { color: colors.textMain }]}>
+                ₹{(verifiedCount || 1) * 50 + 1650}
+                <Text style={{ fontSize: 14, color: colors.textSub, fontWeight: '600' }}>.00</Text>
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSub, marginTop: 2 }}>
+                Includes {verifiedCount} verified student meal{verifiedCount === 1 ? '' : 's'} today @ ₹50/meal
+              </Text>
+
+              {/* Instant Settlement Button */}
+              <TouchableOpacity
+                style={styles.requestPayoutBtn}
+                onPress={() => {
+                  showFeedback(
+                    'Payout Request Submitted! 💸',
+                    `Settlement of ₹${(verifiedCount || 1) * 50 + 1650} has been sent for processing. Funds will be directly credited to HDFC Bank A/C •••• 4092 via IMPS within 15 minutes.`,
+                    'success'
+                  );
+                }}
+                activeOpacity={0.88}
+              >
+                <LinearGradient
+                  colors={['#10B981', '#047857']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.requestPayoutGrad}
+                >
+                  <ArrowUpRight size={16} color="#FFFFFF" />
+                  <Text style={styles.requestPayoutText}>Request Instant Payout (IMPS / UPI)</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
+
+            {/* 3-Col KPI Metrics */}
+            <View style={styles.payoutKpiRow}>
+              <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700' }}>TODAY'S REVENUE</Text>
+                <Text style={[styles.payoutKpiValue, { color: '#10B981' }]}>
+                  ₹{(verifiedCount || 1) * 50}
+                </Text>
+                <Text style={{ fontSize: 10, color: colors.textSub }}>{verifiedCount || 1} meals redeemed</Text>
+              </View>
+
+              <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700' }}>BASE RATE / MEAL</Text>
+                <Text style={[styles.payoutKpiValue, { color: colors.textMain }]}>₹50.00</Text>
+                <Text style={{ fontSize: 10, color: colors.textSub }}>Fixed partner payout</Text>
+              </View>
+
+              <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+                <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700' }}>LIFETIME SETTLED</Text>
+                <Text style={[styles.payoutKpiValue, { color: colors.textMain }]}>₹52,400</Text>
+                <Text style={{ fontSize: 10, color: colors.textSub }}>1,048 total diners</Text>
+              </View>
+            </View>
+
+            {/* Registered Bank / UPI Card */}
+            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>
+              Registered Settlement Account
+            </Text>
+            <View style={[styles.bankAccountCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              <View style={styles.bankAccountHeader}>
+                <View style={styles.bankIconCircle}>
+                  <Landmark size={18} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.bankAccountTitle, { color: colors.textMain }]}>HDFC Bank Current A/C</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSub }}>Primary Disbursement Account</Text>
+                </View>
+                <View style={styles.verifiedKycPill}>
+                  <ShieldCheck size={11} color="#10B981" />
+                  <Text style={{ fontSize: 10, color: '#10B981', fontWeight: '800' }}>KYC VERIFIED</Text>
+                </View>
+              </View>
+
+              <View style={styles.bankDetailRow}>
+                <Text style={{ fontSize: 11, color: colors.textSub }}>Account Number:</Text>
+                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>•••• •••• •••• 4092</Text>
+              </View>
+              <View style={styles.bankDetailRow}>
+                <Text style={{ fontSize: 11, color: colors.textSub }}>IFSC Code:</Text>
+                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>HDFC0001824</Text>
+              </View>
+              <View style={[styles.bankDetailRow, { borderBottomWidth: 0 }]}>
+                <Text style={{ fontSize: 11, color: colors.textSub }}>UPI ID:</Text>
+                <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>elitemess.annapurna@okaxis</Text>
+              </View>
+            </View>
+
+            {/* Recent Settlement Transactions */}
+            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>
+              Recent Settlement History
+            </Text>
+            <View style={[styles.verifiedLogCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              {[
+                { amount: '₹2,450', mode: 'Direct IMPS Payout', ref: 'TXN-9842189', date: 'Yesterday • 6:15 PM' },
+                { amount: '₹3,100', mode: 'NEFT Bank Transfer', ref: 'TXN-9810472', date: 'Aug 14 • 6:00 PM' },
+                { amount: '₹1,950', mode: 'Instant UPI Payout', ref: 'TXN-9781944', date: 'Aug 13 • 6:10 PM' },
+                { amount: '₹2,800', mode: 'NEFT Bank Transfer', ref: 'TXN-9742210', date: 'Aug 12 • 6:00 PM' },
+              ].map((tx, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.logRow,
+                    idx === 3 && { borderBottomWidth: 0 },
+                  ]}
+                >
+                  <View style={styles.settleTxIcon}>
+                    <Receipt size={16} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.studentNameText, { color: colors.textMain }]}>{tx.amount} Received</Text>
+                    <Text style={{ fontSize: 11, color: colors.textSub }}>
+                      {tx.mode} • Ref #{tx.ref}
+                    </Text>
+                    <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 1 }}>{tx.date}</Text>
+                  </View>
+                  <View style={styles.settleSuccessTag}>
+                    <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>SETTLED ✅</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </AnimatedEntrance>
+        )}
+
+        {/* 6. OWNER PROFILE & BUSINESS SETTINGS SECTION */}
         {activeTab === 'profile' && (
           <AnimatedEntrance direction="up" delay={60}>
             {/* Manager Profile Hero Card */}
@@ -1374,6 +1527,140 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     marginBottom: 2,
+  },
+  // ---- Payouts & Settlement Styles ----
+  payoutHeroCard: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  payoutHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  settlePill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  payoutAmountBig: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  requestPayoutBtn: {
+    height: 48,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginTop: 16,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  requestPayoutGrad: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  requestPayoutText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  payoutKpiRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  payoutKpiCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 2,
+  },
+  payoutKpiValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  bankAccountCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 8,
+    gap: 10,
+  },
+  bankAccountHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 0.8,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  bankIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bankAccountTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  verifiedKycPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  bankDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderBottomWidth: 0.8,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  settleTxIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  settleSuccessTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
   },
 });
 

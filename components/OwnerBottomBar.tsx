@@ -9,15 +9,15 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  LayoutDashboard,
+  ClipboardList,
   QrCode,
   UtensilsCrossed,
-  ClipboardList,
+  Wallet,
   User,
 } from 'lucide-react-native';
 import { useAppTheme } from '../src/context/ThemeContext';
 
-export type OwnerTabType = 'overview' | 'menu' | 'verify' | 'log' | 'profile';
+export type OwnerTabType = 'log' | 'menu' | 'verify' | 'payouts' | 'profile';
 
 interface OwnerBottomBarProps {
   activeTab: OwnerTabType;
@@ -54,25 +54,25 @@ export default function OwnerBottomBar({
         ]}
       >
         <View style={styles.tabsRow}>
-          {/* 1. Overview Tab */}
+          {/* 1. Dining Log Tab (Replaced Overview) */}
           <TouchableOpacity
             style={styles.tabItem}
-            onPress={() => onTabChange('overview')}
+            onPress={() => onTabChange('log')}
             activeOpacity={0.7}
           >
-            <LayoutDashboard
+            <ClipboardList
               size={21}
-              color={activeTab === 'overview' ? navColors.active : navColors.inactive}
-              strokeWidth={activeTab === 'overview' ? 2.5 : 1.8}
+              color={activeTab === 'log' ? navColors.active : navColors.inactive}
+              strokeWidth={activeTab === 'log' ? 2.5 : 1.8}
             />
             <Text
               style={[
                 styles.tabLabel,
-                { color: activeTab === 'overview' ? navColors.active : navColors.inactive },
-                activeTab === 'overview' && styles.tabLabelActive,
+                { color: activeTab === 'log' ? navColors.active : navColors.inactive },
+                activeTab === 'log' && styles.tabLabelActive,
               ]}
             >
-              Overview
+              Dining Log
             </Text>
           </TouchableOpacity>
 
@@ -135,25 +135,25 @@ export default function OwnerBottomBar({
             </Text>
           </View>
 
-          {/* 4. Dining Log Tab */}
+          {/* 4. Payouts & Earnings Tab */}
           <TouchableOpacity
             style={styles.tabItem}
-            onPress={() => onTabChange('log')}
+            onPress={() => onTabChange('payouts')}
             activeOpacity={0.7}
           >
-            <ClipboardList
+            <Wallet
               size={21}
-              color={activeTab === 'log' ? navColors.active : navColors.inactive}
-              strokeWidth={activeTab === 'log' ? 2.5 : 1.8}
+              color={activeTab === 'payouts' ? navColors.active : navColors.inactive}
+              strokeWidth={activeTab === 'payouts' ? 2.5 : 1.8}
             />
             <Text
               style={[
                 styles.tabLabel,
-                { color: activeTab === 'log' ? navColors.active : navColors.inactive },
-                activeTab === 'log' && styles.tabLabelActive,
+                { color: activeTab === 'payouts' ? navColors.active : navColors.inactive },
+                activeTab === 'payouts' && styles.tabLabelActive,
               ]}
             >
-              Dining Log
+              Payouts
             </Text>
           </TouchableOpacity>
 
