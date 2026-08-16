@@ -290,7 +290,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const todayStr = getISTDateString();
       const currentHour = getISTCurrentDecimalHours();
       const isAfter1130AM = currentHour >= 11.5;
-      const isAfter730PM = currentHour >= 19.5;
+      const isAfter700PM = currentHour >= 19.0;
 
       let lastLunch = currState.lastLunchCutoffDate || '';
       let lastDinner = currState.lastDinnerCutoffDate || '';
@@ -348,9 +348,9 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         bookedLunchToday || bookedDinnerToday || todayBookings.length > 0;
 
       // 2. Evaluation for 30-Meal Pass (1 Meal / Day - Single Slot)
-      // Cutoff occurs after 7:30 PM (when both lunch & dinner booking cutoffs for the day have passed)
+      // Cutoff occurs after 7:00 PM (when both lunch & dinner booking cutoffs for the day have passed)
       if (currState.planType === 'single') {
-        if (isAfter730PM && lastDaily !== todayStr && updatedRemTokens > 0) {
+        if (isAfter700PM && lastDaily !== todayStr && updatedRemTokens > 0) {
           lastDaily = todayStr;
           if (!bookedAnyMealToday) {
             if (updatedRemSkips > 0) {
@@ -358,7 +358,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               updatedRemSkips = Math.max(0, updatedRemSkips - 1);
               historyToAdd.push({
                 id: `hist_skip_auto_${Date.now()}`,
-                messName: '1 Skip Pass Auto-Used (No Meal Booked by 7:30 PM Cutoff)',
+                messName: '1 Skip Pass Auto-Used (No Meal Booked by 7:00 PM Cutoff)',
                 mealType: 'Dinner',
                 status: 'skipped',
                 tokensUsed: 0,
@@ -369,7 +369,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               updatedRemTokens = Math.max(0, updatedRemTokens - 1);
               historyToAdd.push({
                 id: `hist_meal_exp_${Date.now()}`,
-                messName: '1 Meal Token Expired (No Meal Booked by 7:30 PM Cutoff)',
+                messName: '1 Meal Token Expired (No Meal Booked by 7:00 PM Cutoff)',
                 mealType: 'Dinner',
                 status: 'no-show',
                 tokensUsed: 1,
@@ -410,15 +410,15 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           }
         }
 
-        // B) Dinner Cutoff (7:30 PM)
-        if (isAfter730PM && lastDinner !== todayStr && updatedRemTokens > 0) {
+        // B) Dinner Cutoff (7:00 PM)
+        if (isAfter700PM && lastDinner !== todayStr && updatedRemTokens > 0) {
           lastDinner = todayStr;
           if (!bookedDinnerToday) {
             if (updatedRemSkips > 0) {
               updatedRemSkips = Math.max(0, updatedRemSkips - 1);
               historyToAdd.push({
                 id: `hist_skip_dinner_${Date.now()}`,
-                messName: '1 Skip Pass Auto-Used (Dinner Cutoff Missed at 7:30 PM)',
+                messName: '1 Skip Pass Auto-Used (Dinner Cutoff Missed at 7:00 PM)',
                 mealType: 'Dinner',
                 status: 'skipped',
                 tokensUsed: 0,
@@ -428,7 +428,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               updatedRemTokens = Math.max(0, updatedRemTokens - 1);
               historyToAdd.push({
                 id: `hist_meal_dinner_${Date.now()}`,
-                messName: '1 Meal Token Expired (Dinner Cutoff Missed at 7:30 PM)',
+                messName: '1 Meal Token Expired (Dinner Cutoff Missed at 7:00 PM)',
                 mealType: 'Dinner',
                 status: 'no-show',
                 tokensUsed: 1,

@@ -59,7 +59,7 @@ const PLAN_TIERS: PlanTier[] = [
     features: [
       '30 Meal Tokens (1 Meal/day: Lunch or Dinner)',
       '5 Skip & Rollover Passes',
-      'Daily Cutoff Auto-Deduct at 7:30 PM IST if un-booked',
+      'Daily Cutoff Auto-Deduct at 7:00 PM IST if un-booked',
       'Unused Skips extend pass after 30 days',
       'Mess Hopping across all partner messes',
     ],
@@ -77,7 +77,7 @@ const PLAN_TIERS: PlanTier[] = [
     features: [
       '60 Meal Tokens (2 Meals/day: 1 Lunch + 1 Dinner)',
       '10 Skip & Rollover Passes',
-      'Cutoff Auto-Deduct: 11:30 AM & 7:30 PM IST',
+      'Cutoff Auto-Deduct: 11:30 AM & 7:00 PM IST',
       'Unused Skips extend pass after 30 days',
       'Priority Mess Counter Clearance',
     ],

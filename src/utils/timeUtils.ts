@@ -23,7 +23,7 @@ export function getISTDateString(): string {
 }
 
 /**
- * Returns current IST time in decimal hours (e.g. 11:30 AM IST = 11.5, 7:30 PM IST = 19.5)
+ * Returns current IST time in decimal hours (e.g. 11:30 AM IST = 11.5, 7:00 PM IST = 19.0)
  */
 export function getISTCurrentDecimalHours(): number {
   const ist = getISTDate();
