@@ -341,6 +341,7 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
   mess: MessDBRecord | null;
   liveHeadcount: number;
   verifiedCount: number;
+  totalLifetimeMeals: number;
   verifiedLog: OwnerVerifiedLogItem[];
 }> {
   try {
@@ -363,7 +364,7 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
     `;
     const liveHeadcount = headcountRows.length > 0 ? Number(headcountRows[0].count) : 0;
 
-    // 3. Get Verified Headcount & Log
+    // 3. Get Verified Headcount & Log (Last 24 hours)
     const verifiedRows = await sql`
       SELECT b.id, b.user_id, b.otp, b.meal_type, b.status, b.created_at, p.full_name, p.phone_number
       FROM public.meal_bookings b
@@ -389,10 +390,20 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
       };
     });
 
+    // 4. Get Total All-Time Lifetime Verified Diners
+    const totalLifetimeRows = await sql`
+      SELECT COUNT(*) as count
+      FROM public.meal_bookings
+      WHERE mess_id = ${messId}
+        AND (status = 'verified' OR status = 'completed')
+    `;
+    const totalLifetimeMeals = totalLifetimeRows.length > 0 ? Number(totalLifetimeRows[0].count) : verifiedCount;
+
     return {
       mess,
       liveHeadcount,
       verifiedCount,
+      totalLifetimeMeals,
       verifiedLog,
     };
   } catch (error) {
@@ -401,6 +412,7 @@ export async function getMessOwnerDataFromNeon(messId: string): Promise<{
       mess: null,
       liveHeadcount: 0,
       verifiedCount: 0,
+      totalLifetimeMeals: 0,
       verifiedLog: [],
     };
   }

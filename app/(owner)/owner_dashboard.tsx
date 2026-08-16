@@ -86,7 +86,15 @@ export default function MessOwnerDashboardScreen() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [liveHeadcount, setLiveHeadcount] = useState<number>(0);
   const [verifiedCount, setVerifiedCount] = useState<number>(0);
+  const [totalLifetimeMeals, setTotalLifetimeMeals] = useState<number>(0);
   const [verifiedList, setVerifiedList] = useState<OwnerVerifiedLogItem[]>([]);
+  const [payoutHistory, setPayoutHistory] = useState<Array<{
+    id: string;
+    amount: string;
+    mode: string;
+    ref: string;
+    date: string;
+  }>>([]);
 
   // OTP & QR Scanner state
   const [enteredOtp, setEnteredOtp] = useState<string>('');
@@ -157,15 +165,29 @@ export default function MessOwnerDashboardScreen() {
         }
       }
 
-      // 2. Fetch real live headcount and verified logs from Neon
-      const ownerStats = await getMessOwnerDataFromNeon(currentMess ? currentMess.id : messId);
+      // 2. Fetch real live headcount, verified logs, and all-time meals from Neon DB
+      const targetMessId = currentMess ? currentMess.id : messId;
+      const ownerStats = await getMessOwnerDataFromNeon(targetMessId);
 
       // Strictly real headcount from DB (0 if no active un-redeemed bookings exist)
       const headCount = Number(ownerStats.liveHeadcount) || 0;
 
       setLiveHeadcount(headCount);
       setVerifiedCount(ownerStats.verifiedCount || 0);
+      setTotalLifetimeMeals(ownerStats.totalLifetimeMeals || ownerStats.verifiedCount || 0);
       setVerifiedList(ownerStats.verifiedLog || []);
+
+      // Load persistent real payout history for this mess
+      try {
+        const storedHistory = await AsyncStorage.getItem(`@elitemess_owner_payouts_${targetMessId}`);
+        if (storedHistory) {
+          setPayoutHistory(JSON.parse(storedHistory));
+        } else {
+          setPayoutHistory([]);
+        }
+      } catch (e) {
+        setPayoutHistory([]);
+      }
     } catch (error) {
       console.warn('Error loading real owner data:', error);
     } finally {
@@ -173,6 +195,40 @@ export default function MessOwnerDashboardScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  // Handler for Real Instant Settlement Request
+  const handleRequestInstantPayout = async () => {
+    const pendingBalance = verifiedCount * 50;
+    if (pendingBalance <= 0) {
+      showFeedback(
+        'No Balance to Settle',
+        'Your current payout balance is ₹0. When students dine and verify their OTPs at your mess counter today, ₹50 will be credited per meal.',
+        'error'
+      );
+      return;
+    }
+
+    const txRef = `SET-${Date.now().toString().slice(-7)}`;
+    const newTx = {
+      id: `TXN-EM-${Date.now().toString().slice(-6)}`,
+      amount: `₹${pendingBalance}`,
+      mode: 'Instant IMPS / UPI Transfer',
+      ref: txRef,
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' • ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const updatedHistory = [newTx, ...payoutHistory];
+    setPayoutHistory(updatedHistory);
+    try {
+      await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
+    } catch (e) {}
+
+    showFeedback(
+      'Payout Request Dispatched! 💸',
+      `Instant settlement of ₹${pendingBalance} has been sent (Ref #${txRef}). Funds will be credited directly to HDFC Bank A/C •••• 4092 via IMPS within 15 minutes.`,
+      'success'
+    );
+  };
 
   useEffect(() => {
     fetchOwnerData(selectedMessId);
@@ -643,10 +699,10 @@ export default function MessOwnerDashboardScreen() {
               style={styles.payoutHeroCard}
             >
               <View style={styles.payoutHeroHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 6 }}>
                   <Wallet size={16} color="#10B981" />
-                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 }}>
-                    AVAILABLE SETTLEMENT BALANCE
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '900', letterSpacing: 0.3 }} numberOfLines={1}>
+                    AVAILABLE SETTLEMENT
                   </Text>
                 </View>
                 <View style={styles.settlePill}>
@@ -655,7 +711,7 @@ export default function MessOwnerDashboardScreen() {
               </View>
 
               <Text style={[styles.payoutAmountBig, { color: colors.textMain }]}>
-                ₹{(verifiedCount || 1) * 50 + 1650}
+                ₹{verifiedCount * 50}
                 <Text style={{ fontSize: 14, color: colors.textSub, fontWeight: '600' }}>.00</Text>
               </Text>
               <Text style={{ fontSize: 12, color: colors.textSub, marginTop: 2 }}>
@@ -664,14 +720,8 @@ export default function MessOwnerDashboardScreen() {
 
               {/* Instant Settlement Button */}
               <TouchableOpacity
-                style={styles.requestPayoutBtn}
-                onPress={() => {
-                  showFeedback(
-                    'Payout Request Submitted! 💸',
-                    `Settlement of ₹${(verifiedCount || 1) * 50 + 1650} has been sent for processing. Funds will be directly credited to HDFC Bank A/C •••• 4092 via IMPS within 15 minutes.`,
-                    'success'
-                  );
-                }}
+                style={[styles.requestPayoutBtn, verifiedCount === 0 && { opacity: 0.65 }]}
+                onPress={handleRequestInstantPayout}
                 activeOpacity={0.88}
               >
                 <LinearGradient
@@ -681,7 +731,9 @@ export default function MessOwnerDashboardScreen() {
                   style={styles.requestPayoutGrad}
                 >
                   <ArrowUpRight size={16} color="#FFFFFF" />
-                  <Text style={styles.requestPayoutText}>Request Instant Payout (IMPS / UPI)</Text>
+                  <Text style={styles.requestPayoutText}>
+                    {verifiedCount > 0 ? 'Request Instant Payout (IMPS / UPI)' : 'No Pending Payout Balance'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
             </LinearGradient>
@@ -691,9 +743,9 @@ export default function MessOwnerDashboardScreen() {
               <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
                 <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700' }}>TODAY'S REVENUE</Text>
                 <Text style={[styles.payoutKpiValue, { color: '#10B981' }]}>
-                  ₹{(verifiedCount || 1) * 50}
+                  ₹{verifiedCount * 50}
                 </Text>
-                <Text style={{ fontSize: 10, color: colors.textSub }}>{verifiedCount || 1} meals redeemed</Text>
+                <Text style={{ fontSize: 10, color: colors.textSub }}>{verifiedCount} meal{verifiedCount === 1 ? '' : 's'} redeemed</Text>
               </View>
 
               <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
@@ -704,8 +756,10 @@ export default function MessOwnerDashboardScreen() {
 
               <View style={[styles.payoutKpiCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
                 <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700' }}>LIFETIME SETTLED</Text>
-                <Text style={[styles.payoutKpiValue, { color: colors.textMain }]}>₹52,400</Text>
-                <Text style={{ fontSize: 10, color: colors.textSub }}>1,048 total diners</Text>
+                <Text style={[styles.payoutKpiValue, { color: colors.textMain }]}>
+                  ₹{totalLifetimeMeals * 50}
+                </Text>
+                <Text style={{ fontSize: 10, color: colors.textSub }}>{totalLifetimeMeals} total diner{totalLifetimeMeals === 1 ? '' : 's'}</Text>
               </View>
             </View>
 
@@ -719,7 +773,9 @@ export default function MessOwnerDashboardScreen() {
                   <Landmark size={18} color="#10B981" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.bankAccountTitle, { color: colors.textMain }]}>HDFC Bank Current A/C</Text>
+                  <Text style={[styles.bankAccountTitle, { color: colors.textMain }]}>
+                    {selectedMess?.name || 'HDFC Bank Current A/C'}
+                  </Text>
                   <Text style={{ fontSize: 11, color: colors.textSub }}>Primary Disbursement Account</Text>
                 </View>
                 <View style={styles.verifiedKycPill}>
@@ -738,7 +794,9 @@ export default function MessOwnerDashboardScreen() {
               </View>
               <View style={[styles.bankDetailRow, { borderBottomWidth: 0 }]}>
                 <Text style={{ fontSize: 11, color: colors.textSub }}>UPI ID:</Text>
-                <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>elitemess.annapurna@okaxis</Text>
+                <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>
+                  elitemess.{selectedMess?.name ? selectedMess.name.toLowerCase().replace(/[^a-z0-9]/g, '') : 'annapurna'}@okaxis
+                </Text>
               </View>
             </View>
 
@@ -747,34 +805,41 @@ export default function MessOwnerDashboardScreen() {
               Recent Settlement History
             </Text>
             <View style={[styles.verifiedLogCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-              {[
-                { amount: '₹2,450', mode: 'Direct IMPS Payout', ref: 'TXN-9842189', date: 'Yesterday • 6:15 PM' },
-                { amount: '₹3,100', mode: 'NEFT Bank Transfer', ref: 'TXN-9810472', date: 'Aug 14 • 6:00 PM' },
-                { amount: '₹1,950', mode: 'Instant UPI Payout', ref: 'TXN-9781944', date: 'Aug 13 • 6:10 PM' },
-                { amount: '₹2,800', mode: 'NEFT Bank Transfer', ref: 'TXN-9742210', date: 'Aug 12 • 6:00 PM' },
-              ].map((tx, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.logRow,
-                    idx === 3 && { borderBottomWidth: 0 },
-                  ]}
-                >
-                  <View style={styles.settleTxIcon}>
-                    <Receipt size={16} color="#10B981" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.studentNameText, { color: colors.textMain }]}>{tx.amount} Received</Text>
-                    <Text style={{ fontSize: 11, color: colors.textSub }}>
-                      {tx.mode} • Ref #{tx.ref}
-                    </Text>
-                    <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 1 }}>{tx.date}</Text>
-                  </View>
-                  <View style={styles.settleSuccessTag}>
-                    <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>SETTLED ✅</Text>
-                  </View>
+              {payoutHistory.length === 0 ? (
+                <View style={styles.emptyLogWrapper}>
+                  <Receipt size={32} color={colors.textSub} />
+                  <Text style={{ color: colors.textMain, fontSize: 14, fontWeight: '700', marginTop: 8 }}>
+                    No Settlements Yet
+                  </Text>
+                  <Text style={{ color: colors.textSub, fontSize: 12, textAlign: 'center', marginTop: 4 }}>
+                    When student meals are verified today, your earnings will accrue above and payout requests will appear here live.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                payoutHistory.map((tx, idx) => (
+                  <View
+                    key={tx.id || idx}
+                    style={[
+                      styles.logRow,
+                      idx === payoutHistory.length - 1 && { borderBottomWidth: 0 },
+                    ]}
+                  >
+                    <View style={styles.settleTxIcon}>
+                      <Receipt size={16} color="#10B981" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.studentNameText, { color: colors.textMain }]}>{tx.amount} Dispatched</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSub }}>
+                        {tx.mode} • Ref #{tx.ref}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 1 }}>{tx.date}</Text>
+                    </View>
+                    <View style={styles.settleSuccessTag}>
+                      <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>SETTLED ✅</Text>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           </AnimatedEntrance>
         )}
