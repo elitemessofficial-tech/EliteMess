@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { Platform, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { ensureDatabaseInitialized } from '../services/dbSeedSync';
@@ -577,69 +578,72 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setPlanType(loadedPlanType);
       setPlanExpiresAt(loadedExpiresAt);
 
-      // 2. Load Active Booking for THIS user only
+      // 2. Load Active Booking for THIS user only from Neon DB and AsyncStorage
       const activeKey = getScopedKey(STORAGE_KEYS.ACTIVE_BOOKING, userId);
       const savedActiveStr = await AsyncStorage.getItem(activeKey);
       const legacyActiveStr = await AsyncStorage.getItem('mealhop_active_booking');
 
       let currentActive: BookingDetails | null = null;
 
-      if (
-        savedActiveStr === 'CANCELLED' ||
-        savedActiveStr === 'NONE' ||
-        savedActiveStr === 'EXPIRED' ||
-        savedActiveStr === 'COMPLETED' ||
-        legacyActiveStr === 'CANCELLED'
-      ) {
-        currentActive = null;
-      } else if (savedActiveStr && savedActiveStr.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(savedActiveStr);
-          const cleanOtp = (parsed?.otp || '').replace(/[\s-]/g, '');
+      try {
+        // Priority 1: Check Neon Database
+        const dbBooking = await getActiveBookingFromNeon(userId);
+        if (dbBooking && dbBooking.status === 'booked') {
+          const cleanOtp = (dbBooking.otp || '').replace(/[\s-]/g, '');
           const isInv = cleanOtp && currentInvOTPs.some((i) => i.replace(/[\s-]/g, '') === cleanOtp);
-          if (parsed && parsed.status === 'booked' && !isInv) {
-            currentActive = parsed;
+          if (!isInv) {
+            currentActive = {
+              bookingId: dbBooking.id,
+              messId: dbBooking.mess_id,
+              messName: dbBooking.mess_name || 'Partner Mess',
+              messAddress: dbBooking.mess_address || 'Campus Hub',
+              mealType: (dbBooking.meal_type as 'Lunch' | 'Dinner') || 'Lunch',
+              menuHighlights: ['Daily Special'],
+              otp: dbBooking.otp || '84920156',
+              otpExpiresAt:
+                dbBooking.otp_expires_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+              status: 'booked',
+              bookedAt: dbBooking.created_at,
+              cutoffTime: dbBooking.cutoff_time || '2:30 PM',
+            };
+            await AsyncStorage.setItem(activeKey, JSON.stringify(currentActive));
           } else {
             currentActive = null;
             await AsyncStorage.setItem(activeKey, 'CANCELLED');
           }
-        } catch {
+        } else {
+          // If Neon says completed or no active booking, clear local storage
           currentActive = null;
-        }
-      } else {
-        try {
-          const { data: booking } = await supabase
-            .from('meal_bookings')
-            .select('*, messes(*)')
-            .eq('user_id', userId)
-            .eq('status', 'booked')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (booking) {
-            const cleanOtp = (booking.otp || '').replace(/[\s-]/g, '');
-            const isInv = cleanOtp && currentInvOTPs.some((i) => i.replace(/[\s-]/g, '') === cleanOtp);
-            if (!isInv) {
-              const fetchedBooking: BookingDetails = {
-                bookingId: booking.id,
-                messId: booking.mess_id,
-                messName: booking.messes?.name || 'Partner Mess',
-                messAddress: booking.messes?.address || 'Campus Hub',
-                mealType: booking.meal_type || 'Lunch',
-                menuHighlights: booking.messes?.highlights || ['Daily Special'],
-                otp: booking.otp || '84920156',
-                otpExpiresAt:
-                  booking.expires_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-                status: 'booked',
-                bookedAt: booking.created_at,
-                cutoffTime: booking.cutoff_time || '2:30 PM',
-              };
-              currentActive = fetchedBooking;
-              await AsyncStorage.setItem(activeKey, JSON.stringify(fetchedBooking));
-            }
+          if (savedActiveStr && savedActiveStr !== 'COMPLETED' && savedActiveStr !== 'CANCELLED') {
+            await AsyncStorage.setItem(activeKey, 'COMPLETED');
+            await AsyncStorage.setItem('mealhop_active_booking', 'COMPLETED');
           }
-        } catch (e) {}
+        }
+      } catch (e) {
+        // Fallback to local storage
+        if (
+          savedActiveStr === 'CANCELLED' ||
+          savedActiveStr === 'NONE' ||
+          savedActiveStr === 'EXPIRED' ||
+          savedActiveStr === 'COMPLETED' ||
+          legacyActiveStr === 'CANCELLED' ||
+          legacyActiveStr === 'COMPLETED'
+        ) {
+          currentActive = null;
+        } else if (savedActiveStr && savedActiveStr.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(savedActiveStr);
+            const cleanOtp = (parsed?.otp || '').replace(/[\s-]/g, '');
+            const isInv = cleanOtp && currentInvOTPs.some((i) => i.replace(/[\s-]/g, '') === cleanOtp);
+            if (parsed && parsed.status === 'booked' && !isInv) {
+              currentActive = parsed;
+            } else {
+              currentActive = null;
+            }
+          } catch {
+            currentActive = null;
+          }
+        }
       }
 
       setActiveBooking(currentActive);
@@ -698,12 +702,64 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   useEffect(() => {
     loadTokenState();
 
-    // Periodic evaluation timer (every 60 seconds) for real-time cutoffs
+    // Periodic evaluation timer (every 10 seconds) for real-time cutoffs and verifications
     const interval = setInterval(() => {
       loadTokenState();
-    }, 60000);
+    }, 10000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // REAL-TIME LISTENER: When Owner Verifies OTP, instantly complete & remove active booking on student screen
+  useEffect(() => {
+    const handleBookingVerified = (detail: any) => {
+      if (!detail) return;
+      const cleanVerified = (detail.otp || '').replace(/\D/g, '');
+
+      setActiveBooking((prev) => {
+        if (!prev) return null;
+        const currentClean = (prev.otp || '').replace(/\D/g, '');
+        if (
+          !cleanVerified ||
+          currentClean === cleanVerified ||
+          cleanVerified.includes(currentClean) ||
+          currentClean.includes(cleanVerified)
+        ) {
+          return null;
+        }
+        return prev;
+      });
+
+      // Also trigger fresh reload from Neon
+      loadTokenState();
+    };
+
+    const sub = DeviceEventEmitter.addListener('ELITEMESS_BOOKING_VERIFIED', handleBookingVerified);
+
+    const handleWebEvent = (e: any) => {
+      if (e && e.detail) handleBookingVerified(e.detail);
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'ELITEMESS_LAST_BOOKING_VERIFIED' && e.newValue) {
+        try {
+          handleBookingVerified(JSON.parse(e.newValue));
+        } catch (err) {}
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('ELITEMESS_BOOKING_VERIFIED', handleWebEvent);
+      window.addEventListener('storage', handleStorageEvent);
+    }
+
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('ELITEMESS_BOOKING_VERIFIED', handleWebEvent);
+        window.removeEventListener('storage', handleStorageEvent);
+      }
+    };
   }, []);
 
   // Book a Meal from a Mess

@@ -381,13 +381,19 @@ export default function MessOwnerDashboardScreen() {
                 {loading ? (
                   <ActivityIndicator size="large" color="#10B981" />
                 ) : (
-                  <Text style={styles.metricNumber}>{liveHeadcount}</Text>
+                  <Text style={styles.metricNumber}>{liveHeadcount + verifiedCount}</Text>
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.metricLabel, { color: colors.textMain }]}>Students Confirmed for Today</Text>
-                  <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
-                    {verifiedCount} student{verifiedCount === 1 ? '' : 's'} already verified
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>
+                      🟢 {verifiedCount} Verified
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textSub }}>•</Text>
+                    <Text style={{ fontSize: 11, color: liveHeadcount > 0 ? '#F59E0B' : colors.textSub, fontWeight: '700' }}>
+                      🟡 {liveHeadcount} Pending
+                    </Text>
+                  </View>
                 </View>
               </View>
 

@@ -402,6 +402,30 @@ export async function verifyOwnerOtpInNeon(
       status: 'completed',
     };
 
+    // Broadcast live verification event so customer screen immediately clears active booking & cancel button
+    const payload = {
+      otp: booking.otp,
+      userId: booking.user_id,
+      messName: booking.mess_name || 'Campus Mess',
+      mealType: booking.meal_type || 'Lunch',
+      status: 'completed',
+      timestamp: Date.now(),
+    };
+
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ELITEMESS_BOOKING_VERIFIED', { detail: payload }));
+        try {
+          localStorage.setItem('ELITEMESS_LAST_BOOKING_VERIFIED', JSON.stringify(payload));
+          localStorage.setItem('mealhop_active_booking', 'COMPLETED');
+          if (booking.user_id) {
+            localStorage.setItem(`mealhop_active_booking_${booking.user_id}`, 'COMPLETED');
+          }
+        } catch (e) {}
+      }
+      DeviceEventEmitter.emit('ELITEMESS_BOOKING_VERIFIED', payload);
+    } catch (e) {}
+
     return {
       success: true,
       message: `Verified! 1 Token redeemed for ${entry.studentName} (${entry.mealType}).`,
