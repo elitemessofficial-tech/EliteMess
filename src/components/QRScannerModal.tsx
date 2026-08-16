@@ -6,18 +6,12 @@ import {
   TouchableOpacity,
   Modal,
   Platform,
-  TextInput,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { WebView } from 'react-native-webview';
 import {
-  Camera,
   X,
   Zap,
-  CheckCircle2,
-  AlertCircle,
-  Sparkles,
-  QrCode,
   ScanLine,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
@@ -34,7 +28,6 @@ export default function QRScannerModal({
   onScanSuccess,
 }: QRScannerModalProps) {
   const { isDark } = useAppTheme();
-  const [manualOtp, setManualOtp] = useState<string>('');
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
@@ -50,7 +43,7 @@ export default function QRScannerModal({
     <html>
     <head>
       <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
       <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -61,42 +54,62 @@ export default function QRScannerModal({
         
         .viewfinder-box {
           position: absolute;
-          width: 220px;
-          height: 220px;
-          border: 2px solid rgba(16, 185, 129, 0.5);
+          width: 230px;
+          height: 230px;
+          border: 1.5px solid rgba(16, 185, 129, 0.4);
           border-radius: 20px;
-          box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.65);
           pointer-events: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .laser-line {
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
+          top: 10px;
+          left: 10px;
+          right: 10px;
           height: 3px;
-          background: #10B981;
-          box-shadow: 0 0 12px #10B981, 0 0 24px #10B981;
-          border-radius: 2px;
-          animation: scanLaser 2s ease-in-out infinite alternate;
+          background: linear-gradient(90deg, transparent, #10B981 15%, #34D399 50%, #10B981 85%, transparent);
+          box-shadow: 0 0 16px #10B981, 0 0 32px #10B981;
+          border-radius: 3px;
+          animation: scanLaserSmooth 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+          will-change: transform;
+          transform: translateZ(0);
         }
 
-        @keyframes scanLaser {
-          0% { top: 10px; opacity: 0.9; }
-          100% { top: 200px; opacity: 0.9; }
+        @keyframes scanLaserSmooth {
+          0% { transform: translateY(0px); opacity: 0.75; }
+          100% { transform: translateY(205px); opacity: 1; }
         }
 
         .corner {
           position: absolute;
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           border-color: #10B981;
           border-width: 4px;
         }
-        .tl { top: -2px; left: -2px; border-top-style: solid; border-left-style: solid; border-top-left-radius: 16px; }
-        .tr { top: -2px; right: -2px; border-top-style: solid; border-right-style: solid; border-top-right-radius: 16px; }
-        .bl { bottom: -2px; left: -2px; border-bottom-style: solid; border-left-style: solid; border-top-left-radius: 0; border-bottom-left-radius: 16px; }
-        .br { bottom: -2px; right: -2px; border-bottom-style: solid; border-right-style: solid; border-top-right-radius: 0; border-bottom-right-radius: 16px; }
+        .tl { top: -2px; left: -2px; border-top-style: solid; border-left-style: solid; border-top-left-radius: 18px; }
+        .tr { top: -2px; right: -2px; border-top-style: solid; border-right-style: solid; border-top-right-radius: 18px; }
+        .bl { bottom: -2px; left: -2px; border-bottom-style: solid; border-left-style: solid; border-bottom-left-radius: 18px; }
+        .br { bottom: -2px; right: -2px; border-bottom-style: solid; border-right-style: solid; border-bottom-right-radius: 18px; }
+
+        .status-badge {
+          position: absolute;
+          bottom: 22px;
+          background: rgba(16, 185, 129, 0.95);
+          color: #FFFFFF;
+          padding: 8px 18px;
+          border-radius: 20px;
+          font-weight: 800;
+          font-size: 13px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+          letter-spacing: 0.3px;
+          text-align: center;
+          max-width: 88%;
+        }
       </style>
     </head>
     <body>
@@ -111,12 +124,15 @@ export default function QRScannerModal({
           <div class="corner bl"></div>
           <div class="corner br"></div>
         </div>
+
+        <div class="status-badge" id="status-text">Scanning for Student QR Code...</div>
       </div>
 
       <script>
         var video = document.getElementById('webcam');
         var canvas = document.getElementById('scan-canvas');
         var ctx = canvas.getContext('2d', { willReadFrequently: true });
+        var statusText = document.getElementById('status-text');
         var scanning = true;
 
         function postMessage(data) {
@@ -127,9 +143,10 @@ export default function QRScannerModal({
 
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
+            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
           }).then(function(stream) {
             video.srcObject = stream;
+            video.setAttribute('playsinline', true);
             video.play();
             requestAnimationFrame(tick);
           }).catch(function(err) {
@@ -140,12 +157,19 @@ export default function QRScannerModal({
         function tick() {
           if (!scanning) return;
           if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.height = video.videoHeight;
-            canvas.width = video.videoWidth;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var scanSize = 480;
+            canvas.width = scanSize;
+            canvas.height = scanSize;
+            var minDim = Math.min(video.videoWidth, video.videoHeight);
+            var sx = (video.videoWidth - minDim) / 2;
+            var sy = (video.videoHeight - minDim) / 2;
+            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, scanSize, scanSize);
+
             if (window.jsQR) {
-              var code = jsQR(imageData.data, imageData.width, imageData.height);
+              var imageData = ctx.getImageData(0, 0, scanSize, scanSize);
+              var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'attemptBoth',
+              });
               if (code && code.data && code.data.trim()) {
                 scanning = false;
                 postMessage({ type: 'QR_SCANNED', otp: code.data.trim() });
@@ -195,38 +219,22 @@ export default function QRScannerModal({
             <WebView
               originWhitelist={['*']}
               source={{ html: htmlScannerContent }}
-              style={{ flex: 1, backgroundColor: 'transparent' }}
+              style={{ flex: 1, backgroundColor: '#000000' }}
               onMessage={handleMessage}
             />
           </View>
 
-          {/* Quick Scan Action Buttons */}
-          <View style={[styles.bottomCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                style={styles.simulateBtn}
-                onPress={() => {
-                  onScanSuccess('49003971');
-                  onClose();
-                }}
-                activeOpacity={0.8}
-              >
-                <QrCode size={14} color="#10B981" />
-                <Text style={styles.simulateBtnText}>Scan Active OTP (4900)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.simulateBtn}
-                onPress={() => {
-                  onScanSuccess('84920156');
-                  onClose();
-                }}
-                activeOpacity={0.8}
-              >
-                <QrCode size={14} color="#10B981" />
-                <Text style={styles.simulateBtnText}>Scan OTP (8492)</Text>
-              </TouchableOpacity>
+          {/* Helper Footer */}
+          <View style={[styles.footerInfo, { backgroundColor: colors.cardBg }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Zap size={14} color="#10B981" />
+              <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
+                Instant OTP Recognition Active
+              </Text>
             </View>
+            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+              Scanning student QR automatically deducts 1 token and confirms dining.
+            </Text>
           </View>
         </BlurView>
       </View>
@@ -245,12 +253,12 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%',
     maxWidth: 420,
-    height: '75%',
+    height: 520,
     borderRadius: 28,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.35)',
-    backgroundColor: '#000000',
+    flexDirection: 'column',
   },
   header: {
     flexDirection: 'row',
@@ -261,48 +269,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   scanIconHeader: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
   },
   closeBtn: {
-    padding: 6,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cameraBox: {
     flex: 1,
-    position: 'relative',
     backgroundColor: '#000000',
+    overflow: 'hidden',
   },
-  bottomCard: {
-    padding: 16,
+  footerInfo: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    gap: 8,
-  },
-  simulateBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  simulateBtnText: {
-    color: '#10B981',
-    fontSize: 11,
-    fontWeight: '800',
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
 });

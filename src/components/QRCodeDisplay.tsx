@@ -13,17 +13,20 @@ interface QRCodeDisplayProps {
 
 export default function QRCodeDisplay({
   value,
-  size = 140,
-  color = '#10B981',
+  size = 145,
+  color = '#064E3B',
   backgroundColor = '#FFFFFF',
   showCorners = true,
 }: QRCodeDisplayProps) {
   const matrix = generateQRMatrix(value || '00000000');
-  const matrixSize = matrix.length; // 25x25
-  const cellSize = size / matrixSize;
+  const matrixSize = matrix.length || 21;
+  // Standard quiet zone padding of 2 modules
+  const totalModules = matrixSize + 4;
+  const cellSize = size / totalModules;
+  const offset = 2 * cellSize;
 
   return (
-    <View style={[styles.outerContainer, { width: size + 28, height: size + 28 }]}>
+    <View style={[styles.outerContainer, { width: size + 24, height: size + 24 }]}>
       {/* Corner Bracket Decorations */}
       {showCorners && (
         <>
@@ -34,7 +37,7 @@ export default function QRCodeDisplay({
         </>
       )}
 
-      <View style={[styles.qrCanvas, { width: size + 12, height: size + 12, backgroundColor }]}>
+      <View style={[styles.qrCanvas, { width: size + 10, height: size + 10, backgroundColor }]}>
         <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <Rect x={0} y={0} width={size} height={size} fill={backgroundColor} />
           {matrix.map((row, r) =>
@@ -43,12 +46,11 @@ export default function QRCodeDisplay({
               return (
                 <Rect
                   key={`${r}_${c}`}
-                  x={c * cellSize}
-                  y={r * cellSize}
+                  x={offset + c * cellSize}
+                  y={offset + r * cellSize}
                   width={cellSize + 0.3} // small overlap to prevent micro gap lines
                   height={cellSize + 0.3}
                   fill={color}
-                  rx={0.5}
                 />
               );
             })

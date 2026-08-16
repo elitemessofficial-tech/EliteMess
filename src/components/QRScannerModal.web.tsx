@@ -5,20 +5,17 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import {
-  Camera,
   X,
   Zap,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
-  QrCode,
   ScanLine,
   RefreshCw,
+  Camera,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -34,9 +31,7 @@ export default function QRScannerModal({
   onScanSuccess,
 }: QRScannerModalProps) {
   const { isDark } = useAppTheme();
-  const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
@@ -47,13 +42,13 @@ export default function QRScannerModal({
     emerald: '#10B981',
   };
 
-  // HTML Camera Scanner with jsQR library & native BarcodeDetector support
+  // High Performance 60 FPS HTML Camera Scanner with BarcodeDetector + jsQR
   const htmlScannerContent = `
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
       <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -64,54 +59,63 @@ export default function QRScannerModal({
         
         .viewfinder-box {
           position: absolute;
-          width: 220px;
-          height: 220px;
-          border: 2px solid rgba(16, 185, 129, 0.5);
+          width: 230px;
+          height: 230px;
+          border: 1.5px solid rgba(16, 185, 129, 0.4);
           border-radius: 20px;
-          box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
+          box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.65);
           pointer-events: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
+        /* Hardware Accelerated Smooth 60 FPS Laser Line */
         .laser-line {
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
+          top: 10px;
+          left: 10px;
+          right: 10px;
           height: 3px;
-          background: #10B981;
-          box-shadow: 0 0 12px #10B981, 0 0 24px #10B981;
-          border-radius: 2px;
-          animation: scanLaser 2s ease-in-out infinite alternate;
+          background: linear-gradient(90deg, transparent, #10B981 15%, #34D399 50%, #10B981 85%, transparent);
+          box-shadow: 0 0 16px #10B981, 0 0 32px #10B981;
+          border-radius: 3px;
+          animation: scanLaserSmooth 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+          will-change: transform;
+          transform: translateZ(0);
         }
 
-        @keyframes scanLaser {
-          0% { top: 10px; opacity: 0.9; }
-          100% { top: 200px; opacity: 0.9; }
+        @keyframes scanLaserSmooth {
+          0% { transform: translateY(0px); opacity: 0.75; }
+          100% { transform: translateY(205px); opacity: 1; }
         }
 
         .corner {
           position: absolute;
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           border-color: #10B981;
           border-width: 4px;
         }
-        .tl { top: -2px; left: -2px; border-top-style: solid; border-left-style: solid; border-top-left-radius: 16px; }
-        .tr { top: -2px; right: -2px; border-top-style: solid; border-right-style: solid; border-top-right-radius: 16px; }
-        .bl { bottom: -2px; left: -2px; border-bottom-style: solid; border-left-style: solid; border-top-left-radius: 0; border-bottom-left-radius: 16px; }
-        .br { bottom: -2px; right: -2px; border-bottom-style: solid; border-right-style: solid; border-top-right-radius: 0; border-bottom-right-radius: 16px; }
+        .tl { top: -2px; left: -2px; border-top-style: solid; border-left-style: solid; border-top-left-radius: 18px; }
+        .tr { top: -2px; right: -2px; border-top-style: solid; border-right-style: solid; border-top-right-radius: 18px; }
+        .bl { bottom: -2px; left: -2px; border-bottom-style: solid; border-left-style: solid; border-bottom-left-radius: 18px; }
+        .br { bottom: -2px; right: -2px; border-bottom-style: solid; border-right-style: solid; border-bottom-right-radius: 18px; }
 
         .status-badge {
           position: absolute;
-          bottom: 24px;
-          background: rgba(16, 185, 129, 0.9);
+          bottom: 22px;
+          background: rgba(16, 185, 129, 0.95);
           color: #FFFFFF;
-          padding: 8px 16px;
+          padding: 8px 18px;
           border-radius: 20px;
           font-weight: 800;
           font-size: 13px;
-          box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-          letter-spacing: 0.5px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+          letter-spacing: 0.3px;
+          text-align: center;
+          max-width: 88%;
+          transition: background 0.3s ease;
         }
       </style>
     </head>
@@ -137,6 +141,14 @@ export default function QRScannerModal({
         var ctx = canvas.getContext('2d', { willReadFrequently: true });
         var statusText = document.getElementById('status-text');
         var scanning = true;
+        var barcodeDetector = null;
+
+        // Try native BarcodeDetector API for instant sub-millisecond GPU decoding
+        if ('BarcodeDetector' in window) {
+          try {
+            barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+          } catch (e) {}
+        }
 
         function postMessageToParent(data) {
           if (window.parent) {
@@ -144,54 +156,89 @@ export default function QRScannerModal({
           }
         }
 
-        // Start Camera Stream
+        // Start High Quality Camera Stream
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280, min: 640 },
+              height: { ideal: 720, min: 480 }
+            }
           }).then(function(stream) {
             video.srcObject = stream;
             video.setAttribute('playsinline', true);
             video.play();
             requestAnimationFrame(tick);
           }).catch(function(err) {
-            statusText.innerText = 'Camera access denied or unavailable';
-            statusText.style.background = '#EF4444';
-            postMessageToParent({ type: 'CAMERA_ERROR', message: err.message || 'Camera permission denied' });
+            // Fallback for laptops/front cameras
+            navigator.mediaDevices.getUserMedia({ video: true }).then(function(stream) {
+              video.srcObject = stream;
+              video.setAttribute('playsinline', true);
+              video.play();
+              requestAnimationFrame(tick);
+            }).catch(function(finalErr) {
+              statusText.innerText = 'Camera permission required';
+              statusText.style.background = '#EF4444';
+              postMessageToParent({ type: 'CAMERA_ERROR', message: finalErr.message || 'Camera permission denied' });
+            });
           });
         } else {
-          statusText.innerText = 'Camera not supported in this browser';
+          statusText.innerText = 'Camera not supported';
           statusText.style.background = '#EF4444';
+        }
+
+        function onCodeFound(rawString) {
+          if (!scanning) return;
+          scanning = false;
+          statusText.innerText = 'QR Code Detected! Verifying...';
+          statusText.style.background = '#10B981';
+          
+          postMessageToParent({
+            type: 'QR_SCANNED',
+            otp: rawString.trim()
+          });
         }
 
         function tick() {
           if (!scanning) return;
 
           if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.height = video.videoHeight;
-            canvas.width = video.videoWidth;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // 1. Fast path: Native BarcodeDetector
+            if (barcodeDetector) {
+              barcodeDetector.detect(video).then(function(barcodes) {
+                if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                  onCodeFound(barcodes[0].rawValue);
+                  return;
+                }
+              }).catch(function() {});
+            }
 
-            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            // 2. Ultra-optimized jsQR decoding
+            // Downscale to 480x480 for 60fps instant decoding without CPU lag
+            var scanSize = 480;
+            canvas.width = scanSize;
+            canvas.height = scanSize;
             
-            // Check with jsQR decoder
+            // Draw central crop of the video
+            var minDim = Math.min(video.videoWidth, video.videoHeight);
+            var sx = (video.videoWidth - minDim) / 2;
+            var sy = (video.videoHeight - minDim) / 2;
+            
+            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, scanSize, scanSize);
+
             if (window.jsQR) {
-              var code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: 'dontInvert',
+              var imgData = ctx.getImageData(0, 0, scanSize, scanSize);
+              var code = jsQR(imgData.data, imgData.width, imgData.height, {
+                inversionAttempts: 'attemptBoth',
               });
 
               if (code && code.data && code.data.trim()) {
-                scanning = false;
-                statusText.innerText = 'QR Code Detected! Verifying...';
-                statusText.style.background = '#10B981';
-                
-                postMessageToParent({
-                  type: 'QR_SCANNED',
-                  otp: code.data.trim()
-                });
+                onCodeFound(code.data);
                 return;
               }
             }
           }
+
           requestAnimationFrame(tick);
         }
       </script>
@@ -223,12 +270,6 @@ export default function QRScannerModal({
     }
   }, [visible, onScanSuccess, onClose]);
 
-  // Quick One-Click Test Scanner Helper
-  const handleSimulateScan = (testOtp: string) => {
-    onScanSuccess(testOtp);
-    onClose();
-  };
-
   return (
     <Modal visible={visible} transparent={true} animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -249,48 +290,34 @@ export default function QRScannerModal({
             </TouchableOpacity>
           </View>
 
-          {/* Scanner Viewfinder / Camera View */}
-          <View style={styles.cameraBox}>
-            <iframe
-              ref={iframeRef}
-              srcDoc={htmlScannerContent}
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              allow="camera; microphone"
-            />
+          {/* Camera Viewport */}
+          <View style={styles.cameraViewport}>
+            {Platform.OS === 'web' ? (
+              <iframe
+                srcDoc={htmlScannerContent}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  borderRadius: 20,
+                  backgroundColor: '#000000',
+                }}
+                allow="camera; microphone"
+              />
+            ) : null}
           </View>
 
-          {/* Bottom Controls & Instant Test Scan Bar */}
-          <View style={[styles.bottomCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Sparkles size={15} color="#10B981" />
-                <Text style={{ color: colors.textMain, fontSize: 12, fontWeight: '800' }}>
-                  Auto-Detects 4-Digit & 8-Digit OTPs
-                </Text>
-              </View>
-              <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>30 FPS Laser</Text>
+          {/* Helper Footer */}
+          <View style={[styles.footerInfo, { backgroundColor: colors.cardBg }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Zap size={14} color="#10B981" />
+              <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
+                Instant OTP Recognition Active
+              </Text>
             </View>
-
-            {/* Quick Test / Manual Scan Buttons */}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-              <TouchableOpacity
-                style={styles.simulateBtn}
-                onPress={() => handleSimulateScan('49003971')}
-                activeOpacity={0.8}
-              >
-                <QrCode size={14} color="#10B981" />
-                <Text style={styles.simulateBtnText}>Scan Active OTP (4900)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.simulateBtn}
-                onPress={() => handleSimulateScan('84920156')}
-                activeOpacity={0.8}
-              >
-                <QrCode size={14} color="#10B981" />
-                <Text style={styles.simulateBtnText}>Scan OTP (8492)</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+              Scanning student QR automatically deducts 1 token and confirms dining.
+            </Text>
           </View>
         </BlurView>
       </View>
@@ -309,12 +336,12 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: '100%',
     maxWidth: 420,
-    height: '75%',
+    height: 520,
     borderRadius: 28,
     overflow: 'hidden',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.35)',
-    backgroundColor: '#000000',
+    flexDirection: 'column',
   },
   header: {
     flexDirection: 'row',
@@ -325,48 +352,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   scanIconHeader: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
   },
   closeBtn: {
-    padding: 6,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  cameraBox: {
-    flex: 1,
-    position: 'relative',
-    backgroundColor: '#000000',
-  },
-  bottomCard: {
-    padding: 16,
-    borderTopWidth: 1,
-    gap: 8,
-  },
-  simulateBtn: {
-    flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
-  simulateBtnText: {
-    color: '#10B981',
-    fontSize: 11,
-    fontWeight: '800',
+  cameraViewport: {
+    flex: 1,
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
+  footerInfo: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
 });
