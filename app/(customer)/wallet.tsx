@@ -275,7 +275,7 @@ export default function WalletLedgerScreen() {
             {loading ? (
               <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
                 <LottieView
-                  source={require('../../assets/images/food_beverage.lottie')}
+                  source={require('../../assets/images/food_beverage.json')}
                   autoPlay
                   loop
                   style={{ width: 100, height: 100 }}

@@ -153,6 +153,22 @@ export async function getActiveBookingFromNeon(userId: string): Promise<MealBook
   }
 }
 
+export async function getUserAllBookingsFromNeon(userId: string): Promise<MealBookingDBRecord[]> {
+  try {
+    const rows = await sql`
+      SELECT b.id, b.user_id, b.mess_id, b.meal_type, b.otp, b.otp_expires_at, b.cutoff_time, b.status, b.created_at, m.name as mess_name, m.address as mess_address
+      FROM public.meal_bookings b
+      LEFT JOIN public.messes m ON b.mess_id = m.id
+      WHERE b.user_id = ${userId}
+      ORDER BY b.created_at DESC
+      LIMIT 10;
+    `;
+    return rows as MealBookingDBRecord[];
+  } catch (error) {
+    return [];
+  }
+}
+
 export async function createBookingInNeon(
   userId: string,
   messId: string,
@@ -333,6 +349,51 @@ export async function updateMessMenuInNeon(
     return true;
   } catch (error) {
     console.warn('[Neon DB] Update mess menu error:', error);
+    return false;
+  }
+}
+
+export async function updateMessDetailsInNeon(
+  messId: string,
+  details: {
+    name?: string;
+    address?: string;
+    type?: string;
+    cutoffTime?: string;
+    starDish?: string;
+    latitude?: number;
+    longitude?: number;
+  }
+): Promise<boolean> {
+  try {
+    if (details.latitude !== undefined && details.longitude !== undefined) {
+      await sql`
+        UPDATE public.messes
+        SET
+          name = COALESCE(${details.name || null}, name),
+          address = COALESCE(${details.address || null}, address),
+          type = COALESCE(${details.type || null}, type),
+          cutoff_time = COALESCE(${details.cutoffTime || null}, cutoff_time),
+          star_dish = COALESCE(${details.starDish || null}, star_dish),
+          latitude = ${details.latitude},
+          longitude = ${details.longitude}
+        WHERE id = ${messId}
+      `;
+    } else {
+      await sql`
+        UPDATE public.messes
+        SET
+          name = COALESCE(${details.name || null}, name),
+          address = COALESCE(${details.address || null}, address),
+          type = COALESCE(${details.type || null}, type),
+          cutoff_time = COALESCE(${details.cutoffTime || null}, cutoff_time),
+          star_dish = COALESCE(${details.starDish || null}, star_dish)
+        WHERE id = ${messId}
+      `;
+    }
+    return true;
+  } catch (error) {
+    console.warn('[Neon DB] Update mess details error:', error);
     return false;
   }
 }

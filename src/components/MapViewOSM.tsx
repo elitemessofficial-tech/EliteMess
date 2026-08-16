@@ -51,13 +51,11 @@ export const MapViewOSM: React.FC<MapViewOSMProps> = ({
       >
         <UrlTile
           /**
-           * Standard OpenStreetMap PNG tile template.
-           * Bypasses proprietary map API billing by fetching open raster maps.
+           * Google Maps standard tile template.
            */
-          urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maximumZ={19}
+          urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          maximumZ={20}
           minimumZ={0}
-          // replaces the grey background grids with the downloaded tiles
           shouldReplaceMapContent={true}
         />
 

@@ -294,7 +294,7 @@ export default function SubscriptionScreen() {
           <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={styles.modalCardWrapper}>
             <View style={[styles.modalCard, { backgroundColor: isDark ? '#0D1412' : '#FFFFFF', borderColor: colors.cardBorder }]}>
               <LottieView
-                source={require('../../assets/images/Greentick.lottie')}
+                source={require('../../assets/images/Greentick.json')}
                 autoPlay
                 loop={false}
                 style={{ width: 130, height: 130 }}

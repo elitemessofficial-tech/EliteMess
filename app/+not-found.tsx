@@ -39,7 +39,7 @@ export default function NotFoundScreen() {
           {/* Lottie Animation */}
           <View style={styles.animationContainer}>
             <LottieView
-              source={require('../assets/images/Error 404.lottie')}
+              source={require('../assets/images/Error 404.json')}
               autoPlay
               loop
               style={styles.lottie}

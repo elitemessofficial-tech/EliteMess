@@ -11,6 +11,7 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  DeviceEventEmitter,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -51,9 +52,11 @@ import {
   Pencil,
   X,
   ChevronRight,
-  XCircle,
   AlertTriangle,
+  XCircle,
+  MapPin,
 } from 'lucide-react-native';
+import MessLocationPinModal from '../../src/components/MessLocationPinModal';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDescope, useSession } from '@descope/react-native-sdk';
@@ -66,10 +69,16 @@ import {
   getMessesFromNeon,
   getMessOwnerDataFromNeon,
   updateMessMenuInNeon,
+  updateMessDetailsInNeon,
   verifyOwnerOtpInNeon,
   MessDBRecord,
   OwnerVerifiedLogItem,
 } from '../../src/services/neon';
+import {
+  submitOwnerPayoutToNeon,
+  cancelOwnerPayoutInNeon,
+  getPayoutsForMessFromNeon,
+} from '../../src/services/adminNeon';
 import { SEED_RESTAURANT_MESSES } from '../../src/services/dbSeedSync';
 
 export interface OwnerPayoutRecord {
@@ -141,6 +150,23 @@ export default function MessOwnerDashboardScreen() {
   const [editUpiId, setEditUpiId] = useState<string>('elitemess.annapurna@okaxis');
   const [savingBank, setSavingBank] = useState<boolean>(false);
 
+  // Profile & Mess Business Overview State
+  const [managerName, setManagerName] = useState<string>('Rajesh Sharma');
+  const [partnerPhone, setPartnerPhone] = useState<string>('+91 98765 43210');
+  const [showEditProfileModal, setShowEditProfileModal] = useState<boolean>(false);
+  const [editMessName, setEditMessName] = useState<string>('Annapurna Campus Mess');
+  const [editManagerName, setEditManagerName] = useState<string>('Rajesh Sharma');
+  const [editAddress, setEditAddress] = useState<string>('Gate 2, North Campus Hub, Pune');
+  const [editLatitude, setEditLatitude] = useState<number>(18.5204);
+  const [editLongitude, setEditLongitude] = useState<number>(73.8567);
+  const [hasPinnedEditLocation, setHasPinnedEditLocation] = useState<boolean>(false);
+  const [showOwnerLocationPicker, setShowOwnerLocationPicker] = useState<boolean>(false);
+  const [editCuisine, setEditCuisine] = useState<string>('Pure Veg North Indian');
+  const [editCutoff, setEditCutoff] = useState<string>('2:15 PM');
+  const [editStarDish, setEditStarDish] = useState<string>('Special Shahi Paneer & Butter Naan');
+  const [editPartnerPhone, setEditPartnerPhone] = useState<string>('+91 98765 43210');
+  const [savingProfile, setSavingProfile] = useState<boolean>(false);
+
   // OTP & QR Scanner state
   const [enteredOtp, setEnteredOtp] = useState<string>('');
   const [verifying, setVerifying] = useState<boolean>(false);
@@ -179,12 +205,12 @@ export default function MessOwnerDashboardScreen() {
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
-    cardBg: isDark ? 'rgba(18, 26, 23, 0.88)' : 'rgba(255, 255, 255, 0.95)',
-    cardBorder: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.15)',
-    textMain: isDark ? '#FFFFFF' : '#0F172A',
-    textSub: isDark ? '#94A3B8' : '#64748B',
+    cardBg: isDark ? 'rgba(18, 26, 23, 0.88)' : '#FFFFFF',
+    cardBorder: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.25)',
+    textMain: isDark ? '#FFFFFF' : '#000000',
+    textSub: isDark ? '#94A3B8' : '#334155',
     emerald: '#10B981',
-    inputBg: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(241, 245, 249, 0.8)',
+    inputBg: isDark ? 'rgba(16, 185, 129, 0.05)' : '#F1F5F9',
   };
 
   // 1. Fetch Real Messes and Owner Data from Neon Database
@@ -203,6 +229,11 @@ export default function MessOwnerDashboardScreen() {
       if (currentMess) {
         setStarDish(currentMess.star_dish || 'Special Shahi Paneer & Butter Naan');
         setCutoffTime(currentMess.cutoff_time || '2:15 PM');
+        setEditMessName(currentMess.name);
+        setEditAddress(currentMess.address);
+        setEditCuisine(currentMess.type || 'Pure Veg North Indian');
+        setEditCutoff(currentMess.cutoff_time || '2:15 PM');
+        setEditStarDish(currentMess.star_dish || 'Special Shahi Paneer & Butter Naan');
         if (currentMess.highlights && Array.isArray(currentMess.highlights) && currentMess.highlights.length > 0) {
           setDishMenuInput(currentMess.highlights.join(', '));
         } else {
@@ -222,13 +253,26 @@ export default function MessOwnerDashboardScreen() {
       setTotalLifetimeMeals(ownerStats.totalLifetimeMeals || ownerStats.verifiedCount || 0);
       setVerifiedList(ownerStats.verifiedLog || []);
 
-      // Load persistent real payout history for this mess
+      // Load manager profile & partner contact
       try {
-        const storedHistory = await AsyncStorage.getItem(`@elitemess_owner_payouts_${targetMessId}`);
-        if (storedHistory) {
-          setPayoutHistory(JSON.parse(storedHistory));
-        } else {
-          setPayoutHistory([]);
+        const storedMgr = await AsyncStorage.getItem(`@elitemess_owner_manager_${targetMessId}`);
+        const storedPh = await AsyncStorage.getItem(`@elitemess_owner_phone_${targetMessId}`);
+        const mName = storedMgr || 'Rajesh Sharma';
+        const pPhone = storedPh || '+91 98765 43210';
+        setManagerName(mName);
+        setPartnerPhone(pPhone);
+        setEditManagerName(mName);
+        setEditPartnerPhone(pPhone);
+      } catch (e) {}
+
+      // Load persistent real payout history from Neon DB
+      try {
+        const history = await getPayoutsForMessFromNeon(targetMessId);
+        setPayoutHistory(history);
+        if (Array.isArray(history) && history.length > 0) {
+          history.forEach((h) => {
+            submitOwnerPayoutToNeon(h, targetMessId, currentMess?.name || 'Annapurna Campus Mess');
+          });
         }
       } catch (e) {
         setPayoutHistory([]);
@@ -322,7 +366,7 @@ export default function MessOwnerDashboardScreen() {
     setShowPayoutConfirmModal(true);
   };
 
-  // 2. Confirmed Payout Request Submission
+  // 2. Confirmed Payout Request Submission (Neon DB + Real-time Sync)
   const handleConfirmPayoutRequest = async () => {
     const pendingBalance = verifiedCount * 50;
     const txRef = `SET-${Date.now().toString().slice(-7)}`;
@@ -343,9 +387,12 @@ export default function MessOwnerDashboardScreen() {
 
     const updatedHistory = [newTx, ...payoutHistory];
     setPayoutHistory(updatedHistory);
+
     try {
-      await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
-    } catch (e) {}
+      await submitOwnerPayoutToNeon(newTx, selectedMessId, selectedMess?.name || 'Annapurna Campus Mess');
+    } catch (e) {
+      console.warn('Failed to submit payout to Neon DB:', e);
+    }
 
     setShowPayoutConfirmModal(false);
     const masked = bankDetails.accountNumber.length > 4 ? `•••• ${bankDetails.accountNumber.slice(-4)}` : bankDetails.accountNumber;
@@ -356,7 +403,7 @@ export default function MessOwnerDashboardScreen() {
     );
   };
 
-  // 3. Cancel Payout Record Handler
+  // 3. Cancel Payout Record Handler (Neon DB + Real-time Sync)
   const handleCancelPayoutRecord = async (recordId: string) => {
     setCancellingPayout(true);
     const target = payoutHistory.find(p => p.id === recordId);
@@ -369,8 +416,11 @@ export default function MessOwnerDashboardScreen() {
 
     setPayoutHistory(updatedHistory);
     try {
-      await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
-    } catch (e) {}
+      await cancelOwnerPayoutInNeon(recordId, selectedMessId);
+    } catch (e) {
+      console.warn('Failed to cancel payout in Neon DB:', e);
+    }
+
     setCancellingPayout(false);
     setShowPayoutDetailModal(false);
 
@@ -383,6 +433,14 @@ export default function MessOwnerDashboardScreen() {
 
   useEffect(() => {
     fetchOwnerData(selectedMessId);
+
+    const subPayout = DeviceEventEmitter.addListener('ELITEMESS_PAYOUTS_UPDATED', () => {
+      fetchOwnerData(selectedMessId);
+    });
+
+    return () => {
+      subPayout.remove();
+    };
   }, [fetchOwnerData, selectedMessId]);
 
   const onRefresh = () => {
@@ -505,6 +563,61 @@ export default function MessOwnerDashboardScreen() {
       showFeedback('Update Error', 'An error occurred while updating menu in database.', 'error');
     } finally {
       setSavingMenu(false);
+    }
+  };
+
+  // 3.5 Save Mess Business Profile Handler
+  const handleSaveProfile = async () => {
+    if (!editMessName.trim()) {
+      showFeedback('Required Field', 'Please enter a valid mess name.', 'error');
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      await updateMessDetailsInNeon(selectedMessId, {
+        name: editMessName.trim(),
+        address: editAddress.trim(),
+        type: editCuisine.trim(),
+        cutoffTime: editCutoff.trim(),
+        starDish: editStarDish.trim(),
+        latitude: editLatitude,
+        longitude: editLongitude,
+      });
+
+      setManagerName(editManagerName.trim());
+      setPartnerPhone(editPartnerPhone.trim());
+      setCutoffTime(editCutoff.trim());
+      setStarDish(editStarDish.trim());
+
+      if (selectedMess) {
+        const updated: MessDBRecord = {
+          ...selectedMess,
+          name: editMessName.trim(),
+          address: editAddress.trim(),
+          type: editCuisine.trim(),
+          cutoff_time: editCutoff.trim(),
+          star_dish: editStarDish.trim(),
+          latitude: editLatitude,
+          longitude: editLongitude,
+        };
+        setSelectedMess(updated);
+        setMessesList(prev => prev.map(m => m.id === selectedMessId ? updated : m));
+      }
+
+      await AsyncStorage.setItem(`@elitemess_owner_manager_${selectedMessId}`, editManagerName.trim());
+      await AsyncStorage.setItem(`@elitemess_owner_phone_${selectedMessId}`, editPartnerPhone.trim());
+
+      setShowEditProfileModal(false);
+      showFeedback(
+        'Mess Profile Updated! 🏢',
+        `Details for "${editMessName.trim()}" have been updated and are live across the customer app and owner portal.`,
+        'success'
+      );
+    } catch (e) {
+      showFeedback('Update Failed', 'Could not save profile details to database.', 'error');
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -1057,8 +1170,25 @@ export default function MessOwnerDashboardScreen() {
                 <View style={styles.avatarOnlineDot} />
               </View>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.profileManagerName, { color: colors.textMain }]}>Mess Partner Manager</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={[styles.profileManagerName, { color: colors.textMain }]}>{managerName}</Text>
+                  <TouchableOpacity
+                    style={styles.editAccountPill}
+                    onPress={() => {
+                      setEditMessName(selectedMess?.name || '');
+                      setEditManagerName(managerName);
+                      setEditAddress(selectedMess?.address || '');
+                      setEditCuisine(selectedMess?.type || '');
+                      setEditCutoff(selectedMess?.cutoff_time || cutoffTime);
+                      setEditStarDish(selectedMess?.star_dish || starDish);
+                      setEditPartnerPhone(partnerPhone);
+                      setShowEditProfileModal(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Pencil size={12} color="#10B981" />
+                    <Text style={styles.editAccountPillText}>Edit</Text>
+                  </TouchableOpacity>
                 </View>
                 <Text style={{ fontSize: 12, color: colors.textSub, marginTop: 2 }}>
                   {selectedMess?.name || 'Annapurna Campus Mess'}
@@ -1071,7 +1201,27 @@ export default function MessOwnerDashboardScreen() {
             </View>
 
             {/* Mess Business Details */}
-            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>Mess Business Overview</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Mess Business Overview</Text>
+              <TouchableOpacity
+                style={styles.editAccountPill}
+                onPress={() => {
+                  setEditMessName(selectedMess?.name || '');
+                  setEditManagerName(managerName);
+                  setEditAddress(selectedMess?.address || '');
+                  setEditCuisine(selectedMess?.type || '');
+                  setEditCutoff(selectedMess?.cutoff_time || cutoffTime);
+                  setEditStarDish(selectedMess?.star_dish || starDish);
+                  setEditPartnerPhone(partnerPhone);
+                  setShowEditProfileModal(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Pencil size={12} color="#10B981" />
+                <Text style={styles.editAccountPillText}>Edit Info</Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={[styles.profileInfoCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
               <View style={styles.profileInfoRow}>
                 <Building2 size={16} color="#10B981" />
@@ -1085,7 +1235,7 @@ export default function MessOwnerDashboardScreen() {
                 <Utensils size={16} color="#10B981" />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>CUISINE / SPECIALTY</Text>
-                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.type || 'North Indian Thali Special'}</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.type || 'Pure Veg North Indian'}</Text>
                 </View>
               </View>
 
@@ -1093,15 +1243,39 @@ export default function MessOwnerDashboardScreen() {
                 <Clock size={16} color="#10B981" />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>PRE-BOOK CUTOFF TIME</Text>
-                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{cutoffTime}</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.cutoff_time || cutoffTime}</Text>
                 </View>
               </View>
 
-              <View style={[styles.profileInfoRow, { borderBottomWidth: 0 }]}>
+              <View style={styles.profileInfoRow}>
+                <Sparkles size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>TODAY'S STAR DISH</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.star_dish || starDish}</Text>
+                </View>
+              </View>
+
+              <View style={styles.profileInfoRow}>
                 <Users size={16} color="#10B981" />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>LIVE PRE-BOOKED TODAY</Text>
                   <Text style={[styles.infoRowVal, { color: '#10B981', fontWeight: '900' }]}>{liveHeadcount} Confirmed Student{liveHeadcount === 1 ? '' : 's'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.profileInfoRow}>
+                <CheckCircle2 size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>VERIFIED DINERS TODAY</Text>
+                  <Text style={[styles.infoRowVal, { color: '#10B981', fontWeight: '900' }]}>{verifiedCount} Redeemed Meal{verifiedCount === 1 ? '' : 's'}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.profileInfoRow, { borderBottomWidth: 0 }]}>
+                <TrendingUp size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>ALL-TIME MEALS DELIVERED</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain, fontWeight: '900' }]}>{totalLifetimeMeals} Total Meals</Text>
                 </View>
               </View>
             </View>
@@ -1137,7 +1311,7 @@ export default function MessOwnerDashboardScreen() {
                 <Phone size={16} color="#10B981" />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>24/7 PARTNER DESK</Text>
-                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>+91 98765 43210 (Partner Support)</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{partnerPhone} (Partner Support)</Text>
                 </View>
               </View>
             </View>
@@ -1332,6 +1506,183 @@ export default function MessOwnerDashboardScreen() {
         </View>
       </Modal>
 
+      {/* ================= EDIT MESS BUSINESS PROFILE MODAL ================= */}
+      <Modal
+        visible={showEditProfileModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowEditProfileModal(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={styles.bankEditCard}>
+            <View style={styles.pickerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Building2 size={20} color="#10B981" />
+                <Text style={[styles.pickerTitle, { color: colors.textMain }]}>Edit Mess Business Profile</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditProfileModal(false)} style={styles.pickerCloseBtn}>
+                <Text style={{ color: colors.textMain, fontWeight: '800' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 20 }}>
+              <Text style={{ fontSize: 12, color: colors.textSub, marginBottom: 4 }}>
+                Update your mess branch information, manager contacts, and live operations details.
+              </Text>
+
+              {/* Mess Name */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Mess Name</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editMessName}
+                  onChangeText={setEditMessName}
+                  placeholder="e.g. Annapurna Campus Mess"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Manager / Owner Name */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Manager / Owner Full Name</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editManagerName}
+                  onChangeText={setEditManagerName}
+                  placeholder="e.g. Rajesh Sharma"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Campus Location / Address */}
+              <View style={{ gap: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={[styles.formLabel, { color: colors.textSub }]}>Campus Location / Address</Text>
+                  {hasPinnedEditLocation && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={12} color="#10B981" />
+                      <Text style={{ fontSize: 10, color: '#10B981', fontWeight: '800' }}>PINNED ON MAP</Text>
+                    </View>
+                  )}
+                </View>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editAddress}
+                  onChangeText={setEditAddress}
+                  placeholder="e.g. Gate 2, North Campus Hub, Pune"
+                  placeholderTextColor={colors.textSub}
+                />
+
+                {/* Direct Map Pin Action */}
+                <TouchableOpacity
+                  style={[
+                    styles.pinLocationBtn,
+                    {
+                      borderColor: hasPinnedEditLocation ? '#10B981' : colors.cardBorder,
+                      backgroundColor: hasPinnedEditLocation ? 'rgba(16, 185, 129, 0.12)' : colors.inputBg,
+                    },
+                  ]}
+                  onPress={() => setShowOwnerLocationPicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <MapPin size={16} color={hasPinnedEditLocation ? '#10B981' : '#F59E0B'} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '800',
+                      color: hasPinnedEditLocation ? '#10B981' : colors.textMain,
+                    }}
+                  >
+                    {hasPinnedEditLocation
+                      ? `Pinned: (${editLatitude.toFixed(4)}, ${editLongitude.toFixed(4)}) • Tap to Re-Pin`
+                      : 'Pin / Mark Mess on Custom Map'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Cuisine / Specialty */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Cuisine / Specialty</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editCuisine}
+                  onChangeText={setEditCuisine}
+                  placeholder="e.g. Pure Veg North Indian Special"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Pre-Book Cutoff Time */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Pre-Book Cutoff Time</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editCutoff}
+                  onChangeText={setEditCutoff}
+                  placeholder="e.g. 2:15 PM or 7:00 PM"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Today's Star Dish */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Today's Star Dish</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editStarDish}
+                  onChangeText={setEditStarDish}
+                  placeholder="e.g. Special Shahi Paneer & Butter Naan"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Partner Phone */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Partner Desk Phone Number</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editPartnerPhone}
+                  onChangeText={setEditPartnerPhone}
+                  placeholder="e.g. +91 98765 43210"
+                  placeholderTextColor={colors.textSub}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                <TouchableOpacity
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder, height: 48 }]}
+                  onPress={() => setShowEditProfileModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[modalStyles.cancelBtnText, { color: colors.textMain }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[modalStyles.confirmBtn, { height: 48 }, savingProfile && { opacity: 0.7 }]}
+                  onPress={handleSaveProfile}
+                  disabled={savingProfile}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['#10B981', '#047857']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[modalStyles.confirmGrad, { paddingHorizontal: 12 }]}
+                  >
+                    <CheckCircle2 size={16} color="#FFFFFF" />
+                    <Text style={[modalStyles.confirmBtnText, { fontSize: 13 }]} numberOfLines={1}>
+                      {savingProfile ? 'Saving...' : 'Save Profile'}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
+
       {/* ================= PAYOUT CONFIRMATION MODAL ================= */}
       <Modal
         visible={showPayoutConfirmModal}
@@ -1380,9 +1731,9 @@ export default function MessOwnerDashboardScreen() {
               </View>
 
               {/* Actions Row */}
-              <View style={modalStyles.btnRow}>
+              <View style={[modalStyles.btnRow, { gap: 8 }]}>
                 <TouchableOpacity
-                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder, height: 48 }]}
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder, height: 48, flex: 1 }]}
                   onPress={() => setShowPayoutConfirmModal(false)}
                   activeOpacity={0.8}
                 >
@@ -1390,7 +1741,7 @@ export default function MessOwnerDashboardScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[modalStyles.confirmBtn, { height: 48 }]}
+                  style={[modalStyles.confirmBtn, { height: 48, flex: 1.25 }]}
                   onPress={handleConfirmPayoutRequest}
                   activeOpacity={0.85}
                 >
@@ -1398,10 +1749,12 @@ export default function MessOwnerDashboardScreen() {
                     colors={['#10B981', '#047857']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
-                    style={modalStyles.confirmGrad}
+                    style={[modalStyles.confirmGrad, { paddingHorizontal: 6, gap: 4 }]}
                   >
-                    <ArrowUpRight size={16} color="#FFFFFF" />
-                    <Text style={[modalStyles.confirmBtnText, { fontSize: 13 }]}>Confirm & Disburse</Text>
+                    <ArrowUpRight size={15} color="#FFFFFF" />
+                    <Text style={[modalStyles.confirmBtnText, { fontSize: 12, fontWeight: '800' }]} numberOfLines={1}>
+                      Confirm & Disburse
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -1682,6 +2035,22 @@ export default function MessOwnerDashboardScreen() {
         onScanSuccess={handleScanSuccess}
       />
 
+      {/* ================= MAP LOCATION PICKER MODAL ================= */}
+      <MessLocationPinModal
+        visible={showOwnerLocationPicker}
+        onClose={() => setShowOwnerLocationPicker(false)}
+        initialAddress={editAddress}
+        initialLatitude={editLatitude}
+        initialLongitude={editLongitude}
+        onLocationSaved={(loc) => {
+          setEditAddress(loc.address);
+          setEditLatitude(loc.latitude);
+          setEditLongitude(loc.longitude);
+          setHasPinnedEditLocation(true);
+          setShowOwnerLocationPicker(false);
+        }}
+      />
+
       {/* ================= DEDICATED OWNER BOTTOM NAVBAR ================= */}
       <OwnerBottomBar
         activeTab={activeTab}
@@ -1697,6 +2066,16 @@ export default function MessOwnerDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  pinLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
   container: {
     flex: 1,
   },

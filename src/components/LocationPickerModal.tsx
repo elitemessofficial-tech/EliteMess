@@ -599,7 +599,7 @@ export default function LocationPickerModal({ visible, onClose, onAddressSaved, 
             >
               <View style={styles.alertContent}>
                 <LottieView
-                  source={require('../../assets/images/address.lottie')}
+                  source={require('../../assets/images/address.json')}
                   autoPlay
                   loop
                   style={{ width: 120, height: 120, marginBottom: 8 }}

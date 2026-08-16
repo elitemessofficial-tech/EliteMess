@@ -238,7 +238,7 @@ export default function ShortlistScreen() {
           <AnimatedEntrance direction="up" delay={50}>
             <View style={[styles.emptyCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, minHeight: 280, justifyContent: 'center', alignItems: 'center', paddingTop: 30, paddingBottom: 30 }]}>
               <LottieView
-                source={require('../../assets/images/food.lottie')}
+                source={require('../../assets/images/food.json')}
                 autoPlay
                 loop
                 style={{ width: 150, height: 150 }}

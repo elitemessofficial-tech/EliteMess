@@ -414,7 +414,7 @@ export default function MessMapView({
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.messSelectorPillText, isSelected && { color: '#FFFFFF', fontWeight: '900' }]}>
-                    🍴 {m.name.split(' ')[0]} ({m.rating} ★)
+                    {m.name.split(' ')[0]} ({m.rating})
                   </Text>
                 </TouchableOpacity>
               );

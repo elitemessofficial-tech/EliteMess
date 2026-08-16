@@ -474,7 +474,7 @@ export default function DashboardScreen() {
               {/* Pulsing Lottie Radar Animation */}
               <View style={styles.lottieRadarContainer}>
                 <LottieView
-                  source={{ uri: 'https://assets5.lottiefiles.com/packages/lf20_t24twix2.json' }}
+                  source={require('../../assets/images/food_beverage.json')}
                   autoPlay
                   loop
                   style={styles.radarLottie}

@@ -143,7 +143,14 @@ const modalStyles = StyleSheet.create({
 export default function BookingDetailScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
-  const params = useLocalSearchParams<{ id?: string; messName?: string; mealType?: string; status?: string; date?: string }>();
+  const params = useLocalSearchParams<{
+    id?: string;
+    messName?: string;
+    mealType?: string;
+    status?: string;
+    date?: string;
+    menuHighlights?: string;
+  }>();
   const { activeBooking, cancelBooking, expireBooking, completeBooking, mealHistory, isOTPValid } = useToken();
 
   const [copied, setCopied] = useState(false);
@@ -152,8 +159,49 @@ export default function BookingDetailScreen() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
+  const getFallbackMenuForMess = (name: string): string[] => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('annapurna')) {
+      return ['Special Paneer Thali', 'Unlimited Butter Roti', 'Dal Makhani', 'Jeera Rice', 'Gulab Jamun'];
+    } else if (n.includes('shree sai') || n.includes('sai')) {
+      return ['Special Paneer Butter Masala', 'Tandoori Roti (Unlimited)', 'Dal Tadka', 'Jeera Rice', 'Sweet Kheer'];
+    } else if (n.includes('punjabi') || n.includes('tadka') || n.includes('spice route')) {
+      return ['Amritsari Kulcha / Paratha', 'Dal Makhani', 'Shahi Paneer', 'Pulao', 'Gulab Jamun'];
+    } else if (n.includes('kolhapur')) {
+      return ['Kolhapuri Veg Tambda Rassa', 'Jowar Bhakri', 'Indrayani Rice', 'Solkadhi'];
+    } else if (n.includes('swad') || n.includes('maharashtrian')) {
+      return ['Pithla Bhakri Special', 'Thecha', 'Varan Bhaat', 'Gulab Jamun'];
+    }
+    return ['Daily Special Deluxe Thali', 'Butter Roti (Unlimited)', 'Dal Tadka', 'Steamed Basmati Rice', 'Dessert'];
+  };
+
   // Determine if viewing active booking or a past order from history
   const isTargetActive = !params.id || params.id === 'active' || (activeBooking && activeBooking.bookingId === params.id);
+
+  const matchedHistory = mealHistory.find(
+    (h) => h.id === params.id || (params.date && h.date === params.date && h.messName === params.messName)
+  );
+
+  let parsedParamsMenu: string[] | null = null;
+  if (params.menuHighlights) {
+    try {
+      const p = JSON.parse(params.menuHighlights as string);
+      if (Array.isArray(p) && p.length > 0) parsedParamsMenu = p;
+    } catch (e) {}
+  }
+
+  const messNameResolved = isTargetActive && activeBooking
+    ? activeBooking.messName
+    : params.messName || matchedHistory?.messName || 'Annapurna Campus Mess';
+
+  const menuHighlightsResolved =
+    isTargetActive && activeBooking?.menuHighlights && activeBooking.menuHighlights.length > 0
+      ? activeBooking.menuHighlights
+      : matchedHistory?.menuHighlights && matchedHistory.menuHighlights.length > 0
+      ? matchedHistory.menuHighlights
+      : parsedParamsMenu
+      ? parsedParamsMenu
+      : getFallbackMenuForMess(messNameResolved);
 
   // Derive order details
   const orderData = isTargetActive && activeBooking
@@ -166,20 +214,20 @@ export default function BookingDetailScreen() {
         cutoffTime: activeBooking.cutoffTime,
         status: 'booked',
         date: activeBooking.bookedAt ? new Date(activeBooking.bookedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Today',
-        menuHighlights: activeBooking.menuHighlights || ['Daily Thali Special', 'Roti', 'Rice', 'Paneer Gravy'],
+        menuHighlights: menuHighlightsResolved,
         tokensUsed: 1,
       }
     : {
         id: params.id || `bk_${Date.now()}`,
-        messName: params.messName || 'Annapurna Campus Mess',
-        messAddress: 'Gate 2, North Campus Hub',
-        mealType: params.mealType || 'Lunch',
-        otp: '84920156',
-        cutoffTime: '2:30 PM',
-        status: params.status || 'completed',
-        date: params.date || 'Jul 27, 09:40 PM',
-        menuHighlights: ['Daily Special Thali', 'Roti', 'Rice', 'Dal Fry'],
-        tokensUsed: params.status === 'skipped' ? 0 : 1,
+        messName: messNameResolved,
+        messAddress: matchedHistory?.messAddress || 'Gate 2, North Campus Hub',
+        mealType: params.mealType || matchedHistory?.mealType || 'Lunch',
+        otp: matchedHistory?.otp || '84920156',
+        cutoffTime: matchedHistory?.cutoffTime || '2:30 PM',
+        status: params.status || matchedHistory?.status || 'completed',
+        date: params.date || matchedHistory?.date || 'Jul 27, 09:40 PM',
+        menuHighlights: menuHighlightsResolved,
+        tokensUsed: params.status === 'skipped' || matchedHistory?.status === 'skipped' ? 0 : 1,
       };
 
   useEffect(() => {
@@ -373,7 +421,7 @@ export default function BookingDetailScreen() {
               <View style={styles.otpDisplayWrap}>
                 {/* First 4 Digits */}
                 <View style={styles.otpGroupRow}>
-                  {otpPart1.split('').map((digit, i) => (
+                  {otpPart1.split('').map((digit: string, i: number) => (
                     <View key={i} style={styles.digitBox}>
                       <Text style={styles.digitText}>{digit}</Text>
                     </View>
@@ -384,7 +432,7 @@ export default function BookingDetailScreen() {
 
                 {/* Second 4 Digits */}
                 <View style={styles.otpGroupRow}>
-                  {otpPart2.split('').map((digit, i) => (
+                  {otpPart2.split('').map((digit: string, i: number) => (
                     <View key={`2_${i}`} style={styles.digitBox}>
                       <Text style={styles.digitText}>{digit}</Text>
                     </View>
@@ -491,7 +539,7 @@ export default function BookingDetailScreen() {
               <Text style={[styles.cardTitleLabel, { color: '#FF6B00', marginBottom: 0 }]}>INCLUDED MENU</Text>
             </View>
 
-            {orderData.menuHighlights.map((item, idx) => (
+            {orderData.menuHighlights.map((item: string, idx: number) => (
               <View key={idx} style={styles.menuLine}>
                 <CheckCircle2 size={15} color="#10B981" />
                 <Text style={[styles.menuLineText, { color: colors.textMain }]}>{item}</Text>

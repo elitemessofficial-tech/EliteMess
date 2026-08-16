@@ -528,21 +528,21 @@ function FoodDeliveryOrderDetailsScreen({ id }: { id?: string }) {
   const getLottieSource = (status: string) => {
     switch (status) {
       case 'pending':
-        return require('../../../assets/images/food_beverage.lottie');
+        return require('../../../assets/images/food_beverage.json');
       case 'accepted':
       case 'preparing':
-        return require('../../../assets/images/cooking.lottie');
+        return require('../../../assets/images/cooking.json');
       case 'ready_for_pickup':
-        return require('../../../assets/images/food.lottie');
+        return require('../../../assets/images/food.json');
       case 'dispatched':
       case 'out_for_delivery':
-        return require('../../../assets/images/receive_order.lottie');
+        return require('../../../assets/images/receive_order.json');
       case 'delivered':
-        return require('../../../assets/images/a2z_delivered.lottie');
+        return require('../../../assets/images/a2z_delivered.json');
       case 'cancelled':
-        return require('../../../assets/images/wrong.lottie');
+        return require('../../../assets/images/wrong.json');
       default:
-        return require('../../../assets/images/food_beverage.lottie');
+        return require('../../../assets/images/food_beverage.json');
     }
   };
 
@@ -1222,7 +1222,7 @@ function FoodDeliveryOrderDetailsScreen({ id }: { id?: string }) {
         <View style={styles.modalOverlay}>
           <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={[styles.modalContent, { borderColor: colors.cardBorder, backgroundColor: isDark ? 'rgba(15, 15, 12, 0.96)' : 'rgba(255, 255, 255, 0.98)', maxWidth: 360 }]}>
             <LottieView
-              source={require('../../../assets/images/wrong.lottie')}
+              source={require('../../../assets/images/wrong.json')}
               autoPlay
               loop
               style={{ width: 80, height: 80, marginBottom: 8 }}

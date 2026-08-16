@@ -42,6 +42,10 @@ export interface MealHistoryItem {
   status: 'completed' | 'skipped' | 'no-show' | 'cancelled' | 'refunded';
   tokensUsed: number;
   date: string;
+  messAddress?: string;
+  menuHighlights?: string[];
+  cutoffTime?: string;
+  otp?: string;
 }
 
 export type PlanType = 'single' | 'double' | 'none';
@@ -125,9 +129,25 @@ const getScopedKey = (baseKey: string, userId: string) => {
 
 export function expandHistoryWithRefundPairs(items: MealHistoryItem[]): MealHistoryItem[] {
   const result: MealHistoryItem[] = [];
+  const seenAutoSkips = new Set<string>();
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
+    
+    // Clean up duplicate auto-skip or expiration items on the same day & meal slot
+    if (
+      item.status === 'skipped' ||
+      item.messName.includes('Skip Pass Auto-Used') ||
+      item.messName.includes('Token Expired')
+    ) {
+      const dateDay = (item.date || '').split(',')[0].trim();
+      const skipKey = `${dateDay}_${item.mealType || 'Daily'}_${item.status}`;
+      if (seenAutoSkips.has(skipKey)) {
+        continue; // skip duplicate record
+      }
+      seenAutoSkips.add(skipKey);
+    }
+
     if (item.status === 'cancelled' || item.status === 'refunded' || item.tokensUsed < 0) {
       result.push({
         ...item,
@@ -151,6 +171,8 @@ export function expandHistoryWithRefundPairs(items: MealHistoryItem[]): MealHist
           status: 'completed',
           tokensUsed: 1,
           date: item.date,
+          menuHighlights: item.menuHighlights,
+          cutoffTime: item.cutoffTime,
         });
       }
     } else {
@@ -289,7 +311,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const istNow = getISTDate();
       const todayStr = getISTDateString();
       const currentHour = getISTCurrentDecimalHours();
-      const isAfter1130AM = currentHour >= 11.5;
+      const isAfter1100AM = currentHour >= 11.0;
       const isAfter700PM = currentHour >= 19.0;
 
       let lastLunch = currState.lastLunchCutoffDate || '';
@@ -347,17 +369,43 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const bookedAnyMealToday =
         bookedLunchToday || bookedDinnerToday || todayBookings.length > 0;
 
+      // Check if auto-skip/expiration for today was already recorded in history
+      const alreadyProcessedLunch =
+        lastLunch === todayStr ||
+        currHistory.some(
+          (h) =>
+            h.id.includes(`lunch_${todayStr}`) ||
+            (h.date.includes(todayStr) && h.status === 'skipped' && h.mealType === 'Lunch')
+        );
+
+      const alreadyProcessedDinner =
+        lastDinner === todayStr ||
+        currHistory.some(
+          (h) =>
+            h.id.includes(`dinner_${todayStr}`) ||
+            (h.date.includes(todayStr) && h.status === 'skipped' && h.mealType === 'Dinner')
+        );
+
+      const alreadyProcessedDaily =
+        lastDaily === todayStr ||
+        currHistory.some(
+          (h) =>
+            h.id.includes(`daily_${todayStr}`) ||
+            h.id.includes(`auto_${todayStr}`) ||
+            (h.date.includes(todayStr) && h.status === 'skipped')
+        );
+
       // 2. Evaluation for 30-Meal Pass (1 Meal / Day - Single Slot)
-      // Cutoff occurs after 7:00 PM (when both lunch & dinner booking cutoffs for the day have passed)
+      // Cutoff occurs after 7:00 PM (19:00 IST) ONLY IF NO LUNCH AND NO DINNER booked on that day!
       if (currState.planType === 'single') {
-        if (isAfter700PM && lastDaily !== todayStr && updatedRemTokens > 0) {
+        if (isAfter700PM && !alreadyProcessedDaily && updatedRemTokens > 0) {
           lastDaily = todayStr;
           if (!bookedAnyMealToday) {
             if (updatedRemSkips > 0) {
               // Deduct 1 skip token (protects meal token)
               updatedRemSkips = Math.max(0, updatedRemSkips - 1);
               historyToAdd.push({
-                id: `hist_skip_auto_${Date.now()}`,
+                id: `hist_skip_daily_${todayStr}`,
                 messName: '1 Skip Pass Auto-Used (No Meal Booked by 7:00 PM Cutoff)',
                 mealType: 'Dinner',
                 status: 'skipped',
@@ -368,7 +416,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               // Deduct 1 meal token (no-show)
               updatedRemTokens = Math.max(0, updatedRemTokens - 1);
               historyToAdd.push({
-                id: `hist_meal_exp_${Date.now()}`,
+                id: `hist_meal_exp_daily_${todayStr}`,
                 messName: '1 Meal Token Expired (No Meal Booked by 7:00 PM Cutoff)',
                 mealType: 'Dinner',
                 status: 'no-show',
@@ -382,15 +430,15 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       // 3. Evaluation for 60-Meal Pass (2 Meals / Day - Double Slot: Lunch + Dinner)
       if (currState.planType === 'double') {
-        // A) Lunch Cutoff (11:30 AM)
-        if (isAfter1130AM && lastLunch !== todayStr && updatedRemTokens > 0) {
+        // A) Lunch Cutoff (11:00 AM) - Deduct 1 skip token if no lunch booked today
+        if (isAfter1100AM && !alreadyProcessedLunch && updatedRemTokens > 0) {
           lastLunch = todayStr;
           if (!bookedLunchToday) {
             if (updatedRemSkips > 0) {
               updatedRemSkips = Math.max(0, updatedRemSkips - 1);
               historyToAdd.push({
-                id: `hist_skip_lunch_${Date.now()}`,
-                messName: '1 Skip Pass Auto-Used (Lunch Cutoff Missed at 11:30 AM)',
+                id: `hist_skip_lunch_${todayStr}`,
+                messName: '1 Skip Pass Auto-Used (Lunch Cutoff Missed at 11:00 AM)',
                 mealType: 'Lunch',
                 status: 'skipped',
                 tokensUsed: 0,
@@ -399,8 +447,8 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             } else {
               updatedRemTokens = Math.max(0, updatedRemTokens - 1);
               historyToAdd.push({
-                id: `hist_meal_lunch_${Date.now()}`,
-                messName: '1 Meal Token Expired (Lunch Cutoff Missed at 11:30 AM)',
+                id: `hist_meal_lunch_${todayStr}`,
+                messName: '1 Meal Token Expired (Lunch Cutoff Missed at 11:00 AM)',
                 mealType: 'Lunch',
                 status: 'no-show',
                 tokensUsed: 1,
@@ -410,14 +458,14 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           }
         }
 
-        // B) Dinner Cutoff (7:00 PM)
-        if (isAfter700PM && lastDinner !== todayStr && updatedRemTokens > 0) {
+        // B) Dinner Cutoff (7:00 PM) - Deduct 1 skip token if no dinner booked today
+        if (isAfter700PM && !alreadyProcessedDinner && updatedRemTokens > 0) {
           lastDinner = todayStr;
           if (!bookedDinnerToday) {
             if (updatedRemSkips > 0) {
               updatedRemSkips = Math.max(0, updatedRemSkips - 1);
               historyToAdd.push({
-                id: `hist_skip_dinner_${Date.now()}`,
+                id: `hist_skip_dinner_${todayStr}`,
                 messName: '1 Skip Pass Auto-Used (Dinner Cutoff Missed at 7:00 PM)',
                 mealType: 'Dinner',
                 status: 'skipped',
@@ -427,7 +475,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             } else {
               updatedRemTokens = Math.max(0, updatedRemTokens - 1);
               historyToAdd.push({
-                id: `hist_meal_dinner_${Date.now()}`,
+                id: `hist_meal_dinner_${todayStr}`,
                 messName: '1 Meal Token Expired (Dinner Cutoff Missed at 7:00 PM)',
                 mealType: 'Dinner',
                 status: 'no-show',
@@ -453,7 +501,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setSubscriptionPlan(updatedPlan);
 
         if (historyToAdd.length > 0) {
-          const newHistory = [...historyToAdd, ...currHistory];
+          const newHistory = expandHistoryWithRefundPairs([...historyToAdd, ...currHistory]);
           setMealHistory(newHistory);
           await AsyncStorage.setItem(
             getScopedKey(STORAGE_KEYS.HISTORY, userId),
@@ -479,6 +527,31 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId),
           JSON.stringify(stateObj)
         );
+
+        // Sync real-time skip and token deductions to Neon PostgreSQL
+        try {
+          await upsertMealPassInNeon(
+            userId,
+            updatedPlan,
+            currState.totalTokens,
+            updatedRemTokens,
+            currState.totalSkips,
+            updatedRemSkips,
+            currState.streakDays
+          );
+
+          if (historyToAdd.length > 0) {
+            for (const hItem of historyToAdd) {
+              await insertMealHistoryItemInNeon(
+                userId,
+                hItem.messName,
+                hItem.mealType,
+                hItem.status,
+                hItem.tokensUsed
+              );
+            }
+          }
+        } catch (e) {}
       }
     },
     []
@@ -537,6 +610,20 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             : (pass.plan_name || '').toLowerCase().includes('30')
             ? 'single'
             : 'none';
+
+          // Preserve cutoff check dates & expiry from local storage
+          const savedStateStr = await AsyncStorage.getItem(
+            getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId)
+          );
+          if (savedStateStr) {
+            try {
+              const parsed = JSON.parse(savedStateStr);
+              lastLunch = parsed.lastLunchCutoffDate || '';
+              lastDinner = parsed.lastDinnerCutoffDate || '';
+              lastDaily = parsed.lastDailyCutoffDate || '';
+              loadedExpiresAt = parsed.planExpiresAt || null;
+            } catch (e) {}
+          }
         } else {
           const savedStateStr = await AsyncStorage.getItem(
             getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId)
@@ -659,6 +746,8 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           const parsedHist = JSON.parse(savedHistoryStr);
           if (Array.isArray(parsedHist)) {
             currentHistory = expandHistoryWithRefundPairs(parsedHist);
+            // Clean up storage from any duplicate records
+            await AsyncStorage.setItem(historyKey, JSON.stringify(currentHistory));
           }
         } catch (e) {}
       }

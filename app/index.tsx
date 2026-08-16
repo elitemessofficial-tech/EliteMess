@@ -20,7 +20,7 @@ const isSpecialOwnerNumber = (phoneStr: string) => {
 };
 
 const isVipNumber = (phoneStr: string) => {
-  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '7777777777';
+  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '65244256';
   const cleanVip = vipVal.replace(/\D/g, '');
   const cleanPhone = phoneStr.replace(/\D/g, '');
   return cleanPhone.endsWith(cleanVip) && cleanVip.length >= 5;
@@ -206,7 +206,7 @@ export default function EntrypointIndex() {
         {/* Lottie Loader Illustration */}
         <View style={styles.loaderContainer}>
           <LottieView
-            source={require('../assets/images/food_beverage.lottie')}
+            source={require('../assets/images/food_beverage.json')}
             autoPlay
             loop
             style={styles.lottie}

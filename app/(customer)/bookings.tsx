@@ -184,6 +184,7 @@ export default function BookingsScreen() {
 
   const handleOpenOrderDetail = (item?: MealHistoryItem) => {
     const targetId = item ? item.id : (activeBooking ? activeBooking.bookingId : 'active');
+    const highlights = item?.menuHighlights || activeBooking?.menuHighlights || [];
     try {
       router.push({
         pathname: `/(customer)/order/[id]`,
@@ -193,10 +194,11 @@ export default function BookingsScreen() {
           mealType: item ? item.mealType : (activeBooking?.mealType || ''),
           status: item ? item.status : 'booked',
           date: item ? item.date : '',
+          menuHighlights: JSON.stringify(highlights),
         },
       });
     } catch {
-      router.push(`/(customer)/booking-detail?id=${targetId}`);
+      router.push(`/(customer)/booking-detail?id=${targetId}&menuHighlights=${encodeURIComponent(JSON.stringify(highlights))}`);
     }
   };
 
@@ -443,7 +445,7 @@ export default function BookingsScreen() {
           <AnimatedEntrance direction="up" delay={100}>
             <View style={[styles.emptyHistory, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder, minHeight: 180, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 }]}>
               <LottieView
-                source={require('../../assets/images/food_beverage.lottie')}
+                source={require('../../assets/images/food_beverage.json')}
                 autoPlay
                 loop
                 style={{ width: 110, height: 110 }}

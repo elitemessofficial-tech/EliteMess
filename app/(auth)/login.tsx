@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronDown, User } from 'lucide-react-native';
+import { ChevronDown, User, Crown, Store, UserCheck, Shield } from 'lucide-react-native';
 import LottieView from 'lottie-react-native';
 import { supabase } from '../../src/services/supabase';
 import envBypass from '../../src/config/env_bypass.json';
@@ -30,7 +30,7 @@ const isSpecialOwnerNumber = (phoneStr: string) => {
 };
 
 const isVipNumber = (phoneStr: string) => {
-  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '7777777777';
+  const vipVal = envBypass.EXPO_PUBLIC_VIP_NUMBER || '65244256';
   const cleanVip = vipVal.replace(/\D/g, '');
   const cleanPhone = phoneStr.replace(/\D/g, '');
   return cleanPhone.endsWith(cleanVip) && cleanVip.length >= 5;
@@ -108,12 +108,13 @@ export default function PhoneLoginScreen() {
       if (isVipActive === 'true') {
         const storedRole = await AsyncStorage.getItem('user_selected_role');
         if (storedRole) {
-          if (storedRole === 'customer') router.replace('/');
+          if (storedRole === 'admin') router.replace('/(admin)/admin_dashboard' as any);
           else if (storedRole === 'owner') router.replace('/(owner)/owner_dashboard');
+          else if (storedRole === 'customer') router.replace('/');
           else if (storedRole === 'rider') router.replace('/(rider)/rider_dashboard' as any);
         } else {
           setShowVipSelection(true);
-          setDescopeUserData({ uid: 'vip_user_id', phone: `+91${process.env.EXPO_PUBLIC_VIP_NUMBER || '7777777777'}` });
+          setDescopeUserData({ uid: 'vip_user_id', phone: `+91${envBypass.EXPO_PUBLIC_VIP_NUMBER || '65244256'}` });
         }
         return true;
       }
@@ -524,7 +525,7 @@ export default function PhoneLoginScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }]}>
         <LottieView
-          source={require('../../assets/images/Greentick.lottie')}
+          source={require('../../assets/images/Greentick.json')}
           autoPlay
           loop={false}
           style={{ width: 160, height: 160, marginBottom: 20 }}
@@ -562,6 +563,28 @@ export default function PhoneLoginScreen() {
               Authorized VIP access. Select view mode:
             </Text>
 
+            {/* 1. Super Admin Portal (VIP Exclusive) */}
+            <TouchableOpacity 
+              onPress={async () => {
+                await AsyncStorage.removeItem('explicit_logout');
+                await AsyncStorage.setItem('user_selected_role', 'admin');
+                router.replace('/(admin)/admin_dashboard' as any);
+              }} 
+              activeOpacity={0.85}
+              style={{ marginBottom: 10 }}
+            >
+              <LinearGradient
+                colors={['#10B981', '#047857']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.gradientBtn, { shadowColor: '#10B981', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
+              >
+                <Crown size={16} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Enter Super Admin Portal</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* 2. Owner View */}
             <TouchableOpacity 
               onPress={async () => {
                 await AsyncStorage.removeItem('explicit_logout');
@@ -575,12 +598,14 @@ export default function PhoneLoginScreen() {
                 colors={colors.goldGrad}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={[styles.gradientBtn, { shadowColor: colors.accentGold }]}
+                style={[styles.gradientBtn, { shadowColor: colors.accentGold, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
               >
+                <Store size={16} color="#FFFFFF" />
                 <Text style={styles.buttonText}>Enter Owner View</Text>
               </LinearGradient>
             </TouchableOpacity>
 
+            {/* 3. Customer View */}
             <TouchableOpacity 
               onPress={async () => {
                 await AsyncStorage.removeItem('explicit_logout');
@@ -588,8 +613,9 @@ export default function PhoneLoginScreen() {
                 router.replace('/');
               }} 
               activeOpacity={0.85}
-              style={[styles.secondaryButton, { marginTop: 4, height: 48, justifyContent: 'center' }]}
+              style={[styles.secondaryButton, { marginTop: 2, height: 48, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 8 }]}
             >
+              <User size={15} color="#FFFFFF" />
               <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13, textAlign: 'center' }}>
                 Enter Customer View
               </Text>

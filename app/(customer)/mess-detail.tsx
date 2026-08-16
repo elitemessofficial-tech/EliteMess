@@ -37,6 +37,12 @@ import AnimatedEntrance from '../../components/AnimatedEntrance';
 import Loader from '../../components/Loader';
 import ConfirmModal from '../../components/ConfirmModal';
 import ReviewsModal from '../../src/components/ReviewsModal';
+import {
+  getCurrentStudentLocation,
+  calculateHaversineDistance,
+  formatDistanceAndWalkTime,
+  UserCoordinates,
+} from '../../src/utils/userLocation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -62,12 +68,45 @@ export default function MessDetailScreen() {
   const { addToShortlist, removeFromShortlist, isShortlisted, bookMeal, activeBooking } = useToken();
 
   const [mess, setMess] = useState<MessDetail | null>(null);
+  const [userLocation, setUserLocation] = useState<UserCoordinates | null>(null);
   const [loading, setLoading] = useState(true);
   const [reviewsModal, setReviewsModal] = useState<{ visible: boolean; messId: string; messName: string }>({
     visible: false,
     messId: '',
     messName: '',
   });
+
+  useEffect(() => {
+    const fetchLocation = async () => {
+      const loc = await getCurrentStudentLocation();
+      setUserLocation(loc);
+    };
+    fetchLocation();
+  }, []);
+
+  // Compute live accurate walking distance & walk time
+  const calculatedDistanceInfo = React.useMemo(() => {
+    if (!mess) return { formattedLabel: '240m (3 min walk)', distanceStr: '240m', walkTimeMinutes: 3 };
+
+    const messLat = mess.latitude || 18.5204;
+    const messLng = mess.longitude || 73.8567;
+
+    if (userLocation) {
+      const meters = calculateHaversineDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        messLat,
+        messLng
+      );
+      return formatDistanceAndWalkTime(meters);
+    }
+
+    return {
+      formattedLabel: mess.distance || '240m (3 min walk)',
+      distanceStr: mess.distance ? mess.distance.split(' ')[0] : '240m',
+      walkTimeMinutes: 3,
+    };
+  }, [mess, userLocation]);
 
   const fetchMessDetail = useCallback(async () => {
     if (!messId) return;
@@ -334,10 +373,27 @@ export default function MessDetailScreen() {
           <View style={styles.heroTitleOverlay}>
             <Text style={styles.heroTitle}>{mess.name}</Text>
             <View style={styles.heroSubRow}>
-              <MapPin size={14} color="#A7F3D0" />
-              <Text style={styles.heroSubText}>{mess.address}</Text>
-              <Text style={styles.heroDot}>--</Text>
-              <Text style={styles.heroSubText}>{mess.distance}</Text>
+              <MapPin size={13} color="#A7F3D0" />
+              <Text style={[styles.heroSubText, { flex: 1 }]} numberOfLines={1}>
+                {mess.address}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Clock size={13} color="#6EE7B7" />
+                <Text style={[styles.heroSubText, { color: '#6EE7B7', fontWeight: '800' }]}>
+                  {calculatedDistanceInfo.formattedLabel}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.mapRouteHeroBtn}
+                onPress={handleGetDirections}
+                activeOpacity={0.8}
+              >
+                <Navigation size={12} color="#10B981" />
+                <Text style={styles.mapRouteHeroBtnText}>View on Map</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -432,12 +488,19 @@ export default function MessDetailScreen() {
               activeOpacity={0.85}
             >
               <View style={styles.directionsRow}>
-                <Navigation size={18} color="#10B981" />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.directionsTitle, { color: colors.textMain }]}>Get Directions</Text>
-                  <Text style={[styles.directionsAddress, { color: colors.textSub }]}>{mess.address}</Text>
+                <View style={styles.directionIconBox}>
+                  <Navigation size={18} color="#10B981" />
                 </View>
-                <ChevronRight size={18} color={colors.textSub} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.directionsTitle, { color: colors.textMain }]}>View on Custom Map & Route</Text>
+                  <Text style={[styles.directionsAddress, { color: colors.textSub }]}>
+                    {calculatedDistanceInfo.formattedLabel} • Tap to view live walking route
+                  </Text>
+                </View>
+                <View style={styles.mapActionBadge}>
+                  <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '800' }}>Open Map</Text>
+                  <ChevronRight size={13} color="#10B981" />
+                </View>
               </View>
             </TouchableOpacity>
           </AnimatedEntrance>
@@ -712,6 +775,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  directionIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  mapActionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  mapRouteHeroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(16, 185, 129, 0.22)',
+    borderColor: '#10B981',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  mapRouteHeroBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
   directionsTitle: {
     fontSize: 14,

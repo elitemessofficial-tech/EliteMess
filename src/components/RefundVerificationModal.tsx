@@ -99,7 +99,7 @@ export default function RefundVerificationModal({
           {stage === 'confirm' && (
             <View style={styles.contentContainer}>
               <LottieView
-                source={require('../../assets/images/wrong.lottie')}
+                source={require('../../assets/images/wrong.json')}
                 autoPlay
                 loop
                 style={styles.lottieIcon}
@@ -213,7 +213,7 @@ export default function RefundVerificationModal({
           {stage === 'success' && (
             <View style={styles.contentContainer}>
               <LottieView
-                source={require('../../assets/images/Greentick.lottie')}
+                source={require('../../assets/images/Greentick.json')}
                 autoPlay
                 loop={false}
                 style={styles.lottieIcon}

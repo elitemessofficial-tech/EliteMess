@@ -56,9 +56,11 @@ export function useLedgerData() {
           setPassStats({
             planName: pass.plan_name || 'College Gold Meal Pass',
             totalTokens: pass.total_tokens || 60,
-            remainingTokens: pass.remaining_tokens ?? tokenContext.remainingTokens,
+            remainingTokens:
+              tokenContext.remainingTokens !== undefined ? tokenContext.remainingTokens : pass.remaining_tokens,
             totalSkips: pass.total_skips || 15,
-            remainingSkips: pass.remaining_skips ?? tokenContext.remainingSkips,
+            remainingSkips:
+              tokenContext.remainingSkips !== undefined ? tokenContext.remainingSkips : pass.remaining_skips,
           });
         } else if (!user.isVip && tokenContext.totalTokens === 0) {
           setPassStats({
@@ -71,7 +73,7 @@ export function useLedgerData() {
         }
       } catch (e) {}
 
-      // 2. Fetch Meal History Logs from Neon DB
+      // 2. Fetch Meal History Logs from Neon DB & Merge with live tokenContext history
       try {
         const history = await getMealHistoryFromNeon(user.userId);
 
@@ -81,7 +83,9 @@ export function useLedgerData() {
             messName: h.mess_name || 'Partner Mess',
             mealType: (h.meal_type as any) || 'Lunch',
             status: (h.status as any) || 'completed',
-            tokensUsed: h.tokens_used ?? (h.status === 'cancelled' || h.status === 'refunded' ? -1 : h.status === 'skipped' ? 0 : 1),
+            tokensUsed:
+              h.tokens_used ??
+              (h.status === 'cancelled' || h.status === 'refunded' ? -1 : h.status === 'skipped' ? 0 : 1),
             date: new Date(h.created_at).toLocaleDateString([], {
               month: 'short',
               day: 'numeric',
@@ -89,8 +93,9 @@ export function useLedgerData() {
               minute: '2-digit',
             }),
           }));
-          setHistoryList(expandHistoryWithRefundPairs(mappedHistory));
-        } else if (!user.isVip) {
+          const merged = [...tokenContext.mealHistory, ...mappedHistory];
+          setHistoryList(expandHistoryWithRefundPairs(merged));
+        } else {
           setHistoryList(expandHistoryWithRefundPairs(tokenContext.mealHistory));
         }
       } catch (e) {

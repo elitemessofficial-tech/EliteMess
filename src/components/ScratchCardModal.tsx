@@ -129,7 +129,7 @@ export default function ScratchCardModal({
             {showSuccessLottie ? (
               <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 20, gap: 10 }}>
                 <LottieView
-                  source={require('../../assets/images/Greentick.lottie')}
+                  source={require('../../assets/images/Greentick.json')}
                   autoPlay
                   loop={false}
                   style={{ width: 140, height: 140 }}
