@@ -13,10 +13,11 @@ import {
   QrCode,
   UtensilsCrossed,
   ClipboardList,
+  User,
 } from 'lucide-react-native';
 import { useAppTheme } from '../src/context/ThemeContext';
 
-export type OwnerTabType = 'overview' | 'verify' | 'menu' | 'log';
+export type OwnerTabType = 'overview' | 'menu' | 'verify' | 'log' | 'profile';
 
 interface OwnerBottomBarProps {
   activeTab: OwnerTabType;
@@ -75,7 +76,29 @@ export default function OwnerBottomBar({
             </Text>
           </TouchableOpacity>
 
-          {/* 2. Center Elevated Floating QR Scanner Tab */}
+          {/* 2. Daily Dish Menu Tab */}
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => onTabChange('menu')}
+            activeOpacity={0.7}
+          >
+            <UtensilsCrossed
+              size={21}
+              color={activeTab === 'menu' ? navColors.active : navColors.inactive}
+              strokeWidth={activeTab === 'menu' ? 2.5 : 1.8}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                { color: activeTab === 'menu' ? navColors.active : navColors.inactive },
+                activeTab === 'menu' && styles.tabLabelActive,
+              ]}
+            >
+              Dish Menu
+            </Text>
+          </TouchableOpacity>
+
+          {/* 3. Center Elevated Floating QR Scanner Tab */}
           <View style={styles.centerButtonWrapper}>
             <View style={[styles.cutoutRing, { backgroundColor: navColors.cutoutBg }]}>
               <TouchableOpacity
@@ -112,28 +135,6 @@ export default function OwnerBottomBar({
             </Text>
           </View>
 
-          {/* 3. Daily Dish Menu Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabChange('menu')}
-            activeOpacity={0.7}
-          >
-            <UtensilsCrossed
-              size={21}
-              color={activeTab === 'menu' ? navColors.active : navColors.inactive}
-              strokeWidth={activeTab === 'menu' ? 2.5 : 1.8}
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                { color: activeTab === 'menu' ? navColors.active : navColors.inactive },
-                activeTab === 'menu' && styles.tabLabelActive,
-              ]}
-            >
-              Dish Menu
-            </Text>
-          </TouchableOpacity>
-
           {/* 4. Dining Log Tab */}
           <TouchableOpacity
             style={styles.tabItem}
@@ -153,6 +154,28 @@ export default function OwnerBottomBar({
               ]}
             >
               Dining Log
+            </Text>
+          </TouchableOpacity>
+
+          {/* 5. Owner Profile Tab */}
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => onTabChange('profile')}
+            activeOpacity={0.7}
+          >
+            <User
+              size={21}
+              color={activeTab === 'profile' ? navColors.active : navColors.inactive}
+              strokeWidth={activeTab === 'profile' ? 2.5 : 1.8}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                { color: activeTab === 'profile' ? navColors.active : navColors.inactive },
+                activeTab === 'profile' && styles.tabLabelActive,
+              ]}
+            >
+              Profile
             </Text>
           </TouchableOpacity>
         </View>
@@ -191,7 +214,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
   tabItem: {
     flex: 1,

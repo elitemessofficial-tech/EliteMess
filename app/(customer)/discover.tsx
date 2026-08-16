@@ -9,6 +9,8 @@ import {
   Animated,
   Dimensions,
   Modal,
+  Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -147,7 +149,39 @@ export default function DiscoverScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
   const { addToShortlist, removeFromShortlist, isShortlisted, bookMeal, activeBooking } = useToken();
-  const { allMesses, markSwiped, resetSwiped } = useMessSwiper();
+  const { allMesses, markSwiped, resetSwiped, refetch } = useMessSwiper();
+
+  // LIVE EVENT LISTENER: Instantly updates swiper deck when owner updates menu!
+  useEffect(() => {
+    const handleMenuUpdate = () => {
+      if (refetch) refetch();
+    };
+
+    const sub = DeviceEventEmitter.addListener('ELITEMESS_MENU_UPDATED', handleMenuUpdate);
+
+    const handleWebEvent = () => {
+      if (refetch) refetch();
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'ELITEMESS_LAST_MENU_UPDATE') {
+        if (refetch) refetch();
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+      window.addEventListener('storage', handleStorageEvent);
+    }
+
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+        window.removeEventListener('storage', handleStorageEvent);
+      }
+    };
+  }, [refetch]);
 
   // Active Index Tracking for Deck Progression
   const [currentIndex, setCurrentIndex] = useState(0);

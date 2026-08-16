@@ -10,6 +10,7 @@ import {
   Alert,
   Linking,
   Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -29,7 +30,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useToken } from '../../src/context/TokenContext';
-import { supabase } from '../../src/services/supabase';
+import { getMessesFromNeon } from '../../src/services/neon';
 import { SEED_RESTAURANT_MESSES } from '../../src/services/dbSeedSync';
 import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
@@ -73,33 +74,29 @@ export default function MessDetailScreen() {
     setLoading(true);
 
     try {
-      // Try Supabase first
-      const { data, error } = await supabase
-        .from('messes')
-        .select('*')
-        .eq('id', messId)
-        .single();
+      const messesList = await getMessesFromNeon();
+      const match = messesList.find((m) => m.id === messId);
 
-      if (!error && data) {
+      if (match) {
         setMess({
-          id: data.id,
-          name: data.name,
-          address: data.address,
-          distance: data.distance || '300m (4 min walk)',
-          rating: parseFloat(data.rating || '4.8'),
-          cutoffTime: data.cutoff_time || '2:15 PM',
-          image: data.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
-          starDish: data.star_dish || 'Daily Special Thali',
-          highlights: data.highlights || ['Daily Special', 'Rice', 'Roti'],
-          type: data.type || 'Veg',
-          latitude: data.latitude,
-          longitude: data.longitude,
+          id: match.id,
+          name: match.name,
+          address: match.address,
+          distance: match.distance || '300m (4 min walk)',
+          rating: parseFloat(String(match.rating || '4.8')),
+          cutoffTime: match.cutoff_time || '2:15 PM',
+          image: match.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
+          starDish: match.star_dish || 'Daily Special Thali',
+          highlights: match.highlights || ['Daily Special', 'Rice', 'Roti'],
+          type: match.type || 'Veg',
+          latitude: match.latitude,
+          longitude: match.longitude,
         });
         setLoading(false);
         return;
       }
     } catch (e) {
-      console.warn('Supabase mess detail fallback:', e);
+      console.warn('Neon mess detail fallback:', e);
     }
 
     // Fallback to local seed data
@@ -126,6 +123,56 @@ export default function MessDetailScreen() {
   useEffect(() => {
     fetchMessDetail();
   }, [fetchMessDetail]);
+
+  // LIVE EVENT LISTENER: Instantly updates mess details without requiring any reload!
+  useEffect(() => {
+    const handleMenuUpdate = (detail: any) => {
+      if (!detail || !detail.messId) return;
+      if (!messId || detail.messId === messId) {
+        setMess((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            starDish: detail.starDish || prev.starDish,
+            cutoffTime: detail.cutoffTime || prev.cutoffTime,
+            highlights:
+              detail.highlights && detail.highlights.length > 0
+                ? detail.highlights
+                : prev.highlights,
+          };
+        });
+      }
+    };
+
+    const sub = DeviceEventEmitter.addListener('ELITEMESS_MENU_UPDATED', handleMenuUpdate);
+
+    const handleWebEvent = (e: any) => {
+      if (e && e.detail) {
+        handleMenuUpdate(e.detail);
+      }
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'ELITEMESS_LAST_MENU_UPDATE' && e.newValue) {
+        try {
+          handleMenuUpdate(JSON.parse(e.newValue));
+        } catch (err) {}
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+      window.addEventListener('storage', handleStorageEvent);
+    }
+
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+        window.removeEventListener('storage', handleStorageEvent);
+      }
+    };
+  }, [messId]);
 
   // Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{

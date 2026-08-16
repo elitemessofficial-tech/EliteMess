@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { DeviceEventEmitter, Platform } from 'react-native';
 import { useToken } from '../context/TokenContext';
 import { SEED_RESTAURANT_MESSES } from '../services/dbSeedSync';
 import { getMessesFromNeon } from '../services/neon';
@@ -37,8 +38,6 @@ export function useMessSwiper() {
 
   const fetchMessDeck = useCallback(async () => {
     try {
-      setLoading(true);
-
       const data = await getMessesFromNeon();
 
       if (!data || data.length === 0) {
@@ -68,6 +67,58 @@ export function useMessSwiper() {
   useEffect(() => {
     fetchMessDeck();
   }, [fetchMessDeck]);
+
+  // LIVE EVENT LISTENER: Instantly updates deck without requiring any reload!
+  useEffect(() => {
+    const handleMenuUpdate = (detail: any) => {
+      if (!detail || !detail.messId) return;
+      setDeck((prevDeck) =>
+        prevDeck.map((mess) => {
+          if (mess.id === detail.messId) {
+            return {
+              ...mess,
+              starDish: detail.starDish || mess.starDish,
+              cutoffTime: detail.cutoffTime || mess.cutoffTime,
+              highlights:
+                detail.highlights && detail.highlights.length > 0
+                  ? detail.highlights
+                  : mess.highlights,
+            };
+          }
+          return mess;
+        })
+      );
+    };
+
+    const sub = DeviceEventEmitter.addListener('ELITEMESS_MENU_UPDATED', handleMenuUpdate);
+
+    const handleWebEvent = (e: any) => {
+      if (e && e.detail) {
+        handleMenuUpdate(e.detail);
+      }
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'ELITEMESS_LAST_MENU_UPDATE' && e.newValue) {
+        try {
+          handleMenuUpdate(JSON.parse(e.newValue));
+        } catch (err) {}
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+      window.addEventListener('storage', handleStorageEvent);
+    }
+
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+        window.removeEventListener('storage', handleStorageEvent);
+      }
+    };
+  }, []);
 
   const markSwiped = (id: string) => {
     setSwipedIds((prev) => [...prev, id]);

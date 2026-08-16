@@ -18,6 +18,7 @@ import {
   Users,
   ShieldCheck,
   CheckCircle2,
+  AlertCircle,
   Clock,
   Flame,
   Plus,
@@ -33,6 +34,13 @@ import {
   ScanLine,
   ListPlus,
   UtensilsCrossed,
+  User,
+  Moon,
+  Sun,
+  Building2,
+  Phone,
+  CreditCard,
+  Settings,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,7 +64,7 @@ export default function MessOwnerDashboardScreen() {
   const router = useRouter();
   const sdk = useDescope();
   const { manageSession } = useSession();
-  const { isDark } = useAppTheme();
+  const { isDark, toggleTheme } = useAppTheme();
 
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<OwnerTabType>('overview');
@@ -87,6 +95,28 @@ export default function MessOwnerDashboardScreen() {
 
   // Logout Modal state
   const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
+
+  // In-App Status / Feedback Card Modal State (replaces browser alerts)
+  const [statusModal, setStatusModal] = useState<{
+    visible: boolean;
+    type: 'success' | 'error' | 'menu';
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const showFeedback = (title: string, message: string, type: 'success' | 'error' | 'menu' = 'success') => {
+    setStatusModal({
+      visible: true,
+      type,
+      title,
+      message,
+    });
+  };
 
   const colors = {
     bg: isDark ? '#080C0E' : '#F8FAFC',
@@ -152,11 +182,7 @@ export default function MessOwnerDashboardScreen() {
     const rawInput = overrideOtp !== undefined ? overrideOtp : enteredOtp;
     const cleanOtp = rawInput.trim().replace(/\D/g, '');
     if (cleanOtp.length < 4) {
-      if (Platform.OS === 'web') {
-        window.alert('Please enter at least a 4-digit student OTP.');
-      } else {
-        Alert.alert('Invalid OTP', 'Please enter at least a 4-digit student OTP.');
-      }
+      showFeedback('Invalid OTP', 'Please enter at least a 4-digit student OTP.', 'error');
       return;
     }
 
@@ -172,11 +198,7 @@ export default function MessOwnerDashboardScreen() {
         setEnteredOtp('');
 
         const msg = `Dining confirmed for ${result.entry.studentName} (${result.entry.mealType})! 1 Token deducted from student pass.`;
-        if (Platform.OS === 'web') {
-          window.alert(`🎉 OTP Verified!\n\n${msg}`);
-        } else {
-          Alert.alert('🎉 OTP Verified!', msg);
-        }
+        showFeedback('OTP Verified & Redeemed! 🎉', msg, 'success');
         return;
       }
 
@@ -208,25 +230,18 @@ export default function MessOwnerDashboardScreen() {
             setEnteredOtp('');
 
             const msg = `Dining confirmed for OTP ${cleanOtp}. 1 Token deducted from student account.`;
-            if (Platform.OS === 'web') {
-              window.alert(`🎉 OTP Verified!\n\n${msg}`);
-            } else {
-              Alert.alert('🎉 OTP Verified!', msg);
-            }
+            showFeedback('OTP Verified & Redeemed! 🎉', msg, 'success');
             return;
           }
         }
       } catch (e) {}
 
       // If not found anywhere:
-      const failMsg = `No active dining booking found matching OTP "${enteredOtp}". Please check with the student.`;
-      if (Platform.OS === 'web') {
-        window.alert(`❌ Verification Failed\n\n${failMsg}`);
-      } else {
-        Alert.alert('❌ Verification Failed', failMsg);
-      }
+      const failMsg = `No active dining booking found matching OTP "${rawInput}". Please check with the student.`;
+      showFeedback('Verification Failed ❌', failMsg, 'error');
     } catch (e) {
       console.warn('Verification error:', e);
+      showFeedback('Verification Error', 'Network issue communicating with Neon database.', 'error');
     } finally {
       setVerifying(false);
     }
@@ -240,11 +255,7 @@ export default function MessOwnerDashboardScreen() {
   // 3. Real Menu & Cutoff Update Handler
   const handleSaveMenu = async () => {
     if (!starDish.trim()) {
-      if (Platform.OS === 'web') {
-        window.alert('Please enter a valid Star Dish name.');
-      } else {
-        Alert.alert('Required Field', 'Please enter a valid Star Dish name.');
-      }
+      showFeedback('Required Field', 'Please enter a valid Star Dish name.', 'error');
       return;
     }
 
@@ -272,20 +283,13 @@ export default function MessOwnerDashboardScreen() {
           });
         }
         const msg = `Today's Star Dish is now "${starDish.trim()}" with cutoff at ${cutoffTime.trim()} and ${parsedHighlights.length} Dish Menu items saved!`;
-        if (Platform.OS === 'web') {
-          window.alert(`🔥 Menu Updated Successfully!\n\n${msg}`);
-        } else {
-          Alert.alert('🔥 Menu Updated Successfully!', msg);
-        }
+        showFeedback('Menu Updated Successfully! 🔥', msg, 'menu');
       } else {
-        if (Platform.OS === 'web') {
-          window.alert('Failed to update menu in database. Please check your network connection.');
-        } else {
-          Alert.alert('Update Error', 'Failed to update menu in database. Please check your network connection.');
-        }
+        showFeedback('Update Failed', 'Failed to update menu in database. Please check your network connection.', 'error');
       }
     } catch (e) {
       console.warn('Menu update error:', e);
+      showFeedback('Update Error', 'An error occurred while updating menu in database.', 'error');
     } finally {
       setSavingMenu(false);
     }
@@ -615,6 +619,120 @@ export default function MessOwnerDashboardScreen() {
             </View>
           </AnimatedEntrance>
         )}
+
+        {/* 5. OWNER PROFILE & BUSINESS SETTINGS SECTION */}
+        {activeTab === 'profile' && (
+          <AnimatedEntrance direction="up" delay={60}>
+            {/* Manager Profile Hero Card */}
+            <View style={[styles.profileHeroCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              <View style={styles.profileAvatarCircle}>
+                <User size={34} color="#10B981" />
+                <View style={styles.avatarOnlineDot} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.profileManagerName, { color: colors.textMain }]}>Mess Partner Manager</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSub, marginTop: 2 }}>
+                  {selectedMess?.name || 'Annapurna Campus Mess'}
+                </Text>
+                <View style={styles.partnerBadge}>
+                  <ShieldCheck size={11} color="#10B981" />
+                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '800' }}>VERIFIED ELITEMESS PARTNER</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Mess Business Details */}
+            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>Mess Business Overview</Text>
+            <View style={[styles.profileInfoCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              <View style={styles.profileInfoRow}>
+                <Building2 size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>CAMPUS LOCATION</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.address || 'Gate 2, North Campus Hub, Pune'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.profileInfoRow}>
+                <Utensils size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>CUISINE / SPECIALTY</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{selectedMess?.type || 'North Indian Thali Special'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.profileInfoRow}>
+                <Clock size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>PRE-BOOK CUTOFF TIME</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>{cutoffTime}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.profileInfoRow, { borderBottomWidth: 0 }]}>
+                <Users size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>LIVE PRE-BOOKED TODAY</Text>
+                  <Text style={[styles.infoRowVal, { color: '#10B981', fontWeight: '900' }]}>{liveHeadcount} Confirmed Student{liveHeadcount === 1 ? '' : 's'}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Quick Preferences & Settings */}
+            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>Preferences & Settlement</Text>
+            <View style={[styles.profileInfoCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              {/* Theme Switch */}
+              <TouchableOpacity style={styles.profileActionRow} onPress={toggleTheme} activeOpacity={0.8}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {isDark ? <Moon size={18} color="#10B981" /> : <Sun size={18} color="#F59E0B" />}
+                  <View>
+                    <Text style={[styles.infoRowVal, { color: colors.textMain }]}>Theme Appearance</Text>
+                    <Text style={{ fontSize: 11, color: colors.textSub }}>{isDark ? 'Dark Emerald Mode' : 'Light Crisp Mode'}</Text>
+                  </View>
+                </View>
+                <View style={styles.themeTogglePill}>
+                  <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>Switch</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Settlement Ledger */}
+              <View style={[styles.profileInfoRow, { marginTop: 4 }]}>
+                <CreditCard size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>TOKEN SETTLEMENT LEDGER</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>Instant Direct Debit via Neon Postgres</Text>
+                </View>
+              </View>
+
+              {/* Partner Support Hotline */}
+              <View style={[styles.profileInfoRow, { borderBottomWidth: 0 }]}>
+                <Phone size={16} color="#10B981" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700' }}>24/7 PARTNER DESK</Text>
+                  <Text style={[styles.infoRowVal, { color: colors.textMain }]}>+91 98765 43210 (Partner Support)</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Logout Button */}
+            <TouchableOpacity
+              style={styles.profileLogoutBtn}
+              onPress={() => setShowLogoutModal(true)}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#EF4444', '#DC2626']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.profileLogoutGrad}
+              >
+                <LogOut size={18} color="#FFFFFF" />
+                <Text style={styles.profileLogoutText}>Sign Out of Owner Portal</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </AnimatedEntrance>
+        )}
       </ScrollView>
 
       {/* ================= PARTNER MESS PICKER MODAL ================= */}
@@ -716,6 +834,79 @@ export default function MessOwnerDashboardScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* ================= THEMED STATUS / FEEDBACK CARD MODAL ================= */}
+      <Modal
+        visible={statusModal.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setStatusModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={modalStyles.overlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={modalStyles.cardWrapper}>
+            <View
+              style={[
+                modalStyles.card,
+                {
+                  backgroundColor: isDark ? '#0D1412' : '#FFFFFF',
+                  borderColor:
+                    statusModal.type === 'error'
+                      ? 'rgba(239, 68, 68, 0.4)'
+                      : statusModal.type === 'menu'
+                      ? 'rgba(255, 107, 0, 0.4)'
+                      : 'rgba(16, 185, 129, 0.4)',
+                },
+              ]}
+            >
+              {/* Icon Circle */}
+              <View
+                style={[
+                  modalStyles.iconCircle,
+                  statusModal.type === 'error'
+                    ? { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.4)' }
+                    : statusModal.type === 'menu'
+                    ? { backgroundColor: 'rgba(255, 107, 0, 0.15)', borderColor: 'rgba(255, 107, 0, 0.4)' }
+                    : { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.4)' },
+                ]}
+              >
+                {statusModal.type === 'error' ? (
+                  <AlertCircle size={30} color="#EF4444" />
+                ) : statusModal.type === 'menu' ? (
+                  <Flame size={30} color="#FF6B00" fill="#FF6B00" />
+                ) : (
+                  <CheckCircle2 size={30} color="#10B981" />
+                )}
+              </View>
+
+              {/* Title & Subtitle */}
+              <Text style={[modalStyles.title, { color: colors.textMain }]}>{statusModal.title}</Text>
+              <Text style={[modalStyles.subtitle, { color: colors.textSub }]}>{statusModal.message}</Text>
+
+              {/* Dismiss Button */}
+              <TouchableOpacity
+                style={{ width: '100%', height: 48, borderRadius: 14, overflow: 'hidden', marginTop: 4 }}
+                onPress={() => setStatusModal(prev => ({ ...prev, visible: false }))}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={
+                    statusModal.type === 'error'
+                      ? ['#EF4444', '#DC2626']
+                      : statusModal.type === 'menu'
+                      ? ['#FF6B00', '#EA580C']
+                      : ['#10B981', '#059669']
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={modalStyles.confirmGrad}
+                >
+                  <Text style={modalStyles.confirmBtnText}>Great, Got It 👍</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </BlurView>
         </View>
@@ -1030,6 +1221,111 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  profileHeroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 18,
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 14,
+  },
+  profileAvatarCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 2,
+    borderColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  avatarOnlineDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#080C0E',
+  },
+  profileManagerName: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  partnerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  profileInfoCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  profileInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 0.8,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  infoRowVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  profileActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 0.8,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  themeTogglePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  profileLogoutBtn: {
+    height: 50,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 20,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  profileLogoutGrad: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  profileLogoutText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
   pickerOverlay: {
     flex: 1,

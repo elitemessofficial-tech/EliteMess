@@ -9,6 +9,8 @@ import {
   TextInput,
   RefreshControl,
   Dimensions,
+  Platform,
+  DeviceEventEmitter,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
@@ -28,7 +30,7 @@ import {
 } from 'lucide-react-native';
 import { useAppTheme } from '../../src/context/ThemeContext';
 import { useToken } from '../../src/context/TokenContext';
-import { supabase } from '../../src/services/supabase';
+import { getMessesFromNeon } from '../../src/services/neon';
 import { SEED_RESTAURANT_MESSES, MessRestaurantDB } from '../../src/services/dbSeedSync';
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
@@ -115,13 +117,10 @@ export default function AllMessesScreen() {
   const fetchAllMesses = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('messes')
-        .select('*')
-        .order('rating', { ascending: false });
+      const data = await getMessesFromNeon();
 
       if (data && data.length > 0) {
-        setMesses(data);
+        setMesses(data as any);
       } else {
         setMesses(SEED_RESTAURANT_MESSES);
       }
@@ -136,6 +135,58 @@ export default function AllMessesScreen() {
   useEffect(() => {
     fetchAllMesses();
   }, [fetchAllMesses]);
+
+  // LIVE EVENT LISTENER: Instantly updates all messes without requiring any reload!
+  useEffect(() => {
+    const handleMenuUpdate = (detail: any) => {
+      if (!detail || !detail.messId) return;
+      setMesses((prevMesses) =>
+        prevMesses.map((mess) => {
+          if (mess.id === detail.messId) {
+            return {
+              ...mess,
+              star_dish: detail.starDish || mess.star_dish,
+              cutoff_time: detail.cutoffTime || mess.cutoff_time,
+              highlights:
+                detail.highlights && detail.highlights.length > 0
+                  ? detail.highlights
+                  : mess.highlights,
+            };
+          }
+          return mess;
+        })
+      );
+    };
+
+    const sub = DeviceEventEmitter.addListener('ELITEMESS_MENU_UPDATED', handleMenuUpdate);
+
+    const handleWebEvent = (e: any) => {
+      if (e && e.detail) {
+        handleMenuUpdate(e.detail);
+      }
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'ELITEMESS_LAST_MENU_UPDATE' && e.newValue) {
+        try {
+          handleMenuUpdate(JSON.parse(e.newValue));
+        } catch (err) {}
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+      window.addEventListener('storage', handleStorageEvent);
+    }
+
+    return () => {
+      sub.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('ELITEMESS_MENU_UPDATED', handleWebEvent);
+        window.removeEventListener('storage', handleStorageEvent);
+      }
+    };
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);

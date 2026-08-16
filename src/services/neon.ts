@@ -1,3 +1,4 @@
+import { Platform, DeviceEventEmitter } from 'react-native';
 import { neon } from '@neondatabase/serverless';
 import { getNeonDatabaseUrl } from '../config/neonConfig';
 
@@ -252,6 +253,19 @@ export async function updateMessMenuInNeon(
         WHERE id = ${messId};
       `;
     }
+
+    // Broadcast live event to all customer screens & tabs
+    const payload = { messId, starDish, cutoffTime, highlights, timestamp: Date.now() };
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ELITEMESS_MENU_UPDATED', { detail: payload }));
+        try {
+          localStorage.setItem('ELITEMESS_LAST_MENU_UPDATE', JSON.stringify(payload));
+        } catch (e) {}
+      }
+      DeviceEventEmitter.emit('ELITEMESS_MENU_UPDATED', payload);
+    } catch (e) {}
+
     return true;
   } catch (error) {
     console.warn('[Neon DB] Update mess menu error:', error);
