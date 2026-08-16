@@ -9,6 +9,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  LayoutDashboard,
   ClipboardList,
   QrCode,
   UtensilsCrossed,
@@ -17,17 +18,19 @@ import {
 } from 'lucide-react-native';
 import { useAppTheme } from '../src/context/ThemeContext';
 
-export type OwnerTabType = 'log' | 'menu' | 'verify' | 'payouts' | 'profile';
+export type OwnerTabType = 'overview' | 'log' | 'menu' | 'verify' | 'payouts' | 'profile';
 
 interface OwnerBottomBarProps {
   activeTab: OwnerTabType;
   onTabChange: (tab: OwnerTabType) => void;
+  onOpenScanner?: () => void;
   pendingCount?: number;
 }
 
 export default function OwnerBottomBar({
   activeTab,
   onTabChange,
+  onOpenScanner,
   pendingCount = 0,
 }: OwnerBottomBarProps) {
   const { isDark } = useAppTheme();
@@ -39,6 +42,8 @@ export default function OwnerBottomBar({
     active: '#10B981',
     inactive: isDark ? '#94A3B8' : '#64748B',
   };
+
+  const isOverviewActive = activeTab === 'overview' || activeTab === 'log';
 
   return (
     <View style={styles.outerWrapper} pointerEvents="box-none">
@@ -54,25 +59,25 @@ export default function OwnerBottomBar({
         ]}
       >
         <View style={styles.tabsRow}>
-          {/* 1. Dining Log Tab (Replaced Overview) */}
+          {/* 1. Overview Tab */}
           <TouchableOpacity
             style={styles.tabItem}
-            onPress={() => onTabChange('log')}
+            onPress={() => onTabChange('overview')}
             activeOpacity={0.7}
           >
-            <ClipboardList
+            <LayoutDashboard
               size={21}
-              color={activeTab === 'log' ? navColors.active : navColors.inactive}
-              strokeWidth={activeTab === 'log' ? 2.5 : 1.8}
+              color={isOverviewActive ? navColors.active : navColors.inactive}
+              strokeWidth={isOverviewActive ? 2.5 : 1.8}
             />
             <Text
               style={[
                 styles.tabLabel,
-                { color: activeTab === 'log' ? navColors.active : navColors.inactive },
-                activeTab === 'log' && styles.tabLabelActive,
+                { color: isOverviewActive ? navColors.active : navColors.inactive },
+                isOverviewActive && styles.tabLabelActive,
               ]}
             >
-              Dining Log
+              Overview
             </Text>
           </TouchableOpacity>
 
@@ -98,11 +103,17 @@ export default function OwnerBottomBar({
             </Text>
           </TouchableOpacity>
 
-          {/* 3. Center Elevated Floating QR Scanner Tab */}
+          {/* 3. Center Elevated Floating QR Scanner Button */}
           <View style={styles.centerButtonWrapper}>
             <View style={[styles.cutoutRing, { backgroundColor: navColors.cutoutBg }]}>
               <TouchableOpacity
-                onPress={() => onTabChange('verify')}
+                onPress={() => {
+                  if (onOpenScanner) {
+                    onOpenScanner();
+                  } else {
+                    onTabChange('verify');
+                  }
+                }}
                 activeOpacity={0.88}
                 style={styles.qrTouchCircle}
               >

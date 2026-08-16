@@ -93,8 +93,8 @@ export default function MessOwnerDashboardScreen() {
   const { manageSession } = useSession();
   const { isDark, toggleTheme } = useAppTheme();
 
-  // Navigation tab state (defaults to Dining Log)
-  const [activeTab, setActiveTab] = useState<OwnerTabType>('log');
+  // Navigation tab state (defaults to Overview)
+  const [activeTab, setActiveTab] = useState<OwnerTabType>('overview');
 
   // Mess Selection state
   const [messesList, setMessesList] = useState<MessDBRecord[]>([]);
@@ -569,7 +569,7 @@ export default function MessOwnerDashboardScreen() {
         </AnimatedEntrance>
 
         {/* 1. DINING HEADCOUNT BANNER */}
-        {(activeTab === 'log' || activeTab === 'verify') && (
+        {(activeTab === 'overview' || activeTab === 'log' || activeTab === 'verify') && (
           <AnimatedEntrance direction="up" delay={60}>
             <LinearGradient
               colors={isDark ? ['#0F241C', '#061712'] : ['#ECFDF5', '#D1FAE5']}
@@ -623,8 +623,8 @@ export default function MessOwnerDashboardScreen() {
           </AnimatedEntrance>
         )}
 
-        {/* 2. OTP VERIFICATION KEYPAD MODULE */}
-        {(activeTab === 'log' || activeTab === 'verify') && (
+        {/* 2. OTP VERIFICATION KEYPAD MODULE (Shown only in Verify Tab) */}
+        {activeTab === 'verify' && (
           <AnimatedEntrance direction="up" delay={120}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
               <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Student Dining Verification</Text>
@@ -791,10 +791,10 @@ export default function MessOwnerDashboardScreen() {
         )}
 
         {/* 4. VERIFIED STUDENT DINING LOG */}
-        {(activeTab === 'log' || activeTab === 'verify') && (
+        {(activeTab === 'overview' || activeTab === 'log' || activeTab === 'verify') && (
           <AnimatedEntrance direction="up" delay={220}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Verified Dining Log (Real-Time)</Text>
+              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>Today's Verified Diners Log (Real-Time)</Text>
               <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>
                 {verifiedList.length} Record{verifiedList.length === 1 ? '' : 's'}
               </Text>
@@ -1683,6 +1683,7 @@ export default function MessOwnerDashboardScreen() {
       <OwnerBottomBar
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        onOpenScanner={() => setShowScannerModal(true)}
         pendingCount={liveHeadcount}
       />
     </View>
