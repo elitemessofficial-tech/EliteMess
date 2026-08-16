@@ -13,6 +13,7 @@ import {
   X,
   Zap,
   ScanLine,
+  KeyRound,
 } from 'lucide-react-native';
 import { useAppTheme } from '../context/ThemeContext';
 
@@ -225,14 +226,25 @@ export default function QRScannerModal({
           </View>
 
           {/* Helper Footer */}
-          <View style={[styles.footerInfo, { backgroundColor: colors.cardBg }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Zap size={14} color="#10B981" />
-              <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
-                Instant OTP Recognition Active
-              </Text>
+          <View style={[styles.footerInfo, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Zap size={14} color="#10B981" />
+                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
+                  Auto-Scanner Active
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.manualEntryBtn}
+                onPress={onClose}
+                activeOpacity={0.8}
+              >
+                <KeyRound size={13} color="#10B981" />
+                <Text style={styles.manualEntryText}>Enter OTP Manually</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 2 }}>
+            <Text style={{ fontSize: 11, color: colors.textSub, marginTop: 4 }}>
               Scanning student QR automatically deducts 1 token and confirms dining.
             </Text>
           </View>
@@ -297,6 +309,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  manualEntryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  manualEntryText: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '800',
   },
 });

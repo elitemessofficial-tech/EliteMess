@@ -1675,7 +1675,10 @@ export default function MessOwnerDashboardScreen() {
       {/* ================= LIVE QR CODE CAMERA SCANNER MODAL ================= */}
       <QRScannerModal
         visible={showScannerModal}
-        onClose={() => setShowScannerModal(false)}
+        onClose={() => {
+          setShowScannerModal(false);
+          setActiveTab('verify');
+        }}
         onScanSuccess={handleScanSuccess}
       />
 
@@ -1683,7 +1686,10 @@ export default function MessOwnerDashboardScreen() {
       <OwnerBottomBar
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onOpenScanner={() => setShowScannerModal(true)}
+        onOpenScanner={() => {
+          setActiveTab('verify');
+          setShowScannerModal(true);
+        }}
         pendingCount={liveHeadcount}
       />
     </View>
