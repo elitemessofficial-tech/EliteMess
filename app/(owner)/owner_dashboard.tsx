@@ -50,6 +50,9 @@ import {
   Edit3,
   Pencil,
   X,
+  ChevronRight,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -68,6 +71,21 @@ import {
   OwnerVerifiedLogItem,
 } from '../../src/services/neon';
 import { SEED_RESTAURANT_MESSES } from '../../src/services/dbSeedSync';
+
+export interface OwnerPayoutRecord {
+  id: string;
+  amount: string;
+  rawAmount: number;
+  mode: string;
+  ref: string;
+  date: string;
+  bankName: string;
+  accountMasked: string;
+  ifscCode: string;
+  upiId: string;
+  mealCount: number;
+  status: 'PENDING' | 'SETTLED' | 'CANCELLED';
+}
 
 export default function MessOwnerDashboardScreen() {
   const router = useRouter();
@@ -91,13 +109,13 @@ export default function MessOwnerDashboardScreen() {
   const [verifiedCount, setVerifiedCount] = useState<number>(0);
   const [totalLifetimeMeals, setTotalLifetimeMeals] = useState<number>(0);
   const [verifiedList, setVerifiedList] = useState<OwnerVerifiedLogItem[]>([]);
-  const [payoutHistory, setPayoutHistory] = useState<Array<{
-    id: string;
-    amount: string;
-    mode: string;
-    ref: string;
-    date: string;
-  }>>([]);
+  const [payoutHistory, setPayoutHistory] = useState<OwnerPayoutRecord[]>([]);
+
+  // Payout Confirmation & Details Modals State
+  const [showPayoutConfirmModal, setShowPayoutConfirmModal] = useState<boolean>(false);
+  const [selectedPayoutDetail, setSelectedPayoutDetail] = useState<OwnerPayoutRecord | null>(null);
+  const [showPayoutDetailModal, setShowPayoutDetailModal] = useState<boolean>(false);
+  const [cancellingPayout, setCancellingPayout] = useState<boolean>(false);
 
   // Settlement Bank Account State
   const [showEditBankModal, setShowEditBankModal] = useState<boolean>(false);
@@ -290,8 +308,8 @@ export default function MessOwnerDashboardScreen() {
     );
   };
 
-  // Handler for Real Instant Settlement Request
-  const handleRequestInstantPayout = async () => {
+  // 1. Trigger Payout Confirmation Modal
+  const handleRequestInstantPayout = () => {
     const pendingBalance = verifiedCount * 50;
     if (pendingBalance <= 0) {
       showFeedback(
@@ -301,14 +319,26 @@ export default function MessOwnerDashboardScreen() {
       );
       return;
     }
+    setShowPayoutConfirmModal(true);
+  };
 
+  // 2. Confirmed Payout Request Submission
+  const handleConfirmPayoutRequest = async () => {
+    const pendingBalance = verifiedCount * 50;
     const txRef = `SET-${Date.now().toString().slice(-7)}`;
-    const newTx = {
+    const newTx: OwnerPayoutRecord = {
       id: `TXN-EM-${Date.now().toString().slice(-6)}`,
       amount: `₹${pendingBalance}`,
+      rawAmount: pendingBalance,
       mode: 'Instant IMPS / UPI Transfer',
       ref: txRef,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' • ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      bankName: bankDetails.bankName,
+      accountMasked: `•••• •••• •••• ${bankDetails.accountNumber.slice(-4)}`,
+      ifscCode: bankDetails.ifscCode,
+      upiId: bankDetails.upiId,
+      mealCount: verifiedCount,
+      status: 'PENDING',
     };
 
     const updatedHistory = [newTx, ...payoutHistory];
@@ -317,11 +347,37 @@ export default function MessOwnerDashboardScreen() {
       await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
     } catch (e) {}
 
+    setShowPayoutConfirmModal(false);
     const masked = bankDetails.accountNumber.length > 4 ? `•••• ${bankDetails.accountNumber.slice(-4)}` : bankDetails.accountNumber;
     showFeedback(
-      'Payout Request Dispatched! 💸',
-      `Instant settlement of ₹${pendingBalance} has been sent (Ref #${txRef}). Funds will be credited directly to ${bankDetails.bankName} (A/C ${masked}) via IMPS within 15 minutes.`,
+      'Payout Request Submitted! 💸',
+      `Instant settlement of ₹${pendingBalance} (Ref #${txRef}) has been sent for processing. Funds will be directly credited to ${bankDetails.bankName} (A/C ${masked}) via IMPS within 15 minutes.`,
       'success'
+    );
+  };
+
+  // 3. Cancel Payout Record Handler
+  const handleCancelPayoutRecord = async (recordId: string) => {
+    setCancellingPayout(true);
+    const target = payoutHistory.find(p => p.id === recordId);
+    const updatedHistory = payoutHistory.map(p => {
+      if (p.id === recordId) {
+        return { ...p, status: 'CANCELLED' as const };
+      }
+      return p;
+    });
+
+    setPayoutHistory(updatedHistory);
+    try {
+      await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
+    } catch (e) {}
+    setCancellingPayout(false);
+    setShowPayoutDetailModal(false);
+
+    showFeedback(
+      'Payout Request Cancelled 🛑',
+      `Settlement request ${target ? '#' + target.ref : ''} has been cancelled. No funds will be deducted from your portal balance.`,
+      'error'
     );
   };
 
@@ -934,12 +990,17 @@ export default function MessOwnerDashboardScreen() {
                 </View>
               ) : (
                 payoutHistory.map((tx, idx) => (
-                  <View
+                  <TouchableOpacity
                     key={tx.id || idx}
                     style={[
                       styles.logRow,
                       idx === payoutHistory.length - 1 && { borderBottomWidth: 0 },
                     ]}
+                    onPress={() => {
+                      setSelectedPayoutDetail(tx);
+                      setShowPayoutDetailModal(true);
+                    }}
+                    activeOpacity={0.75}
                   >
                     <View style={styles.settleTxIcon}>
                       <Receipt size={16} color="#10B981" />
@@ -951,10 +1012,35 @@ export default function MessOwnerDashboardScreen() {
                       </Text>
                       <Text style={{ fontSize: 10, color: colors.textSub, marginTop: 1 }}>{tx.date}</Text>
                     </View>
-                    <View style={styles.settleSuccessTag}>
-                      <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900' }}>SETTLED ✅</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View
+                        style={[
+                          styles.settleSuccessTag,
+                          tx.status === 'CANCELLED'
+                            ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)' }
+                            : tx.status === 'PENDING'
+                            ? { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' }
+                            : {},
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color:
+                              tx.status === 'CANCELLED'
+                                ? '#EF4444'
+                                : tx.status === 'PENDING'
+                                ? '#F59E0B'
+                                : '#10B981',
+                            fontSize: 10,
+                            fontWeight: '900',
+                          }}
+                        >
+                          {tx.status === 'CANCELLED' ? 'CANCELLED 🛑' : tx.status === 'PENDING' ? 'PENDING ⏳' : 'SETTLED ✅'}
+                        </Text>
+                      </View>
+                      <ChevronRight size={15} color={colors.textSub} />
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))
               )}
             </View>
@@ -1213,9 +1299,9 @@ export default function MessOwnerDashboardScreen() {
               </View>
 
               {/* Action Buttons */}
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                 <TouchableOpacity
-                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder }]}
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder, height: 48 }]}
                   onPress={() => setShowEditBankModal(false)}
                   activeOpacity={0.8}
                 >
@@ -1223,7 +1309,7 @@ export default function MessOwnerDashboardScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[modalStyles.confirmBtn, savingBank && { opacity: 0.7 }]}
+                  style={[modalStyles.confirmBtn, { height: 48 }, savingBank && { opacity: 0.7 }]}
                   onPress={handleSaveBankDetails}
                   disabled={savingBank}
                   activeOpacity={0.85}
@@ -1232,14 +1318,228 @@ export default function MessOwnerDashboardScreen() {
                     colors={['#10B981', '#047857']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
-                    style={modalStyles.confirmGrad}
+                    style={[modalStyles.confirmGrad, { paddingHorizontal: 12 }]}
                   >
                     <CheckCircle2 size={16} color="#FFFFFF" />
-                    <Text style={modalStyles.confirmBtnText}>{savingBank ? 'Saving...' : 'Save & Verify Account'}</Text>
+                    <Text style={[modalStyles.confirmBtnText, { fontSize: 13 }]} numberOfLines={1}>
+                      {savingBank ? 'Saving...' : 'Save & Verify'}
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
             </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* ================= PAYOUT CONFIRMATION MODAL ================= */}
+      <Modal
+        visible={showPayoutConfirmModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPayoutConfirmModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={modalStyles.cardWrapper}>
+            <View style={[modalStyles.card, { backgroundColor: isDark ? '#0D1412' : '#FFFFFF', borderColor: 'rgba(16, 185, 129, 0.35)' }]}>
+              {/* Icon Circle */}
+              <View style={[modalStyles.iconCircle, { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.35)' }]}>
+                <Wallet size={28} color="#10B981" />
+              </View>
+
+              {/* Title & Subtitle */}
+              <Text style={[modalStyles.title, { color: colors.textMain }]}>Confirm Instant Payout?</Text>
+              <Text style={[modalStyles.subtitle, { color: colors.textSub, marginBottom: 16 }]}>
+                Please review your disbursement details before submitting the settlement request.
+              </Text>
+
+              {/* Summary Details Box */}
+              <View style={{ width: '100%', backgroundColor: colors.inputBg, borderRadius: 16, padding: 14, gap: 8, borderWidth: 1, borderColor: colors.cardBorder, marginBottom: 20 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textSub }}>Settlement Amount:</Text>
+                  <Text style={{ fontSize: 16, color: '#10B981', fontWeight: '900' }}>₹{verifiedCount * 50}.00</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textSub }}>Meals Included:</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{verifiedCount} Verified Diners</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textSub }}>Beneficiary Bank:</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{bankDetails.bankName}</Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textSub }}>Account / UPI:</Text>
+                  <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
+                    •••• {bankDetails.accountNumber.length > 4 ? bankDetails.accountNumber.slice(-4) : bankDetails.accountNumber}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: colors.textSub }}>Estimated Credit:</Text>
+                  <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '800' }}>⚡ IMPS (Within 15 mins)</Text>
+                </View>
+              </View>
+
+              {/* Actions Row */}
+              <View style={modalStyles.btnRow}>
+                <TouchableOpacity
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder, height: 48 }]}
+                  onPress={() => setShowPayoutConfirmModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[modalStyles.cancelBtnText, { color: colors.textMain }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[modalStyles.confirmBtn, { height: 48 }]}
+                  onPress={handleConfirmPayoutRequest}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['#10B981', '#047857']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={modalStyles.confirmGrad}
+                  >
+                    <ArrowUpRight size={16} color="#FFFFFF" />
+                    <Text style={[modalStyles.confirmBtnText, { fontSize: 13 }]}>Confirm & Disburse</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* ================= PAYOUT DETAILS & CANCEL MODAL ================= */}
+      <Modal
+        visible={showPayoutDetailModal && selectedPayoutDetail !== null}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowPayoutDetailModal(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={styles.bankEditCard}>
+            <View style={styles.pickerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Receipt size={20} color="#10B981" />
+                <Text style={[styles.pickerTitle, { color: colors.textMain }]}>Settlement Record Details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowPayoutDetailModal(false)} style={styles.pickerCloseBtn}>
+                <Text style={{ color: colors.textMain, fontWeight: '800' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedPayoutDetail && (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 20 }}>
+                {/* Amount Hero */}
+                <View style={{ alignItems: 'center', paddingVertical: 14, backgroundColor: colors.inputBg, borderRadius: 18, borderWidth: 1, borderColor: colors.cardBorder }}>
+                  <Text style={{ fontSize: 11, color: colors.textSub, fontWeight: '700', letterSpacing: 0.5 }}>TOTAL SETTLEMENT DISBURSED</Text>
+                  <Text style={{ fontSize: 30, color: colors.textMain, fontWeight: '900', marginTop: 4 }}>
+                    {selectedPayoutDetail.amount}
+                  </Text>
+                  <View style={{ marginTop: 8 }}>
+                    <View
+                      style={[
+                        styles.settleSuccessTag,
+                        selectedPayoutDetail.status === 'CANCELLED'
+                          ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.3)' }
+                          : selectedPayoutDetail.status === 'PENDING'
+                          ? { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' }
+                          : {},
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color:
+                            selectedPayoutDetail.status === 'CANCELLED'
+                              ? '#EF4444'
+                              : selectedPayoutDetail.status === 'PENDING'
+                              ? '#F59E0B'
+                              : '#10B981',
+                          fontSize: 11,
+                          fontWeight: '900',
+                        }}
+                      >
+                        {selectedPayoutDetail.status === 'CANCELLED' ? 'CANCELLED 🛑' : selectedPayoutDetail.status === 'PENDING' ? 'PENDING DISBURSEMENT ⏳' : 'SETTLED & CREDITED ✅'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Details Breakdown */}
+                <View style={{ backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.cardBorder }}>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Reference ID:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>#{selectedPayoutDetail.ref}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Disbursement Mode:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{selectedPayoutDetail.mode}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Beneficiary Bank:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{selectedPayoutDetail.bankName}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Account Number:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{selectedPayoutDetail.accountMasked}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>IFSC Code:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{selectedPayoutDetail.ifscCode}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>UPI ID:</Text>
+                    <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>{selectedPayoutDetail.upiId}</Text>
+                  </View>
+                  <View style={styles.bankDetailRow}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Initiated Date:</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{selectedPayoutDetail.date}</Text>
+                  </View>
+                  <View style={[styles.bankDetailRow, { borderBottomWidth: 0 }]}>
+                    <Text style={{ fontSize: 12, color: colors.textSub }}>Meal Diners Settled:</Text>
+                    <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>{selectedPayoutDetail.mealCount || verifiedCount} Meals (@ ₹50/meal)</Text>
+                  </View>
+                </View>
+
+                {/* Actions */}
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                  {selectedPayoutDetail.status !== 'CANCELLED' && (
+                    <TouchableOpacity
+                      style={[
+                        modalStyles.cancelBtn,
+                        { borderColor: 'rgba(239, 68, 68, 0.4)', backgroundColor: 'rgba(239, 68, 68, 0.08)', height: 48, flexDirection: 'row', gap: 6 },
+                        cancellingPayout && { opacity: 0.6 },
+                      ]}
+                      onPress={() => handleCancelPayoutRecord(selectedPayoutDetail.id)}
+                      disabled={cancellingPayout}
+                      activeOpacity={0.8}
+                    >
+                      <XCircle size={16} color="#EF4444" />
+                      <Text style={[modalStyles.cancelBtnText, { color: '#EF4444', fontSize: 13 }]}>
+                        {cancellingPayout ? 'Cancelling...' : 'Cancel Request'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[modalStyles.confirmBtn, { height: 48 }]}
+                    onPress={() => setShowPayoutDetailModal(false)}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={['#10B981', '#047857']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={modalStyles.confirmGrad}
+                    >
+                      <CheckCircle2 size={16} color="#FFFFFF" />
+                      <Text style={[modalStyles.confirmBtnText, { fontSize: 13 }]}>Close Record</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
           </BlurView>
         </View>
       </Modal>
