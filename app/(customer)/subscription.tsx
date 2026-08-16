@@ -49,52 +49,53 @@ interface PlanTier {
 const PLAN_TIERS: PlanTier[] = [
   {
     id: 'plan_silver',
-    name: 'College Starter Silver',
-    badge: '30 DAYS PASS',
+    name: 'Starter Flexi Pass (30 Meals)',
+    badge: '1 MEAL / DAY • 30 DAYS',
     price: 1499,
     tokens: 30,
     skips: 5,
     validityDays: 30,
     colorGrad: ['#94A3B8', '#64748B'],
     features: [
-      '30 Meal Tokens (Lunch / Dinner)',
+      '30 Meal Tokens (1 Meal/day: Lunch or Dinner)',
       '5 Skip & Rollover Passes',
-      'Mess Hopping across 25+ Messes',
-      'Instant OTP Dining Verification',
+      'Daily Cutoff Auto-Deduct at 7:30 PM IST if un-booked',
+      'Unused Skips extend pass after 30 days',
+      'Mess Hopping across all partner messes',
     ],
   },
   {
     id: 'plan_gold',
-    name: 'College Gold Meal Pass',
-    badge: 'BEST VALUE • 60 DAYS',
-    price: 2799,
+    name: 'Full Board Pass (60 Meals)',
+    badge: '2 MEALS / DAY • 30 DAYS',
+    price: 2699,
     tokens: 60,
-    skips: 15,
-    validityDays: 60,
+    skips: 10,
+    validityDays: 30,
     popular: true,
     colorGrad: ['#10B981', '#059669'],
     features: [
-      '60 Meal Tokens (Lunch / Dinner)',
-      '15 Skip & Rollover Passes',
+      '60 Meal Tokens (2 Meals/day: 1 Lunch + 1 Dinner)',
+      '10 Skip & Rollover Passes',
+      'Cutoff Auto-Deduct: 11:30 AM & 7:30 PM IST',
+      'Unused Skips extend pass after 30 days',
       'Priority Mess Counter Clearance',
-      '100% Refund on Cancellation',
-      'Access to Premium Special Messes',
     ],
   },
   {
     id: 'plan_platinum',
-    name: 'VIP Platinum Pass',
-    badge: 'ULTIMATE • 90 DAYS',
+    name: 'VIP Platinum Pass (120 Meals)',
+    badge: '2 MEALS / DAY • 60 DAYS',
     price: 4999,
     tokens: 120,
-    skips: 30,
-    validityDays: 90,
+    skips: 20,
+    validityDays: 60,
     colorGrad: ['#F59E0B', '#D97706'],
     features: [
-      '120 Meal Tokens (Lunch / Dinner)',
-      '30 Skip & Rollover Passes',
+      '120 Meal Tokens (2 Meals/day: Lunch + Dinner)',
+      '20 Skip & Rollover Passes',
+      'Full Grace Period Protection via Skips',
       'Unlimited Mess Hopping Freedom',
-      'Zero-Wait Express Counter Entry',
       'Free Extra Skip Top-Up Bonuses',
     ],
   },
@@ -130,7 +131,13 @@ export default function SubscriptionScreen() {
 
     const executePurchase = async () => {
       if (buyPassPlan) {
-        await buyPassPlan(plan.name, plan.tokens, plan.skips);
+        await buyPassPlan(
+          plan.name,
+          plan.tokens,
+          plan.skips,
+          plan.validityDays,
+          plan.tokens >= 60 ? 'double' : 'single'
+        );
       }
       setPurchasedPlanName(plan.name);
       setShowSuccessModal(true);
@@ -141,7 +148,7 @@ export default function SubscriptionScreen() {
     } else {
       Alert.alert(
         'Confirm Subscription Purchase',
-        `Subscribe to ${plan.name} for ₹${plan.price.toLocaleString()}?\nIncludes ${plan.tokens} Tokens & ${plan.skips} Skips.`,
+        `Subscribe to ${plan.name} for ₹${plan.price.toLocaleString()}?\nIncludes ${plan.tokens} Tokens & ${plan.skips} Skips (valid for ${plan.validityDays} days).`,
         [
           { text: 'Cancel', style: 'cancel' },
           {

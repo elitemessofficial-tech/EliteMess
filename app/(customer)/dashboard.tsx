@@ -35,6 +35,7 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import { useToken } from '../../src/context/TokenContext';
 import QRCodeDisplay from '../../src/components/QRCodeDisplay';
 import { useDashboardData, FavoriteMess } from '../../src/hooks/useDashboardData';
+import { getISTDate } from '../../src/utils/timeUtils';
 import FloatingHeader from '../../components/FloatingHeader';
 import CustomerBottomBar from '../../components/CustomerBottomBar';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
@@ -134,12 +135,12 @@ const modalStyles = StyleSheet.create({
 export default function DashboardScreen() {
   const router = useRouter();
   const { isDark } = useAppTheme();
-  const { cancelBooking, skipMeal, bookMeal } = useToken();
+  const { cancelBooking, skipMeal, bookMeal, isGracePeriod, planType } = useToken();
   const { passData, activeBooking, favoriteMesses, userName, loadingData } = useDashboardData();
 
-  // Dynamic Time-Aware Greeting Logic
+  // Dynamic Time-Aware Greeting Logic (IST converted)
   const getDynamicGreeting = (): { greeting: string; icon: string } => {
-    const hour = new Date().getHours();
+    const hour = getISTDate().getHours();
     if (hour >= 6 && hour < 15) {
       return { greeting: `Good Morning, ${userName}!`, icon: 'Ready for lunch?' };
     } else if (hour >= 15 && hour < 22) {

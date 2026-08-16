@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../services/supabase';
 import { ensureDatabaseInitialized } from '../services/dbSeedSync';
@@ -12,6 +12,12 @@ import {
   getMealHistoryFromNeon,
   insertMealHistoryItemInNeon,
 } from '../services/neon';
+import {
+  getISTDate,
+  getISTDateString,
+  getISTCurrentDecimalHours,
+  formatToIST,
+} from '../utils/timeUtils';
 
 export interface BookingDetails {
   bookingId: string;
@@ -36,6 +42,8 @@ export interface MealHistoryItem {
   date: string;
 }
 
+export type PlanType = 'single' | 'double' | 'none';
+
 interface TokenContextType {
   totalTokens: number;
   remainingTokens: number;
@@ -44,11 +52,20 @@ interface TokenContextType {
   streakDays: number;
   highestStreakDays: number;
   subscriptionPlan: string;
+  planType: PlanType;
+  planExpiresAt: string | null;
+  isGracePeriod: boolean;
   activeBooking: BookingDetails | null;
   shortlistedMessIds: string[];
   mealHistory: MealHistoryItem[];
   loading: boolean;
-  bookMeal: (messId: string, messName: string, messAddress: string, mealType: 'Lunch' | 'Dinner', menuHighlights: string[]) => Promise<{ success: boolean; message?: string }>;
+  bookMeal: (
+    messId: string,
+    messName: string,
+    messAddress: string,
+    mealType: 'Lunch' | 'Dinner',
+    menuHighlights: string[]
+  ) => Promise<{ success: boolean; message?: string }>;
   cancelBooking: () => Promise<void>;
   expireBooking: () => Promise<void>;
   completeBooking: () => Promise<void>;
@@ -58,7 +75,13 @@ interface TokenContextType {
   removeFromShortlist: (messId: string) => void;
   isShortlisted: (messId: string) => boolean;
   buyExtraSkips: (count: number, amountPaid: number) => Promise<void>;
-  buyPassPlan: (planName: string, tokens: number, skips: number) => Promise<void>;
+  buyPassPlan: (
+    planName: string,
+    tokens: number,
+    skips: number,
+    validityDays?: number,
+    planType?: PlanType
+  ) => Promise<void>;
   invalidatedOTPs: string[];
   isOTPValid: (otp: string) => boolean;
   refreshState: () => Promise<void>;
@@ -82,6 +105,11 @@ const INITIAL_TOKEN_STATE = {
   streakDays: 0,
   highestStreakDays: 0,
   subscriptionPlan: 'No Active Subscription',
+  planType: 'none' as PlanType,
+  planExpiresAt: null as string | null,
+  lastLunchCutoffDate: '',
+  lastDinnerCutoffDate: '',
+  lastDailyCutoffDate: '',
 };
 
 const getCurrentUserId = async (): Promise<string> => {
@@ -106,7 +134,11 @@ export function expandHistoryWithRefundPairs(items: MealHistoryItem[]): MealHist
       });
 
       const hasDebitPair = items.some(
-        (other, idx) => idx !== i && other.messName === item.messName && other.mealType === item.mealType && (other.tokensUsed > 0 || other.status === 'completed')
+        (other, idx) =>
+          idx !== i &&
+          other.messName === item.messName &&
+          other.mealType === item.mealType &&
+          (other.tokensUsed > 0 || other.status === 'completed')
       );
 
       if (!hasDebitPair) {
@@ -135,6 +167,8 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [streakDays, setStreakDays] = useState<number>(INITIAL_TOKEN_STATE.streakDays);
   const [highestStreakDays, setHighestStreakDays] = useState<number>(INITIAL_TOKEN_STATE.highestStreakDays);
   const [subscriptionPlan, setSubscriptionPlan] = useState<string>(INITIAL_TOKEN_STATE.subscriptionPlan);
+  const [planType, setPlanType] = useState<PlanType>(INITIAL_TOKEN_STATE.planType);
+  const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(INITIAL_TOKEN_STATE.planExpiresAt);
 
   const [activeBooking, setActiveBooking] = useState<BookingDetails | null>(null);
   const [shortlistedMessIds, setShortlistedMessIds] = useState<string[]>([]);
@@ -142,14 +176,26 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [invalidatedOTPs, setInvalidatedOTPs] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Compute if currently in Grace / Extension period (expiry date passed, but protected by skips)
+  const isGracePeriod = Boolean(
+    planExpiresAt &&
+      new Date().getTime() > new Date(planExpiresAt).getTime() &&
+      remainingSkips > 0 &&
+      remainingTokens > 0
+  );
+
   // Helper to check if an OTP is valid or invalidated
   const isOTPValid = (otpToCheck: string): boolean => {
     if (!otpToCheck) return false;
     const cleanOtp = otpToCheck.replace(/[\s-]/g, '');
-    if (invalidatedOTPs.some(inv => inv.replace(/[\s-]/g, '') === cleanOtp)) {
+    if (invalidatedOTPs.some((inv) => inv.replace(/[\s-]/g, '') === cleanOtp)) {
       return false;
     }
-    if (activeBooking && activeBooking.otp.replace(/[\s-]/g, '') === cleanOtp && activeBooking.status === 'booked') {
+    if (
+      activeBooking &&
+      activeBooking.otp.replace(/[\s-]/g, '') === cleanOtp &&
+      activeBooking.status === 'booked'
+    ) {
       return true;
     }
     return false;
@@ -160,7 +206,283 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return Math.floor(10000000 + Math.random() * 90000000).toString();
   };
 
-  // Load persistent token state from AsyncStorage & Supabase
+  // Save Token State to AsyncStorage & Neon DB
+  const saveStateToStorage = async (
+    remTokens: number,
+    remSkips: number,
+    streak: number,
+    customPlan?: string,
+    customHighest?: number,
+    customExpiresAt?: string | null,
+    customPlanType?: PlanType,
+    customLastLunch?: string,
+    customLastDinner?: string,
+    customLastDaily?: string
+  ) => {
+    const userId = await getCurrentUserId();
+    const activePlan = customPlan !== undefined ? customPlan : subscriptionPlan;
+    const currentHighest =
+      customHighest !== undefined ? customHighest : Math.max(highestStreakDays, streak);
+    const expDate = customExpiresAt !== undefined ? customExpiresAt : planExpiresAt;
+    const pType = customPlanType !== undefined ? customPlanType : planType;
+
+    const stateObj = {
+      totalTokens,
+      remainingTokens: remTokens,
+      totalSkips,
+      remainingSkips: remSkips,
+      streakDays: streak,
+      highestStreakDays: currentHighest,
+      subscriptionPlan: activePlan,
+      planType: pType,
+      planExpiresAt: expDate,
+      lastLunchCutoffDate: customLastLunch,
+      lastDinnerCutoffDate: customLastDinner,
+      lastDailyCutoffDate: customLastDaily,
+    };
+    await AsyncStorage.setItem(
+      getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId),
+      JSON.stringify(stateObj)
+    );
+
+    try {
+      await upsertMealPassInNeon(
+        userId,
+        activePlan,
+        totalTokens,
+        remTokens,
+        totalSkips,
+        remSkips,
+        streak
+      );
+    } catch (e) {}
+  };
+
+  // ================= AUTOMATED DAILY CUTOFFS & EXPIRY EVALUATOR =================
+  const evaluateDailyCutoffsAndExpiry = useCallback(
+    async (
+      currState: {
+        totalTokens: number;
+        remainingTokens: number;
+        totalSkips: number;
+        remainingSkips: number;
+        streakDays: number;
+        highestStreakDays: number;
+        subscriptionPlan: string;
+        planType: PlanType;
+        planExpiresAt: string | null;
+        lastLunchCutoffDate?: string;
+        lastDinnerCutoffDate?: string;
+        lastDailyCutoffDate?: string;
+      },
+      currHistory: MealHistoryItem[],
+      currActiveBooking: BookingDetails | null,
+      userId: string
+    ) => {
+      let updatedRemTokens = currState.remainingTokens;
+      let updatedRemSkips = currState.remainingSkips;
+      let updatedPlan = currState.subscriptionPlan;
+      let historyToAdd: MealHistoryItem[] = [];
+
+      const istNow = getISTDate();
+      const todayStr = getISTDateString();
+      const currentHour = getISTCurrentDecimalHours();
+      const isAfter1130AM = currentHour >= 11.5;
+      const isAfter730PM = currentHour >= 19.5;
+
+      let lastLunch = currState.lastLunchCutoffDate || '';
+      let lastDinner = currState.lastDinnerCutoffDate || '';
+      let lastDaily = currState.lastDailyCutoffDate || '';
+
+      // 1. Check Subscription Expiry
+      if (currState.planExpiresAt) {
+        const expTime = new Date(currState.planExpiresAt).getTime();
+        if (istNow.getTime() > expTime) {
+          if (updatedRemSkips <= 0 && updatedRemTokens > 0) {
+            // Expired with 0 skips left -> Reset all remaining tokens to 0
+            updatedRemTokens = 0;
+            updatedPlan = 'Expired Subscription';
+            historyToAdd.push({
+              id: `hist_exp_${Date.now()}`,
+              messName: 'Pass Validity Expired (0 Skips Left)',
+              mealType: 'Lunch',
+              status: 'no-show',
+              tokensUsed: 0,
+              date: formatToIST(istNow),
+            });
+          }
+        }
+      }
+
+      // If no tokens or expired, return early
+      if (updatedRemTokens <= 0 || updatedPlan === 'No Active Subscription') {
+        return;
+      }
+
+      // Check if user had a booking today in IST
+      const todayBookings = currHistory.filter((h) => {
+        const hDate = new Date(h.date);
+        return (
+          hDate.getDate() === istNow.getDate() &&
+          hDate.getMonth() === istNow.getMonth() &&
+          hDate.getFullYear() === istNow.getFullYear()
+        );
+      });
+
+      const hasActiveLunch =
+        currActiveBooking &&
+        currActiveBooking.status === 'booked' &&
+        currActiveBooking.mealType === 'Lunch';
+      const hasActiveDinner =
+        currActiveBooking &&
+        currActiveBooking.status === 'booked' &&
+        currActiveBooking.mealType === 'Dinner';
+
+      const bookedLunchToday =
+        hasActiveLunch || todayBookings.some((h) => h.mealType === 'Lunch');
+      const bookedDinnerToday =
+        hasActiveDinner || todayBookings.some((h) => h.mealType === 'Dinner');
+      const bookedAnyMealToday =
+        bookedLunchToday || bookedDinnerToday || todayBookings.length > 0;
+
+      // 2. Evaluation for 30-Meal Pass (1 Meal / Day - Single Slot)
+      // Cutoff occurs after 7:30 PM (when both lunch & dinner booking cutoffs for the day have passed)
+      if (currState.planType === 'single') {
+        if (isAfter730PM && lastDaily !== todayStr && updatedRemTokens > 0) {
+          lastDaily = todayStr;
+          if (!bookedAnyMealToday) {
+            if (updatedRemSkips > 0) {
+              // Deduct 1 skip token (protects meal token)
+              updatedRemSkips = Math.max(0, updatedRemSkips - 1);
+              historyToAdd.push({
+                id: `hist_skip_auto_${Date.now()}`,
+                messName: '1 Skip Pass Auto-Used (No Meal Booked by 7:30 PM Cutoff)',
+                mealType: 'Dinner',
+                status: 'skipped',
+                tokensUsed: 0,
+                date: formatToIST(new Date()),
+              });
+            } else {
+              // Deduct 1 meal token (no-show)
+              updatedRemTokens = Math.max(0, updatedRemTokens - 1);
+              historyToAdd.push({
+                id: `hist_meal_exp_${Date.now()}`,
+                messName: '1 Meal Token Expired (No Meal Booked by 7:30 PM Cutoff)',
+                mealType: 'Dinner',
+                status: 'no-show',
+                tokensUsed: 1,
+                date: formatToIST(new Date()),
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Evaluation for 60-Meal Pass (2 Meals / Day - Double Slot: Lunch + Dinner)
+      if (currState.planType === 'double') {
+        // A) Lunch Cutoff (11:30 AM)
+        if (isAfter1130AM && lastLunch !== todayStr && updatedRemTokens > 0) {
+          lastLunch = todayStr;
+          if (!bookedLunchToday) {
+            if (updatedRemSkips > 0) {
+              updatedRemSkips = Math.max(0, updatedRemSkips - 1);
+              historyToAdd.push({
+                id: `hist_skip_lunch_${Date.now()}`,
+                messName: '1 Skip Pass Auto-Used (Lunch Cutoff Missed at 11:30 AM)',
+                mealType: 'Lunch',
+                status: 'skipped',
+                tokensUsed: 0,
+                date: formatToIST(new Date()),
+              });
+            } else {
+              updatedRemTokens = Math.max(0, updatedRemTokens - 1);
+              historyToAdd.push({
+                id: `hist_meal_lunch_${Date.now()}`,
+                messName: '1 Meal Token Expired (Lunch Cutoff Missed at 11:30 AM)',
+                mealType: 'Lunch',
+                status: 'no-show',
+                tokensUsed: 1,
+                date: formatToIST(new Date()),
+              });
+            }
+          }
+        }
+
+        // B) Dinner Cutoff (7:30 PM)
+        if (isAfter730PM && lastDinner !== todayStr && updatedRemTokens > 0) {
+          lastDinner = todayStr;
+          if (!bookedDinnerToday) {
+            if (updatedRemSkips > 0) {
+              updatedRemSkips = Math.max(0, updatedRemSkips - 1);
+              historyToAdd.push({
+                id: `hist_skip_dinner_${Date.now()}`,
+                messName: '1 Skip Pass Auto-Used (Dinner Cutoff Missed at 7:30 PM)',
+                mealType: 'Dinner',
+                status: 'skipped',
+                tokensUsed: 0,
+                date: formatToIST(new Date()),
+              });
+            } else {
+              updatedRemTokens = Math.max(0, updatedRemTokens - 1);
+              historyToAdd.push({
+                id: `hist_meal_dinner_${Date.now()}`,
+                messName: '1 Meal Token Expired (Dinner Cutoff Missed at 7:30 PM)',
+                mealType: 'Dinner',
+                status: 'no-show',
+                tokensUsed: 1,
+                date: formatToIST(new Date()),
+              });
+            }
+          }
+        }
+      }
+
+      // If changes occurred, commit state & history
+      if (
+        updatedRemTokens !== currState.remainingTokens ||
+        updatedRemSkips !== currState.remainingSkips ||
+        historyToAdd.length > 0 ||
+        lastLunch !== currState.lastLunchCutoffDate ||
+        lastDinner !== currState.lastDinnerCutoffDate ||
+        lastDaily !== currState.lastDailyCutoffDate
+      ) {
+        setRemainingTokens(updatedRemTokens);
+        setRemainingSkips(updatedRemSkips);
+        setSubscriptionPlan(updatedPlan);
+
+        if (historyToAdd.length > 0) {
+          const newHistory = [...historyToAdd, ...currHistory];
+          setMealHistory(newHistory);
+          await AsyncStorage.setItem(
+            getScopedKey(STORAGE_KEYS.HISTORY, userId),
+            JSON.stringify(newHistory)
+          );
+        }
+
+        const stateObj = {
+          totalTokens: currState.totalTokens,
+          remainingTokens: updatedRemTokens,
+          totalSkips: currState.totalSkips,
+          remainingSkips: updatedRemSkips,
+          streakDays: currState.streakDays,
+          highestStreakDays: currState.highestStreakDays,
+          subscriptionPlan: updatedPlan,
+          planType: currState.planType,
+          planExpiresAt: currState.planExpiresAt,
+          lastLunchCutoffDate: lastLunch,
+          lastDinnerCutoffDate: lastDinner,
+          lastDailyCutoffDate: lastDaily,
+        };
+        await AsyncStorage.setItem(
+          getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId),
+          JSON.stringify(stateObj)
+        );
+      }
+    },
+    []
+  );
+
+  // Load persistent token state from AsyncStorage & Neon DB
   const loadTokenState = async () => {
     try {
       setLoading(true);
@@ -183,53 +505,84 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setInvalidatedOTPs([]);
       }
 
+      let loadedTotalTokens = 0;
+      let loadedRemTokens = 0;
+      let loadedTotalSkips = 0;
+      let loadedRemSkips = 0;
+      let loadedStreak = 0;
+      let loadedHighest = 0;
+      let loadedPlan = 'No Active Subscription';
+      let loadedPlanType: PlanType = 'none';
+      let loadedExpiresAt: string | null = null;
+      let lastLunch = '';
+      let lastDinner = '';
+      let lastDaily = '';
+
       // 1. Fetch Real Pass Stats from Neon DB or Local Storage
       try {
         const pass = await getMealPassFromNeon(userId);
 
         if (pass) {
-          setTotalTokens(pass.total_tokens ?? 0);
-          setRemainingTokens(pass.remaining_tokens ?? 0);
-          setTotalSkips(pass.total_skips ?? 0);
-          setRemainingSkips(pass.remaining_skips ?? 0);
-          setStreakDays(pass.streak_days ?? 0);
-          setHighestStreakDays(pass.streak_days ?? 0);
-          setSubscriptionPlan(pass.plan_name || 'No Active Subscription');
+          loadedTotalTokens = pass.total_tokens ?? 0;
+          loadedRemTokens = pass.remaining_tokens ?? 0;
+          loadedTotalSkips = pass.total_skips ?? 0;
+          loadedRemSkips = pass.remaining_skips ?? 0;
+          loadedStreak = pass.streak_days ?? 0;
+          loadedHighest = pass.streak_days ?? 0;
+          loadedPlan = pass.plan_name || 'No Active Subscription';
+          loadedPlanType = (pass.plan_name || '').toLowerCase().includes('60')
+            ? 'double'
+            : (pass.plan_name || '').toLowerCase().includes('30')
+            ? 'single'
+            : 'none';
         } else {
-          const savedStateStr = await AsyncStorage.getItem(getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId));
+          const savedStateStr = await AsyncStorage.getItem(
+            getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId)
+          );
           if (savedStateStr) {
             const parsed = JSON.parse(savedStateStr);
-            setTotalTokens(parsed.totalTokens ?? 0);
-            setRemainingTokens(parsed.remainingTokens ?? 0);
-            setTotalSkips(parsed.totalSkips ?? 0);
-            setRemainingSkips(parsed.remainingSkips ?? 0);
-            setStreakDays(parsed.streakDays ?? 0);
-            setHighestStreakDays(parsed.highestStreakDays ?? parsed.streakDays ?? 0);
-            setSubscriptionPlan(parsed.subscriptionPlan || 'No Active Subscription');
+            loadedTotalTokens = parsed.totalTokens ?? 0;
+            loadedRemTokens = parsed.remainingTokens ?? 0;
+            loadedTotalSkips = parsed.totalSkips ?? 0;
+            loadedRemSkips = parsed.remainingSkips ?? 0;
+            loadedStreak = parsed.streakDays ?? 0;
+            loadedHighest = parsed.highestStreakDays ?? parsed.streakDays ?? 0;
+            loadedPlan = parsed.subscriptionPlan || 'No Active Subscription';
+            loadedPlanType = parsed.planType || 'none';
+            loadedExpiresAt = parsed.planExpiresAt || null;
+            lastLunch = parsed.lastLunchCutoffDate || '';
+            lastDinner = parsed.lastDinnerCutoffDate || '';
+            lastDaily = parsed.lastDailyCutoffDate || '';
           } else if (isVipUser) {
-            setTotalTokens(60);
-            setRemainingTokens(42);
-            setTotalSkips(15);
-            setRemainingSkips(12);
-            setStreakDays(7);
-            setHighestStreakDays(14);
-            setSubscriptionPlan('College Gold Meal Pass');
-          } else {
-            setTotalTokens(0);
-            setRemainingTokens(0);
-            setTotalSkips(0);
-            setRemainingSkips(0);
-            setStreakDays(0);
-            setHighestStreakDays(0);
-            setSubscriptionPlan('No Active Subscription');
+            loadedTotalTokens = 60;
+            loadedRemTokens = 42;
+            loadedTotalSkips = 10;
+            loadedRemSkips = 8;
+            loadedStreak = 7;
+            loadedHighest = 14;
+            loadedPlan = 'Full Board Pass (60 Meals)';
+            loadedPlanType = 'double';
+            loadedExpiresAt = new Date(Date.now() + 25 * 86400000).toISOString();
           }
         }
       } catch (e) {}
+
+      setTotalTokens(loadedTotalTokens);
+      setRemainingTokens(loadedRemTokens);
+      setTotalSkips(loadedTotalSkips);
+      setRemainingSkips(loadedRemSkips);
+      setStreakDays(loadedStreak);
+      setHighestStreakDays(loadedHighest);
+      setSubscriptionPlan(loadedPlan);
+      setPlanType(loadedPlanType);
+      setPlanExpiresAt(loadedExpiresAt);
 
       // 2. Load Active Booking for THIS user only
       const activeKey = getScopedKey(STORAGE_KEYS.ACTIVE_BOOKING, userId);
       const savedActiveStr = await AsyncStorage.getItem(activeKey);
       const legacyActiveStr = await AsyncStorage.getItem('mealhop_active_booking');
+
+      let currentActive: BookingDetails | null = null;
 
       if (
         savedActiveStr === 'CANCELLED' ||
@@ -238,20 +591,20 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         savedActiveStr === 'COMPLETED' ||
         legacyActiveStr === 'CANCELLED'
       ) {
-        setActiveBooking(null);
+        currentActive = null;
       } else if (savedActiveStr && savedActiveStr.startsWith('{')) {
         try {
           const parsed = JSON.parse(savedActiveStr);
           const cleanOtp = (parsed?.otp || '').replace(/[\s-]/g, '');
-          const isInv = cleanOtp && currentInvOTPs.some(i => i.replace(/[\s-]/g, '') === cleanOtp);
+          const isInv = cleanOtp && currentInvOTPs.some((i) => i.replace(/[\s-]/g, '') === cleanOtp);
           if (parsed && parsed.status === 'booked' && !isInv) {
-            setActiveBooking(parsed);
+            currentActive = parsed;
           } else {
-            setActiveBooking(null);
+            currentActive = null;
             await AsyncStorage.setItem(activeKey, 'CANCELLED');
           }
         } catch {
-          setActiveBooking(null);
+          currentActive = null;
         }
       } else {
         try {
@@ -266,7 +619,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
           if (booking) {
             const cleanOtp = (booking.otp || '').replace(/[\s-]/g, '');
-            const isInv = cleanOtp && currentInvOTPs.some(i => i.replace(/[\s-]/g, '') === cleanOtp);
+            const isInv = cleanOtp && currentInvOTPs.some((i) => i.replace(/[\s-]/g, '') === cleanOtp);
             if (!isInv) {
               const fetchedBooking: BookingDetails = {
                 bookingId: booking.id,
@@ -276,76 +629,37 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 mealType: booking.meal_type || 'Lunch',
                 menuHighlights: booking.messes?.highlights || ['Daily Special'],
                 otp: booking.otp || '84920156',
-                otpExpiresAt: booking.expires_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+                otpExpiresAt:
+                  booking.expires_at || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
                 status: 'booked',
                 bookedAt: booking.created_at,
                 cutoffTime: booking.cutoff_time || '2:30 PM',
               };
-              setActiveBooking(fetchedBooking);
+              currentActive = fetchedBooking;
               await AsyncStorage.setItem(activeKey, JSON.stringify(fetchedBooking));
-            } else {
-              setActiveBooking(null);
-              await AsyncStorage.setItem(activeKey, 'CANCELLED');
             }
-          } else {
-            setActiveBooking(null);
           }
-        } catch (e) {
-          setActiveBooking(null);
-        }
+        } catch (e) {}
       }
 
-      // 3. Load Meal History for THIS user only
+      setActiveBooking(currentActive);
+
+      // 3. Load Meal History
       const historyKey = getScopedKey(STORAGE_KEYS.HISTORY, userId);
       const savedHistoryStr = await AsyncStorage.getItem(historyKey);
+      let currentHistory: MealHistoryItem[] = [];
+
       if (savedHistoryStr) {
         try {
           const parsedHist = JSON.parse(savedHistoryStr);
           if (Array.isArray(parsedHist)) {
-            setMealHistory(expandHistoryWithRefundPairs(parsedHist));
-          } else {
-            setMealHistory([]);
+            currentHistory = expandHistoryWithRefundPairs(parsedHist);
           }
-        } catch (e) {
-          setMealHistory([]);
-        }
-      } else {
-        try {
-          const { data: history } = await supabase
-            .from('meal_history')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(20);
-
-          if (history && history.length > 0) {
-            const mappedHistory: MealHistoryItem[] = history.map((h: any) => ({
-              id: h.id,
-              messName: h.mess_name || 'Partner Mess',
-              mealType: h.meal_type || 'Lunch',
-              status: h.status || 'completed',
-              tokensUsed: h.tokens_used ?? (h.status === 'cancelled' || h.status === 'refunded' ? -1 : h.status === 'skipped' ? 0 : 1),
-              date: new Date(h.created_at).toLocaleDateString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-            }));
-            const expanded = expandHistoryWithRefundPairs(mappedHistory);
-            setMealHistory(expanded);
-            await AsyncStorage.setItem(historyKey, JSON.stringify(expanded));
-          } else if (isVipUser) {
-            await ensureDatabaseInitialized('vip_test_user');
-          } else {
-            setMealHistory([]);
-          }
-        } catch (e) {
-          setMealHistory([]);
-        }
+        } catch (e) {}
       }
+      setMealHistory(currentHistory);
 
-      // 4. Load Shortlisted Messes for THIS user only
+      // 4. Load Shortlisted Messes
       const shortlistKey = getScopedKey(STORAGE_KEYS.SHORTLIST, userId);
       const savedShortlistStr = await AsyncStorage.getItem(shortlistKey);
       if (savedShortlistStr) {
@@ -354,9 +668,28 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         } catch {
           setShortlistedMessIds([]);
         }
-      } else {
-        setShortlistedMessIds([]);
       }
+
+      // 5. Trigger Daily Cutoffs and Expiry Evaluation
+      await evaluateDailyCutoffsAndExpiry(
+        {
+          totalTokens: loadedTotalTokens,
+          remainingTokens: loadedRemTokens,
+          totalSkips: loadedTotalSkips,
+          remainingSkips: loadedRemSkips,
+          streakDays: loadedStreak,
+          highestStreakDays: loadedHighest,
+          subscriptionPlan: loadedPlan,
+          planType: loadedPlanType,
+          planExpiresAt: loadedExpiresAt,
+          lastLunchCutoffDate: lastLunch,
+          lastDinnerCutoffDate: lastDinner,
+          lastDailyCutoffDate: lastDaily,
+        },
+        currentHistory,
+        currentActive,
+        userId
+      );
     } finally {
       setLoading(false);
     }
@@ -364,38 +697,16 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   useEffect(() => {
     loadTokenState();
+
+    // Periodic evaluation timer (every 60 seconds) for real-time cutoffs
+    const interval = setInterval(() => {
+      loadTokenState();
+    }, 60000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  // Save Token State to AsyncStorage & Neon DB
-  const saveStateToStorage = async (remTokens: number, remSkips: number, streak: number, customPlan?: string, customHighest?: number) => {
-    const userId = await getCurrentUserId();
-    const activePlan = customPlan || subscriptionPlan;
-    const currentHighest = customHighest !== undefined ? customHighest : Math.max(highestStreakDays, streak);
-    const stateObj = {
-      totalTokens,
-      remainingTokens: remTokens,
-      totalSkips,
-      remainingSkips: remSkips,
-      streakDays: streak,
-      highestStreakDays: currentHighest,
-      subscriptionPlan: activePlan,
-    };
-    await AsyncStorage.setItem(getScopedKey(STORAGE_KEYS.TOKEN_STATE, userId), JSON.stringify(stateObj));
-
-    try {
-      await upsertMealPassInNeon(
-        userId,
-        activePlan,
-        totalTokens,
-        remTokens,
-        totalSkips,
-        remSkips,
-        streak
-      );
-    } catch (e) {}
-  };
-
-  // Book a Meal from a Mess (Persists Real Row in Supabase)
+  // Book a Meal from a Mess
   const bookMeal = async (
     messId: string,
     messName: string,
@@ -404,11 +715,17 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     menuHighlights: string[]
   ): Promise<{ success: boolean; message?: string }> => {
     if (remainingTokens <= 0) {
-      return { success: false, message: 'You have run out of meal tokens! Please top up your subscription.' };
+      return {
+        success: false,
+        message: 'You have run out of meal tokens! Please top up your subscription.',
+      };
     }
 
     if (activeBooking && activeBooking.status === 'booked') {
-      return { success: false, message: 'You already have an active meal booking! Complete or cancel it first.' };
+      return {
+        success: false,
+        message: 'You already have an active meal booking! Complete or cancel it first.',
+      };
     }
 
     const userId = await getCurrentUserId();
@@ -451,26 +768,33 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       mealType,
       status: 'completed',
       tokensUsed: 1,
-      date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
 
     const updatedHistory = [bookedItem, ...mealHistory];
     setMealHistory(updatedHistory);
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
 
-    // Real Neon DB Insertions
     try {
-      const validMessId = messId.length > 20 ? messId : 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
-      await createBookingInNeon(userId, validMessId, mealType, otpCode, expiryTime, newBooking.cutoffTime);
-      await insertMealHistoryItemInNeon(userId, messName, mealType, 'completed', 1);
-    } catch (e) {
-      console.warn('Real Supabase booking sync notice:', e);
-    }
+      await createBookingInNeon(
+        userId,
+        messId,
+        mealType,
+        otpCode,
+        expiryTime,
+        newBooking.cutoffTime
+      );
+    } catch (e) {}
 
     return { success: true };
   };
 
-  // Cancel Active Booking (Reduces streak back)
+  // Cancel Active Booking
   const cancelBooking = async () => {
     if (!activeBooking) return;
 
@@ -480,63 +804,48 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const invKey = getScopedKey(STORAGE_KEYS.INVALIDATED_OTPS, userId);
 
     const currentBooking = activeBooking;
-    const restoredTokens = remainingTokens + 1;
-    const reducedStreak = Math.max(0, streakDays - 1);
+    const cleanOtp = currentBooking.otp.replace(/[\s-]/g, '');
 
-    setRemainingTokens(restoredTokens);
-    setStreakDays(reducedStreak);
+    const newInvOTPs = [...invalidatedOTPs, cleanOtp];
+    setInvalidatedOTPs(newInvOTPs);
+    await AsyncStorage.setItem(invKey, JSON.stringify(newInvOTPs));
+
+    const newRemTokens = remainingTokens + 1;
+    const newStreak = Math.max(0, streakDays - 1);
+
+    setRemainingTokens(newRemTokens);
+    setStreakDays(newStreak);
     setActiveBooking(null);
 
-    await saveStateToStorage(restoredTokens, remainingSkips, reducedStreak, undefined, highestStreakDays);
+    await saveStateToStorage(newRemTokens, remainingSkips, newStreak);
     await AsyncStorage.setItem(activeKey, 'CANCELLED');
     await AsyncStorage.setItem('mealhop_active_booking', 'CANCELLED');
 
-    // Register OTP as invalidated immediately
-    const cleanOtp = currentBooking.otp.replace(/[\s-]/g, '');
-    const updatedInvOTPs = Array.from(new Set([...invalidatedOTPs, cleanOtp, currentBooking.otp]));
-    setInvalidatedOTPs(updatedInvOTPs);
-    await AsyncStorage.setItem(invKey, JSON.stringify(updatedInvOTPs));
-    await AsyncStorage.setItem(STORAGE_KEYS.INVALIDATED_OTPS, JSON.stringify(updatedInvOTPs));
-
-    // Create refund credit entry (+1 Token) and preserve original debit entry (-1 Token)
     const refundItem: MealHistoryItem = {
-      id: `hist_refund_${Date.now()}`,
+      id: `hist_cancel_${Date.now()}`,
       messName: currentBooking.messName,
       mealType: currentBooking.mealType,
       status: 'cancelled',
       tokensUsed: -1,
-      date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
 
-    let updatedHistory = [...mealHistory];
-
-    const hasBookingItem = updatedHistory.some(item => item.messName === currentBooking.messName && item.tokensUsed > 0);
-    if (!hasBookingItem) {
-      const originalBookingItem: MealHistoryItem = {
-        id: `hist_book_${Date.now() - 1000}`,
-        messName: currentBooking.messName,
-        mealType: currentBooking.mealType,
-        status: 'completed',
-        tokensUsed: 1,
-        date: new Date(Date.now() - 60000).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      };
-      updatedHistory.push(originalBookingItem);
-    }
-
-    updatedHistory = [refundItem, ...updatedHistory];
-
-    setMealHistory(updatedHistory);
-    await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
+    const rawHistory = [refundItem, ...mealHistory];
+    const expanded = expandHistoryWithRefundPairs(rawHistory);
+    setMealHistory(expanded);
+    await AsyncStorage.setItem(historyKey, JSON.stringify(expanded));
 
     try {
-      if (currentBooking.bookingId && currentBooking.bookingId.length > 20) {
-        await updateBookingStatusInNeon(currentBooking.bookingId, 'cancelled');
-      }
-      await insertMealHistoryItemInNeon(userId, currentBooking.messName, currentBooking.mealType, 'cancelled', -1);
+      await updateBookingStatusInNeon(currentBooking.otp, 'cancelled');
     } catch (e) {}
   };
 
-  // Expire Active Booking (when missed - resets current streak to 0)
+  // Expire Booking (No-show)
   const expireBooking = async () => {
     if (!activeBooking) return;
 
@@ -546,7 +855,8 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const currentBooking = activeBooking;
     setActiveBooking(null);
-    setStreakDays(0); // Missed day resets current streak to 0!
+    setStreakDays(0);
+
     await saveStateToStorage(remainingTokens, remainingSkips, 0, undefined, highestStreakDays);
     await AsyncStorage.setItem(activeKey, 'EXPIRED');
     await AsyncStorage.setItem('mealhop_active_booking', 'EXPIRED');
@@ -557,7 +867,12 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       mealType: currentBooking.mealType,
       status: 'no-show',
       tokensUsed: 1,
-      date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
 
     const updatedHistory = [expiredItem, ...mealHistory];
@@ -565,14 +880,11 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
 
     try {
-      await supabase
-        .from('meal_bookings')
-        .update({ status: 'expired' })
-        .eq('otp', currentBooking.otp);
+      await updateBookingStatusInNeon(currentBooking.otp, 'expired');
     } catch (e) {}
   };
 
-  // Complete Active Booking (when used / verified by mess owner)
+  // Complete Active Booking
   const completeBooking = async () => {
     if (!activeBooking) return;
 
@@ -591,7 +903,12 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       mealType: currentBooking.mealType,
       status: 'completed',
       tokensUsed: 1,
-      date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
 
     const updatedHistory = [completedItem, ...mealHistory];
@@ -599,17 +916,17 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
 
     try {
-      await supabase
-        .from('meal_bookings')
-        .update({ status: 'completed' })
-        .eq('otp', currentBooking.otp);
+      await updateBookingStatusInNeon(currentBooking.otp, 'completed');
     } catch (e) {}
   };
 
-  // Skip Meal (Deducts 1 skip pass from user balance)
+  // Manual Skip Meal
   const skipMeal = async (): Promise<{ success: boolean; message?: string }> => {
     if (remainingSkips <= 0) {
-      return { success: false, message: 'No remaining skip passes! Buy extra skips to pause meals.' };
+      return {
+        success: false,
+        message: 'No remaining skip passes! Buy extra skips to pause meals.',
+      };
     }
 
     const userId = await getCurrentUserId();
@@ -625,23 +942,17 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       mealType: 'Lunch',
       status: 'skipped',
       tokensUsed: 0,
-      date: new Date().toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
 
     const updatedHistory = [skippedItem, ...mealHistory];
     setMealHistory(updatedHistory);
     await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
-
-    try {
-      await supabase.from('meal_history').insert({
-        user_id: userId,
-        mess_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-        mess_name: 'Meal Skip Pass Used',
-        meal_type: 'Lunch',
-        status: 'skipped',
-        tokens_used: 0,
-      });
-    } catch (e) {}
 
     return { success: true };
   };
@@ -659,7 +970,6 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b': 'mess_5',
   };
 
-  // Toggle Mess Shortlist (Filters out both target ID & legacy equivalent)
   const toggleShortlistMess = async (messId: string) => {
     const userId = await getCurrentUserId();
     const shortlistKey = getScopedKey(STORAGE_KEYS.SHORTLIST, userId);
@@ -678,7 +988,6 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
   };
 
-  // Explicitly add mess to shortlist
   const addToShortlist = async (messId: string) => {
     const userId = await getCurrentUserId();
     const shortlistKey = getScopedKey(STORAGE_KEYS.SHORTLIST, userId);
@@ -693,7 +1002,6 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
   };
 
-  // Explicitly remove mess from shortlist
   const removeFromShortlist = async (messId: string) => {
     const userId = await getCurrentUserId();
     const shortlistKey = getScopedKey(STORAGE_KEYS.SHORTLIST, userId);
@@ -708,10 +1016,13 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const isShortlisted = (messId: string): boolean => {
     const equiv = LEGACY_EQUIVALENTS[messId];
-    return shortlistedMessIds.includes(messId) || (!!equiv && shortlistedMessIds.includes(equiv));
+    return (
+      shortlistedMessIds.includes(messId) ||
+      (!!equiv && shortlistedMessIds.includes(equiv))
+    );
   };
 
-  // Buy Extra Skips via Razorpay
+  // Buy Extra Skips
   const buyExtraSkips = async (count: number, amountPaid: number) => {
     const newTotalSkips = totalSkips + count;
     const newRemSkips = remainingSkips + count;
@@ -722,19 +1033,40 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await saveStateToStorage(remainingTokens, newRemSkips, streakDays);
   };
 
-  const buyPassPlan = async (planName: string, tokens: number, skips: number) => {
+  // Buy Pass Plan with Validity & Type
+  const buyPassPlan = async (
+    planName: string,
+    tokens: number,
+    skips: number,
+    validityDays: number = 30,
+    newPlanType?: PlanType
+  ) => {
     const newTotalTokens = totalTokens + tokens;
     const newRemTokens = remainingTokens + tokens;
     const newTotalSkips = totalSkips + skips;
     const newRemSkips = remainingSkips + skips;
+    const pType =
+      newPlanType ||
+      (tokens >= 60 ? 'double' : 'single');
+    const expDate = new Date(Date.now() + validityDays * 86400000).toISOString();
 
     setTotalTokens(newTotalTokens);
     setRemainingTokens(newRemTokens);
     setTotalSkips(newTotalSkips);
     setRemainingSkips(newRemSkips);
     setSubscriptionPlan(planName);
+    setPlanType(pType);
+    setPlanExpiresAt(expDate);
 
-    await saveStateToStorage(newRemTokens, newRemSkips, streakDays);
+    await saveStateToStorage(
+      newRemTokens,
+      newRemSkips,
+      streakDays,
+      planName,
+      undefined,
+      expDate,
+      pType
+    );
   };
 
   return (
@@ -747,6 +1079,9 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         streakDays,
         highestStreakDays,
         subscriptionPlan,
+        planType,
+        planExpiresAt,
+        isGracePeriod,
         activeBooking,
         shortlistedMessIds,
         mealHistory,
@@ -772,7 +1107,7 @@ export const TokenProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   );
 };
 
-export const useToken = (): TokenContextType => {
+export const useToken = () => {
   const context = useContext(TokenContext);
   if (!context) {
     throw new Error('useToken must be used within a TokenProvider');
