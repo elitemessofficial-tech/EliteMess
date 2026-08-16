@@ -47,6 +47,9 @@ import {
   Receipt,
   Banknote,
   IndianRupee,
+  Edit3,
+  Pencil,
+  X,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -95,6 +98,30 @@ export default function MessOwnerDashboardScreen() {
     ref: string;
     date: string;
   }>>([]);
+
+  // Settlement Bank Account State
+  const [showEditBankModal, setShowEditBankModal] = useState<boolean>(false);
+  const [bankDetails, setBankDetails] = useState<{
+    bankName: string;
+    accountHolder: string;
+    accountNumber: string;
+    ifscCode: string;
+    upiId: string;
+  }>({
+    bankName: 'HDFC Bank Current A/C',
+    accountHolder: 'Annapurna Campus Mess',
+    accountNumber: '50100482914092',
+    ifscCode: 'HDFC0001824',
+    upiId: 'elitemess.annapurna@okaxis',
+  });
+
+  // Edit Bank Form Inputs
+  const [editBankName, setEditBankName] = useState<string>('HDFC Bank Ltd');
+  const [editAccountHolder, setEditAccountHolder] = useState<string>('Annapurna Campus Mess');
+  const [editAccountNumber, setEditAccountNumber] = useState<string>('50100482914092');
+  const [editIfscCode, setEditIfscCode] = useState<string>('HDFC0001824');
+  const [editUpiId, setEditUpiId] = useState<string>('elitemess.annapurna@okaxis');
+  const [savingBank, setSavingBank] = useState<boolean>(false);
 
   // OTP & QR Scanner state
   const [enteredOtp, setEnteredOtp] = useState<string>('');
@@ -188,6 +215,34 @@ export default function MessOwnerDashboardScreen() {
       } catch (e) {
         setPayoutHistory([]);
       }
+
+      // Load persistent real bank account details for this mess
+      try {
+        const storedBank = await AsyncStorage.getItem(`@elitemess_owner_bank_${targetMessId}`);
+        if (storedBank) {
+          const parsed = JSON.parse(storedBank);
+          setBankDetails(parsed);
+          setEditBankName(parsed.bankName || 'HDFC Bank Ltd');
+          setEditAccountHolder(parsed.accountHolder || (currentMess?.name || 'Mess Owner'));
+          setEditAccountNumber(parsed.accountNumber || '50100482914092');
+          setEditIfscCode(parsed.ifscCode || 'HDFC0001824');
+          setEditUpiId(parsed.upiId || `elitemess.${(currentMess?.name || 'annapurna').toLowerCase().replace(/[^a-z0-9]/g, '')}@okaxis`);
+        } else {
+          const defaultBank = {
+            bankName: 'HDFC Bank Current A/C',
+            accountHolder: currentMess?.name || 'Annapurna Campus Mess',
+            accountNumber: '50100482914092',
+            ifscCode: 'HDFC0001824',
+            upiId: `elitemess.${(currentMess?.name || 'annapurna').toLowerCase().replace(/[^a-z0-9]/g, '')}@okaxis`,
+          };
+          setBankDetails(defaultBank);
+          setEditBankName(defaultBank.bankName);
+          setEditAccountHolder(defaultBank.accountHolder);
+          setEditAccountNumber(defaultBank.accountNumber);
+          setEditIfscCode(defaultBank.ifscCode);
+          setEditUpiId(defaultBank.upiId);
+        }
+      } catch (e) {}
     } catch (error) {
       console.warn('Error loading real owner data:', error);
     } finally {
@@ -195,6 +250,45 @@ export default function MessOwnerDashboardScreen() {
       setRefreshing(false);
     }
   }, []);
+
+  // Handler for Saving Bank Account Details
+  const handleSaveBankDetails = async () => {
+    if (!editAccountNumber.trim() || editAccountNumber.length < 8) {
+      showFeedback('Invalid Account Number', 'Please enter a valid bank account number (min 8 digits).', 'error');
+      return;
+    }
+    if (!editIfscCode.trim() || editIfscCode.length < 5) {
+      showFeedback('Invalid IFSC Code', 'Please enter a valid bank IFSC code (e.g. HDFC0001824).', 'error');
+      return;
+    }
+    if (!editUpiId.trim() || !editUpiId.includes('@')) {
+      showFeedback('Invalid UPI ID', 'Please enter a valid UPI VPA address (e.g. user@okaxis).', 'error');
+      return;
+    }
+
+    setSavingBank(true);
+    const updated = {
+      bankName: editBankName.trim() || 'HDFC Bank Current A/C',
+      accountHolder: editAccountHolder.trim() || (selectedMess?.name || 'Mess Partner'),
+      accountNumber: editAccountNumber.trim(),
+      ifscCode: editIfscCode.trim().toUpperCase(),
+      upiId: editUpiId.trim().toLowerCase(),
+    };
+
+    setBankDetails(updated);
+    try {
+      await AsyncStorage.setItem(`@elitemess_owner_bank_${selectedMessId}`, JSON.stringify(updated));
+    } catch (e) {}
+    setSavingBank(false);
+    setShowEditBankModal(false);
+
+    const masked = updated.accountNumber.length > 4 ? `•••• ${updated.accountNumber.slice(-4)}` : updated.accountNumber;
+    showFeedback(
+      'Settlement Account Updated! 🏦',
+      `Bank details saved successfully. Future automatic daily payouts will be transferred to ${updated.bankName} (A/C ${masked}) / UPI ${updated.upiId}.`,
+      'success'
+    );
+  };
 
   // Handler for Real Instant Settlement Request
   const handleRequestInstantPayout = async () => {
@@ -223,9 +317,10 @@ export default function MessOwnerDashboardScreen() {
       await AsyncStorage.setItem(`@elitemess_owner_payouts_${selectedMessId}`, JSON.stringify(updatedHistory));
     } catch (e) {}
 
+    const masked = bankDetails.accountNumber.length > 4 ? `•••• ${bankDetails.accountNumber.slice(-4)}` : bankDetails.accountNumber;
     showFeedback(
       'Payout Request Dispatched! 💸',
-      `Instant settlement of ₹${pendingBalance} has been sent (Ref #${txRef}). Funds will be credited directly to HDFC Bank A/C •••• 4092 via IMPS within 15 minutes.`,
+      `Instant settlement of ₹${pendingBalance} has been sent (Ref #${txRef}). Funds will be credited directly to ${bankDetails.bankName} (A/C ${masked}) via IMPS within 15 minutes.`,
       'success'
     );
   };
@@ -764,9 +859,27 @@ export default function MessOwnerDashboardScreen() {
             </View>
 
             {/* Registered Bank / UPI Card */}
-            <Text style={[styles.sectionHeading, { color: colors.textMain, marginTop: 16 }]}>
-              Registered Settlement Account
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
+              <Text style={[styles.sectionHeading, { color: colors.textMain }]}>
+                Registered Settlement Account
+              </Text>
+              <TouchableOpacity
+                style={styles.editAccountPill}
+                onPress={() => {
+                  setEditBankName(bankDetails.bankName);
+                  setEditAccountHolder(bankDetails.accountHolder);
+                  setEditAccountNumber(bankDetails.accountNumber);
+                  setEditIfscCode(bankDetails.ifscCode);
+                  setEditUpiId(bankDetails.upiId);
+                  setShowEditBankModal(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Pencil size={12} color="#10B981" />
+                <Text style={styles.editAccountPillText}>Edit Account</Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={[styles.bankAccountCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
               <View style={styles.bankAccountHeader}>
                 <View style={styles.bankIconCircle}>
@@ -774,9 +887,11 @@ export default function MessOwnerDashboardScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.bankAccountTitle, { color: colors.textMain }]}>
-                    {selectedMess?.name || 'HDFC Bank Current A/C'}
+                    {bankDetails.bankName || selectedMess?.name || 'HDFC Bank Current A/C'}
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.textSub }}>Primary Disbursement Account</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSub }} numberOfLines={1}>
+                    {bankDetails.accountHolder || selectedMess?.name || 'Primary Disbursement Account'}
+                  </Text>
                 </View>
                 <View style={styles.verifiedKycPill}>
                   <ShieldCheck size={11} color="#10B981" />
@@ -786,16 +901,18 @@ export default function MessOwnerDashboardScreen() {
 
               <View style={styles.bankDetailRow}>
                 <Text style={{ fontSize: 11, color: colors.textSub }}>Account Number:</Text>
-                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>•••• •••• •••• 4092</Text>
+                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>
+                  •••• •••• •••• {bankDetails.accountNumber.length > 4 ? bankDetails.accountNumber.slice(-4) : bankDetails.accountNumber}
+                </Text>
               </View>
               <View style={styles.bankDetailRow}>
                 <Text style={{ fontSize: 11, color: colors.textSub }}>IFSC Code:</Text>
-                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>HDFC0001824</Text>
+                <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '700' }}>{bankDetails.ifscCode}</Text>
               </View>
               <View style={[styles.bankDetailRow, { borderBottomWidth: 0 }]}>
                 <Text style={{ fontSize: 11, color: colors.textSub }}>UPI ID:</Text>
                 <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '700' }}>
-                  elitemess.{selectedMess?.name ? selectedMess.name.toLowerCase().replace(/[^a-z0-9]/g, '') : 'annapurna'}@okaxis
+                  {bankDetails.upiId}
                 </Text>
               </View>
             </View>
@@ -1003,6 +1120,125 @@ export default function MessOwnerDashboardScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </ScrollView>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* ================= EDIT SETTLEMENT BANK ACCOUNT MODAL ================= */}
+      <Modal
+        visible={showEditBankModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowEditBankModal(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} style={styles.bankEditCard}>
+            <View style={styles.pickerHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Landmark size={20} color="#10B981" />
+                <Text style={[styles.pickerTitle, { color: colors.textMain }]}>Edit Settlement Account</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEditBankModal(false)} style={styles.pickerCloseBtn}>
+                <Text style={{ color: colors.textMain, fontWeight: '800' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 20 }}>
+              <Text style={{ fontSize: 12, color: colors.textSub, lineHeight: 18 }}>
+                Update your registered bank account or UPI details for automated daily meal token disbursements.
+              </Text>
+
+              {/* Bank Name */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Bank Name</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editBankName}
+                  onChangeText={setEditBankName}
+                  placeholder="e.g. HDFC Bank Ltd, ICICI Bank, SBI"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Account Holder */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Account Holder / Mess Name</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editAccountHolder}
+                  onChangeText={setEditAccountHolder}
+                  placeholder="e.g. Annapurna Campus Mess"
+                  placeholderTextColor={colors.textSub}
+                />
+              </View>
+
+              {/* Account Number */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>Bank Account Number</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editAccountNumber}
+                  onChangeText={setEditAccountNumber}
+                  placeholder="e.g. 50100482914092"
+                  placeholderTextColor={colors.textSub}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* IFSC Code */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>IFSC Code</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg, textTransform: 'uppercase' }]}
+                  value={editIfscCode}
+                  onChangeText={setEditIfscCode}
+                  placeholder="e.g. HDFC0001824"
+                  placeholderTextColor={colors.textSub}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              {/* UPI ID */}
+              <View style={{ gap: 4 }}>
+                <Text style={[styles.formLabel, { color: colors.textSub }]}>UPI VPA Address</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg }]}
+                  value={editUpiId}
+                  onChangeText={setEditUpiId}
+                  placeholder="e.g. elitemess.partner@okhdfcbank"
+                  placeholderTextColor={colors.textSub}
+                  autoCapitalize="none"
+                />
+              </View>
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <TouchableOpacity
+                  style={[modalStyles.cancelBtn, { borderColor: colors.cardBorder }]}
+                  onPress={() => setShowEditBankModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[modalStyles.cancelBtnText, { color: colors.textMain }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[modalStyles.confirmBtn, savingBank && { opacity: 0.7 }]}
+                  onPress={handleSaveBankDetails}
+                  disabled={savingBank}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={['#10B981', '#047857']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={modalStyles.confirmGrad}
+                  >
+                    <CheckCircle2 size={16} color="#FFFFFF" />
+                    <Text style={modalStyles.confirmBtnText}>{savingBank ? 'Saving...' : 'Save & Verify Account'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
           </BlurView>
         </View>
@@ -1692,6 +1928,30 @@ const styles = StyleSheet.create({
   bankAccountTitle: {
     fontSize: 13,
     fontWeight: '800',
+  },
+  editAccountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  editAccountPillText: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '800',
+  },
+  bankEditCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    maxHeight: '90%',
   },
   verifiedKycPill: {
     flexDirection: 'row',
