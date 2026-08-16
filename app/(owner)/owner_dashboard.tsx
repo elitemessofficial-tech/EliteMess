@@ -30,6 +30,9 @@ import {
   RefreshCw,
   Sparkles,
   QrCode,
+  ScanLine,
+  ListPlus,
+  UtensilsCrossed,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,6 +41,7 @@ import { useAppTheme } from '../../src/context/ThemeContext';
 import FloatingHeader from '../../components/FloatingHeader';
 import AnimatedEntrance from '../../components/AnimatedEntrance';
 import OwnerBottomBar, { OwnerTabType } from '../../components/OwnerBottomBar';
+import QRScannerModal from '../../src/components/QRScannerModal';
 import {
   getMessesFromNeon,
   getMessOwnerDataFromNeon,
@@ -70,13 +74,15 @@ export default function MessOwnerDashboardScreen() {
   const [verifiedCount, setVerifiedCount] = useState<number>(0);
   const [verifiedList, setVerifiedList] = useState<OwnerVerifiedLogItem[]>([]);
 
-  // OTP Verification state
+  // OTP & QR Scanner state
   const [enteredOtp, setEnteredOtp] = useState<string>('');
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
 
   // Menu Update state
   const [starDish, setStarDish] = useState<string>('Special Shahi Paneer & Butter Naan');
   const [cutoffTime, setCutoffTime] = useState<string>('2:15 PM');
+  const [dishMenuInput, setDishMenuInput] = useState<string>('Shahi Paneer, Dal Makhani, Garlic Naan, Jeera Rice, Gulab Jamun');
   const [savingMenu, setSavingMenu] = useState<boolean>(false);
 
   // Logout Modal state
@@ -108,6 +114,11 @@ export default function MessOwnerDashboardScreen() {
       if (currentMess) {
         setStarDish(currentMess.star_dish || 'Special Shahi Paneer & Butter Naan');
         setCutoffTime(currentMess.cutoff_time || '2:15 PM');
+        if (currentMess.highlights && Array.isArray(currentMess.highlights) && currentMess.highlights.length > 0) {
+          setDishMenuInput(currentMess.highlights.join(', '));
+        } else {
+          setDishMenuInput('Shahi Paneer, Dal Makhani, Garlic Naan, Jeera Rice, Gulab Jamun');
+        }
       }
 
       // 2. Fetch real live headcount and verified logs from Neon
@@ -137,8 +148,9 @@ export default function MessOwnerDashboardScreen() {
   };
 
   // 2. Real OTP Verification Handler
-  const handleVerifyOtp = async () => {
-    const cleanOtp = enteredOtp.trim().replace(/\D/g, '');
+  const handleVerifyOtp = async (overrideOtp?: string) => {
+    const rawInput = overrideOtp !== undefined ? overrideOtp : enteredOtp;
+    const cleanOtp = rawInput.trim().replace(/\D/g, '');
     if (cleanOtp.length < 4) {
       if (Platform.OS === 'web') {
         window.alert('Please enter at least a 4-digit student OTP.');
@@ -220,6 +232,11 @@ export default function MessOwnerDashboardScreen() {
     }
   };
 
+  const handleScanSuccess = (scannedOtp: string) => {
+    setEnteredOtp(scannedOtp);
+    handleVerifyOtp(scannedOtp);
+  };
+
   // 3. Real Menu & Cutoff Update Handler
   const handleSaveMenu = async () => {
     if (!starDish.trim()) {
@@ -233,7 +250,17 @@ export default function MessOwnerDashboardScreen() {
 
     setSavingMenu(true);
     try {
-      const success = await updateMessMenuInNeon(selectedMessId, starDish.trim(), cutoffTime.trim());
+      const parsedHighlights = dishMenuInput
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const success = await updateMessMenuInNeon(
+        selectedMessId,
+        starDish.trim(),
+        cutoffTime.trim(),
+        parsedHighlights.length > 0 ? parsedHighlights : undefined
+      );
       if (success) {
         // Also update local state
         if (selectedMess) {
@@ -241,9 +268,10 @@ export default function MessOwnerDashboardScreen() {
             ...selectedMess,
             star_dish: starDish.trim(),
             cutoff_time: cutoffTime.trim(),
+            highlights: parsedHighlights,
           });
         }
-        const msg = `Today's Star Dish is now "${starDish.trim()}" with pre-book cutoff at ${cutoffTime.trim()}.`;
+        const msg = `Today's Star Dish is now "${starDish.trim()}" with cutoff at ${cutoffTime.trim()} and ${parsedHighlights.length} Dish Menu items saved!`;
         if (Platform.OS === 'web') {
           window.alert(`🔥 Menu Updated Successfully!\n\n${msg}`);
         } else {
@@ -384,12 +412,42 @@ export default function MessOwnerDashboardScreen() {
             </View>
 
             <View style={[styles.otpVerifyCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
+              {/* PRIMARY ACTION: CAMERA QR SCANNER */}
+              <TouchableOpacity
+                style={styles.scanQrHeroBtn}
+                onPress={() => setShowScannerModal(true)}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#10B981', '#047857']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.scanQrHeroGrad}
+                >
+                  <View style={styles.scanQrIconCircle}>
+                    <QrCode size={20} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scanQrHeroTitle}>Scan Student QR Code</Text>
+                    <Text style={styles.scanQrHeroSub}>Point camera for instant verification</Text>
+                  </View>
+                  <ScanLine size={20} color="#FFFFFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* DIVIDER */}
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.cardBorder }]} />
+                <Text style={[styles.dividerText, { color: colors.textSub }]}>OR ENTER OTP MANUALLY</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.cardBorder }]} />
+              </View>
+
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <KeyRound size={20} color="#10B981" />
-                <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>Enter Student Dining OTP</Text>
+                <KeyRound size={18} color="#10B981" />
+                <Text style={[styles.otpCardTitle, { color: colors.textMain }]}>4-Digit / 8-Digit OTP</Text>
               </View>
               <Text style={{ fontSize: 12, color: colors.textSub, lineHeight: 16 }}>
-                Enter the 4-digit or 8-digit OTP displayed on the student's booking screen
+                Enter the OTP shown on the student's booking screen
               </Text>
 
               {/* OTP Input Field */}
@@ -406,7 +464,7 @@ export default function MessOwnerDashboardScreen() {
               {/* Verify Button */}
               <TouchableOpacity
                 style={styles.verifyBtn}
-                onPress={handleVerifyOtp}
+                onPress={() => handleVerifyOtp()}
                 disabled={verifying}
                 activeOpacity={0.85}
               >
@@ -456,6 +514,42 @@ export default function MessOwnerDashboardScreen() {
                 placeholder="e.g. 2:15 PM"
                 placeholderTextColor={colors.textSub}
               />
+
+              {/* DISH MENU ITEMS (EDITABLE) */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                <ListPlus size={16} color="#10B981" />
+                <Text style={[styles.formLabel, { color: colors.textMain, marginTop: 0, fontWeight: '800' }]}>
+                  Today's Dish Menu Items (Separated by commas)
+                </Text>
+              </View>
+              <TextInput
+                style={[styles.formInput, { color: colors.textMain, borderColor: colors.cardBorder, backgroundColor: colors.inputBg, height: 50 }]}
+                value={dishMenuInput}
+                onChangeText={setDishMenuInput}
+                placeholder="e.g. Shahi Paneer, Dal Makhani, Garlic Naan, Jeera Rice, Gulab Jamun"
+                placeholderTextColor={colors.textSub}
+              />
+
+              {/* LIVE DISH PREVIEW CHIPS */}
+              {dishMenuInput.trim().length > 0 && (
+                <View style={{ marginTop: 2 }}>
+                  <Text style={{ fontSize: 10, color: colors.textSub, fontWeight: '700', marginBottom: 6 }}>
+                    CUSTOMER SCREEN PREVIEW (DISH MENU):
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {dishMenuInput.split(',').map((d, i) => {
+                      const trimmed = d.trim();
+                      if (!trimmed) return null;
+                      return (
+                        <View key={i} style={styles.dishPreviewChip}>
+                          <CheckCircle2 size={11} color="#10B981" />
+                          <Text style={{ color: colors.textMain, fontSize: 11, fontWeight: '700' }}>{trimmed}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.saveMenuBtn, savingMenu && { opacity: 0.7 }]}
@@ -627,6 +721,13 @@ export default function MessOwnerDashboardScreen() {
         </View>
       </Modal>
 
+      {/* ================= LIVE QR CODE CAMERA SCANNER MODAL ================= */}
+      <QRScannerModal
+        visible={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onScanSuccess={handleScanSuccess}
+      />
+
       {/* ================= DEDICATED OWNER BOTTOM NAVBAR ================= */}
       <OwnerBottomBar
         activeTab={activeTab}
@@ -765,6 +866,58 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
   },
+  scanQrHeroBtn: {
+    height: 64,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  scanQrHeroGrad: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  scanQrIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanQrHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  scanQrHeroSub: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   otpCardTitle: {
     fontSize: 15,
     fontWeight: '900',
@@ -829,6 +982,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '900',
+  },
+  dishPreviewChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
   },
   verifiedLogCard: {
     borderRadius: 20,

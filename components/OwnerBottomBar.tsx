@@ -10,7 +10,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   LayoutDashboard,
-  KeyRound,
+  QrCode,
   UtensilsCrossed,
   ClipboardList,
 } from 'lucide-react-native';
@@ -34,6 +34,7 @@ export default function OwnerBottomBar({
   const navColors = {
     barBg: isDark ? 'rgba(12, 18, 16, 0.94)' : 'rgba(255, 255, 255, 0.94)',
     border: isDark ? 'rgba(16, 185, 129, 0.18)' : 'rgba(226, 232, 240, 0.8)',
+    cutoutBg: isDark ? '#080C0E' : '#F8FAFC',
     active: '#10B981',
     inactive: isDark ? '#94A3B8' : '#64748B',
   };
@@ -59,7 +60,7 @@ export default function OwnerBottomBar({
             activeOpacity={0.7}
           >
             <LayoutDashboard
-              size={20}
+              size={21}
               color={activeTab === 'overview' ? navColors.active : navColors.inactive}
               strokeWidth={activeTab === 'overview' ? 2.5 : 1.8}
             />
@@ -74,47 +75,51 @@ export default function OwnerBottomBar({
             </Text>
           </TouchableOpacity>
 
-          {/* 2. Keypad / Verify Center Hero Tab */}
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => onTabChange('verify')}
-            activeOpacity={0.8}
-          >
-            <View style={styles.centerHeroBtnWrapper}>
-              <LinearGradient
-                colors={activeTab === 'verify' ? ['#10B981', '#059669'] : ['#1E293B', '#0F172A']}
-                style={[
-                  styles.centerHeroGrad,
-                  activeTab === 'verify' && styles.centerHeroActiveBorder,
-                ]}
+          {/* 2. Center Elevated Floating QR Scanner Tab */}
+          <View style={styles.centerButtonWrapper}>
+            <View style={[styles.cutoutRing, { backgroundColor: navColors.cutoutBg }]}>
+              <TouchableOpacity
+                onPress={() => onTabChange('verify')}
+                activeOpacity={0.88}
+                style={styles.qrTouchCircle}
               >
-                <KeyRound size={20} color="#FFFFFF" strokeWidth={2.2} />
-              </LinearGradient>
-              {pendingCount > 0 && (
-                <View style={styles.badgePill}>
-                  <Text style={styles.badgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
-                </View>
-              )}
+                <LinearGradient
+                  colors={activeTab === 'verify' ? ['#10B981', '#047857'] : ['#10B981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[
+                    styles.qrGradientCircle,
+                    activeTab === 'verify' && styles.qrGradientActive,
+                  ]}
+                >
+                  <QrCode size={22} color="#FFFFFF" strokeWidth={2.4} />
+                </LinearGradient>
+                {pendingCount > 0 && (
+                  <View style={styles.badgePill}>
+                    <Text style={styles.badgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
             <Text
               style={[
-                styles.tabLabel,
+                styles.centerTabLabel,
                 { color: activeTab === 'verify' ? navColors.active : navColors.inactive },
                 activeTab === 'verify' && styles.tabLabelActive,
               ]}
             >
-              Verify OTP
+              Scan QR
             </Text>
-          </TouchableOpacity>
+          </View>
 
-          {/* 3. Menu & Cutoff Tab */}
+          {/* 3. Daily Dish Menu Tab */}
           <TouchableOpacity
             style={styles.tabItem}
             onPress={() => onTabChange('menu')}
             activeOpacity={0.7}
           >
             <UtensilsCrossed
-              size={20}
+              size={21}
               color={activeTab === 'menu' ? navColors.active : navColors.inactive}
               strokeWidth={activeTab === 'menu' ? 2.5 : 1.8}
             />
@@ -125,7 +130,7 @@ export default function OwnerBottomBar({
                 activeTab === 'menu' && styles.tabLabelActive,
               ]}
             >
-              Daily Menu
+              Dish Menu
             </Text>
           </TouchableOpacity>
 
@@ -136,7 +141,7 @@ export default function OwnerBottomBar({
             activeOpacity={0.7}
           >
             <ClipboardList
-              size={20}
+              size={21}
               color={activeTab === 'log' ? navColors.active : navColors.inactive}
               strokeWidth={activeTab === 'log' ? 2.5 : 1.8}
             />
@@ -174,7 +179,7 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     borderWidth: 1,
-    overflow: 'hidden',
+    overflow: 'visible',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
@@ -202,32 +207,58 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     fontWeight: '900',
   },
-  centerHeroBtnWrapper: {
-    position: 'relative',
+  centerButtonWrapper: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -8,
+    position: 'relative',
+    marginTop: -20,
   },
-  centerHeroGrad: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  cutoutRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  qrTouchCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  qrGradientCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  centerHeroActiveBorder: {
-    borderWidth: 1.5,
+  qrGradientActive: {
+    borderWidth: 2,
     borderColor: '#FFFFFF',
+  },
+  centerTabLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
   },
   badgePill: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -2,
+    right: -2,
     backgroundColor: '#EF4444',
     paddingHorizontal: 5,
     paddingVertical: 1,

@@ -418,7 +418,7 @@ export default function DiscoverScreen() {
                   </View>
 
                   {/* Menu Highlights Chips */}
-                  <Text style={[styles.includedLabel, { color: colors.textSub }]}>PASS MENU HIGHLIGHTS</Text>
+                  <Text style={[styles.includedLabel, { color: colors.textSub }]}>DISH MENU</Text>
                   <View style={styles.chipsWrap}>
                     {currentMess.highlights.map((dish, i) => (
                       <View key={i} style={styles.chipPill}>

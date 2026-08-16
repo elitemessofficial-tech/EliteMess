@@ -364,10 +364,10 @@ export default function MessDetailScreen() {
             </View>
           </AnimatedEntrance>
 
-          {/* Full Menu Highlights */}
+          {/* Full Dish Menu */}
           <AnimatedEntrance direction="up" delay={180}>
             <View style={[styles.menuCard, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.menuCardTitle, { color: colors.textSub }]}>MEAL PASS MENU HIGHLIGHTS</Text>
+              <Text style={[styles.menuCardTitle, { color: colors.textSub }]}>DISH MENU</Text>
               {mess.highlights.map((dish, i) => (
                 <View key={i} style={styles.menuItem}>
                   <CheckCircle2 size={16} color="#10B981" />
